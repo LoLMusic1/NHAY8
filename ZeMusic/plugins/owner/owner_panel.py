@@ -453,6 +453,56 @@ class OwnerPanel:
             del self.pending_sessions[user_id]
         
         return await self.show_assistants_panel(user_id)
+    
+    async def handle_add_assistant(self, user_id: int) -> Dict:
+        """بدء عملية إضافة حساب مساعد"""
+        return {
+            'success': True,
+            'message': """📱 **إضافة حساب مساعد جديد**
+
+🔧 **الخطوات:**
+1. احصل على Session String للحساب
+2. أرسله هنا لإضافته للنظام
+
+📝 **ملاحظات:**
+• تأكد من صحة Session String
+• الحساب يجب أن يكون صالحاً
+• سيتم التحقق تلقائياً
+
+⚠️ **تحذير:** لا تشارك Session String مع أحد!
+
+💡 **للحصول على Session String:**
+استخدم بوت Session Generator
+
+📝 **أرسل Session String الآن:**""",
+            'keyboard': [
+                [{'text': '❌ إلغاء', 'callback_data': 'owner_assistants'}]
+            ]
+        }
+    
+    async def handle_remove_assistant(self, user_id: int, assistant_id: str) -> Dict:
+        """حذف حساب مساعد"""
+        try:
+            success = await telethon_manager.remove_assistant(assistant_id)
+            
+            if success:
+                message = f"✅ **تم حذف الحساب المساعد بنجاح!**\n\n🆔 المعرف: `{assistant_id}`"
+            else:
+                message = f"❌ **فشل في حذف الحساب المساعد**\n\n🆔 المعرف: `{assistant_id}`"
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': [
+                    [{'text': '📱 إدارة الحسابات', 'callback_data': 'owner_assistants'}]
+                ]
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f"❌ حدث خطأ: {str(e)}"
+            }
 
 # إنشاء مثيل عام للوحة التحكم
 owner_panel = OwnerPanel()

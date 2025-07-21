@@ -287,11 +287,22 @@ class TelethonCommandHandler:
             
             # إرسال الرسالة
             try:
-                from ZeMusic import app
-                username = getattr(app, 'username', 'ZeMusicBot')
+                # الحصول على معلومات البوت
+                bot_username = "ZeMusicBot"  # افتراضي
+                try:
+                    bot_me = await self.bot_client.get_me()
+                    if bot_me and bot_me.username:
+                        bot_username = bot_me.username
+                except:
+                    pass
+                
                 user_mention = f"[{update.sender.first_name}](tg://user?id={update.sender_id})"
                 
-                caption = _["start_2"].format(user_mention, f"@{username}")
+                # استخدام النص الافتراضي إذا لم تتوفر الترجمة
+                try:
+                    caption = _["start_2"].format(user_mention, f"@{bot_username}")
+                except:
+                    caption = f"🎵 **مرحباً بك في ZeMusic Bot!**\n\n👋 أهلاً {user_mention}\n\n🎶 بوت تشغيل الموسيقى في المكالمات الصوتية\n\n💡 استخدم /help لعرض الأوامر\n\n🤖 البوت: @{bot_username}"
                 
                 await update.reply(
                     caption,
@@ -303,9 +314,10 @@ class TelethonCommandHandler:
                 # في حالة فشل إرسال الصورة، نرسل نص فقط
                 await update.reply(
                     f"🎵 **مرحباً بك في ZeMusic Bot!**\n\n"
-                    f"👋 أهلاً {update.sender.first_name}\n\n"
+                    f"👋 أهلاً {update.sender.first_name or 'المستخدم'}\n\n"
                     f"🎶 بوت تشغيل الموسيقى في المكالمات الصوتية\n\n"
-                    f"💡 استخدم /help لعرض الأوامر",
+                    f"💡 استخدم /help لعرض الأوامر\n\n"
+                    f"🤖 البوت: @{bot_username}",
                     buttons=buttons
                 )
                 
