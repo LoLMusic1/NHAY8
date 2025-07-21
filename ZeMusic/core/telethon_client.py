@@ -148,6 +148,67 @@ class TelethonClientManager:
                 'error': str(e)
             }
     
+    async def add_assistant_with_session(self, session_string: str, name: str) -> Dict[str, Any]:
+        """إضافة حساب مساعد باستخدام session string"""
+        try:
+            self.logger.info(f"📱 إضافة حساب مساعد بـ session string: {name}")
+            
+            # إنشاء جلسة من session string
+            session = StringSession(session_string)
+            
+            # إنشاء عميل Telethon للحساب المساعد
+            assistant_client = TelegramClient(
+                session=session,
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+                device_model=config.DEVICE_MODEL,
+                system_version=config.SYSTEM_VERSION,
+                app_version=config.APPLICATION_VERSION,
+                lang_code="ar",
+                system_lang_code="ar"
+            )
+            
+            await assistant_client.connect()
+            
+            # التحقق من تفويض المستخدم
+            if not await assistant_client.is_user_authorized():
+                await assistant_client.disconnect()
+                return {
+                    'success': False,
+                    'error': 'Session غير مصرح أو منتهي الصلاحية'
+                }
+            
+            # الحصول على معلومات المستخدم
+            me = await assistant_client.get_me()
+            
+            # تحديد معرف المساعد
+            assistant_id = len(self.assistant_clients) + 1
+            
+            # إضافة العميل إلى القائمة
+            self.assistant_clients[assistant_id] = assistant_client
+            
+            self.logger.info(f"✅ تم إضافة الحساب المساعد: {name} (@{me.username or me.id})")
+            
+            return {
+                'success': True,
+                'assistant_id': assistant_id,
+                'connected': True,
+                'user_info': {
+                    'id': me.id,
+                    'username': me.username,
+                    'first_name': me.first_name,
+                    'last_name': me.last_name,
+                    'phone': me.phone
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ خطأ في إضافة المساعد بـ session string: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
     async def verify_assistant_code(self, client_id: int, phone: str, code: str, phone_code_hash: str, password: Optional[str] = None) -> Dict[str, Any]:
         """التحقق من كود التحقق للحساب المساعد"""
         try:
@@ -346,6 +407,29 @@ class TelethonClientManager:
             if client.is_connected():
                 connected += 1
         return connected
+    
+    def is_assistant_connected(self, assistant_id: int) -> bool:
+        """التحقق من اتصال حساب مساعد محدد"""
+        try:
+            assistant_client = self.assistant_clients.get(assistant_id)
+            return assistant_client and assistant_client.is_connected()
+        except:
+            return False
+    
+    async def remove_assistant(self, assistant_id: int) -> bool:
+        """حذف حساب مساعد"""
+        try:
+            if assistant_id in self.assistant_clients:
+                assistant_client = self.assistant_clients[assistant_id]
+                if assistant_client:
+                    await assistant_client.disconnect()
+                del self.assistant_clients[assistant_id]
+                self.logger.info(f"✅ تم حذف الحساب المساعد: {assistant_id}")
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"❌ خطأ في حذف الحساب المساعد {assistant_id}: {e}")
+            return False
     
     async def cleanup_idle_assistants(self):
         """تنظيف الحسابات الخاملة"""

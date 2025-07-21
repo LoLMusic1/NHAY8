@@ -680,17 +680,30 @@ class DatabaseManager:
         
         await asyncio.get_event_loop().run_in_executor(None, _log)
     
-    async def add_assistant(self, session_string: str, name: str) -> int:
-        """إضافة حساب مساعد جديد"""
+    async def add_assistant(self, assistant_id: int = None, session_string: str = None, name: str = None, user_id: int = None, username: str = None, phone: str = None) -> int:
+        """إضافة حساب مساعد جديد (متوافق مع الطرق القديمة والجديدة)"""
         def _add():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO assistants (session_string, name, is_active, added_date)
-                    VALUES (?, ?, 1, ?)
-                ''', (session_string, name, datetime.now().isoformat()))
-                conn.commit()
-                return cursor.lastrowid
+                
+                # إذا تم تمرير assistant_id، نستخدم الطريقة القديمة
+                if assistant_id is not None:
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO assistants 
+                        (assistant_id, session_string, name, user_id, username, phone, is_active, added_date)
+                        VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                    ''', (assistant_id, session_string or "", name or f"Assistant {assistant_id}", 
+                          user_id, username or "", phone or "", datetime.now().isoformat()))
+                    conn.commit()
+                    return assistant_id
+                else:
+                    # الطريقة الجديدة - إنشاء ID تلقائياً
+                    cursor.execute('''
+                        INSERT INTO assistants (session_string, name, user_id, username, phone, is_active, added_date)
+                        VALUES (?, ?, ?, ?, ?, 1, ?)
+                    ''', (session_string, name, user_id, username or "", phone or "", datetime.now().isoformat()))
+                    conn.commit()
+                    return cursor.lastrowid
         
         return await asyncio.get_event_loop().run_in_executor(None, _add)
     
@@ -720,18 +733,21 @@ class DatabaseManager:
         return await asyncio.get_event_loop().run_in_executor(None, _get)
     
     async def get_assistant_by_id(self, assistant_id: int) -> Optional[Dict]:
-        """الحصول على معلومات حساب مساعد محدد"""
+        """الحصول على حساب مساعد بالمعرف"""
         def _get():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT assistant_id, session_string, name, is_active, added_date as created_at, last_used as last_activity
-                    FROM assistants WHERE assistant_id = ?
+                    SELECT assistant_id, session_string, name, user_id, username, phone, is_active, added_date as created_at, last_used as last_activity
+                    FROM assistants
+                    WHERE assistant_id = ?
                 ''', (assistant_id,))
                 row = cursor.fetchone()
                 return dict(row) if row else None
         
         return await asyncio.get_event_loop().run_in_executor(None, _get)
+    
+
     
     async def update_assistant_activity(self, assistant_id: int):
         """تحديث آخر نشاط للحساب المساعد"""
