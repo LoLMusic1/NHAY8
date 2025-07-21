@@ -741,7 +741,7 @@ class HyperSpeedDownloader:
             LOGGER(__name__).error(f"خطأ في التحميل المباشر: {e}")
             # تحديث حالة cookie في حالة الفشل
             if best_cookie:
-                await cookies_manager.record_failure(best_cookie)
+                await cookies_manager.report_failure(best_cookie, str(e))
             return None
 
 # إنشاء مدير التحميل العالمي
@@ -874,11 +874,11 @@ async def smart_download_handler(event):
         
         if download_result and download_result.get('success'):
             # التحميل نجح - إرسال الملف
+            from pathlib import Path
             audio_file = download_result.get('file_path')
             if audio_file and Path(audio_file).exists():
                 await status_msg.edit("📤 **جاري إرسال الملف...**")
                 
-                from pathlib import Path
                 caption = f"""🎵 **{download_result.get('title', 'Unknown')[:60]}**
 🎤 {download_result.get('uploader', 'Unknown')[:40]}
 ⏱️ {video_info.get('duration', 'Unknown')}
@@ -923,7 +923,7 @@ async def smart_download_handler(event):
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في المعالج: {e}")
         try:
-            await status_msg.edit(f"❌ **خطأ في المعالجة:** {str(e)}")
+            await status_msg.edit("❌ **حدث خطأ في المعالجة**\n\n💡 **جرب:**\n• كلمات مختلفة\n• إعادة المحاولة لاحقاً")
         except:
             pass
 
