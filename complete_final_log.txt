@@ -34,3 +34,41 @@
 [21-Jul-25 22:55:52 - INFO] - __main__ - 👨‍💼 تم تحميل 0 مدير
 [21-Jul-25 22:55:52 - INFO] - __main__ - ⏰ تم بدء المهام الدورية
 [21-Jul-25 22:55:52 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
+[21-Jul-25 22:58:15 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: 'MockUpdate' object has no attribute 'sender'
+[21-Jul-25 22:58:16 - ERROR] - telethon.client.updates - Unhandled exception on handle_search_messages
+Traceback (most recent call last):
+  File "/home/ubuntu/.local/lib/python3.13/site-packages/telethon/client/updates.py", line 570, in _dispatch_update
+    await callback(event)
+  File "/workspace/ZeMusic/plugins/play/download.py", line 1036, in handle_search_messages
+    if (datetime.now() - event.message.date).total_seconds() > 30:
+        ~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~
+TypeError: can't subtract offset-naive and offset-aware datetimes
+[21-Jul-25 22:58:20 - ERROR] - telethon.client.updates - Unhandled exception on handle_search_messages
+Traceback (most recent call last):
+  File "/home/ubuntu/.local/lib/python3.13/site-packages/telethon/client/updates.py", line 570, in _dispatch_update
+    await callback(event)
+  File "/workspace/ZeMusic/plugins/play/download.py", line 1036, in handle_search_messages
+    if (datetime.now() - event.message.date).total_seconds() > 30:
+        ~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~
+TypeError: can't subtract offset-naive and offset-aware datetimes
+[21-Jul-25 22:58:21 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:58:22 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:58:29 - ERROR] - telethon.client.updates - Unhandled exception on handle_search_messages
+Traceback (most recent call last):
+  File "/home/ubuntu/.local/lib/python3.13/site-packages/telethon/client/updates.py", line 570, in _dispatch_update
+    await callback(event)
+  File "/workspace/ZeMusic/plugins/play/download.py", line 1036, in handle_search_messages
+    if (datetime.now() - event.message.date).total_seconds() > 30:
+        ~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~
+TypeError: can't subtract offset-naive and offset-aware datetimes
+[21-Jul-25 22:58:55 - WARNING] - ZeMusic.core.cookies_manager - ⚠️ لا توجد ملفات cookies متاحة
+ERROR: [youtube] cTXLxXj88kw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+[21-Jul-25 22:58:56 - ERROR] - ZeMusic.plugins.play.download - خطأ في البحث البديل: post() got an unexpected keyword argument 'proxies'
+[21-Jul-25 22:58:56 - ERROR] - telethon.client.updates - Unhandled exception on handle_search_messages
+Traceback (most recent call last):
+  File "/home/ubuntu/.local/lib/python3.13/site-packages/telethon/client/updates.py", line 570, in _dispatch_update
+    await callback(event)
+  File "/workspace/ZeMusic/plugins/play/download.py", line 1036, in handle_search_messages
+    if (datetime.now() - event.message.date).total_seconds() > 30:
+        ~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~
+TypeError: can't subtract offset-naive and offset-aware datetimes
