@@ -41,3 +41,11 @@
 [21-Jul-25 22:39:18 - ERROR] - ZeMusic.plugins.owner.owner_panel - خطأ في معالج callbacks: 'OwnerPanel' object has no attribute 'handle_add_assistant'
 [21-Jul-25 22:39:22 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
 [21-Jul-25 22:39:26 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:41:02 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:41:02 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:41:03 - WARNING] - ZeMusic.plugins.play.download - فشل YouTube Search: 'str' object has no attribute 'get'
+[21-Jul-25 22:41:06 - WARNING] - ZeMusic.core.cookies_manager - ⚠️ لا توجد ملفات cookies متاحة
+ERROR: [youtube] cTXLxXj88kw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+[21-Jul-25 22:41:08 - WARNING] - ZeMusic.plugins.play.download - فشل YouTube Search: 'str' object has no attribute 'get'
+[21-Jul-25 22:41:09 - WARNING] - ZeMusic.core.cookies_manager - ⚠️ لا توجد ملفات cookies متاحة
+ERROR: [youtube] cTXLxXj88kw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
