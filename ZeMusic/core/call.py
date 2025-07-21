@@ -18,7 +18,8 @@ from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQuality
 from pytgcalls.types.stream import StreamAudioEnded
 
 import config
-from ZeMusic import LOGGER, YouTube, app
+from ZeMusic import LOGGER, YouTube
+from ZeMusic.pyrogram_compatibility import app
 from ZeMusic.misc import db
 from ZeMusic.utils.database import (
     add_active_chat,
