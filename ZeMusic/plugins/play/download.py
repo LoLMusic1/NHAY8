@@ -373,6 +373,11 @@ class HyperSpeedDownloader:
                     if resp.status != 200:
                         continue
                     
+                    # فحص نوع المحتوى
+                    content_type = resp.headers.get('content-type', '')
+                    if 'application/json' not in content_type:
+                        continue
+                    
                     data = await resp.json()
                     video = next((item for item in data if item.get("type") == "video"), None)
                     if not video:
@@ -402,18 +407,26 @@ class HyperSpeedDownloader:
             return None
             
         try:
-            results = YoutubeSearch(query, max_results=1).to_dict()
+            # محاولة استخدام youtube-search-python أولاً
+            try:
+                search = YoutubeSearch(query, limit=1)
+                results = await search.next()
+                results = results.get('result', [])
+            except:
+                # استخدام youtube_search القديم
+                results = YoutubeSearch(query, max_results=1).to_dict()
+            
             if not results:
                 return None
             
             result = results[0]
             return {
-                "video_id": result["id"],
-                "title": result["title"][:60],
-                "artist": result.get("channel", "Unknown"),
+                "video_id": result.get("id", ""),
+                "title": result.get("title", "")[:60],
+                "artist": result.get("channel", {}).get("name", "Unknown") if isinstance(result.get("channel"), dict) else result.get("channel", "Unknown"),
                 "duration": result.get("duration", ""),
-                "thumb": result["thumbnails"][0] if result.get("thumbnails") else None,
-                "link": f"https://youtube.com{result['url_suffix']}",
+                "thumb": result.get("thumbnails", [{}])[0].get("url") if result.get("thumbnails") else None,
+                "link": result.get("link", f"https://youtube.com{result.get('url_suffix', '')}"),
                 "source": "youtube_search"
             }
             

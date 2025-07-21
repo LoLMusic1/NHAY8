@@ -144,6 +144,13 @@ class TelethonCommandHandler:
                 self.effective_chat = MockChat(event.chat_id)
                 self.effective_user = MockUser(event.sender_id)
                 self.effective_message = self.message
+                self.sender_id = event.sender_id
+                self.chat_id = event.chat_id
+                self.event = event
+                
+            async def reply(self, text, **kwargs):
+                """إضافة دالة reply للتوافق"""
+                return await self.event.reply(text, **kwargs)
         
         class MockMessage:
             def __init__(self, event):

@@ -291,22 +291,38 @@ ASSISTANT_NOT_FOUND_MESSAGE = """
 ENABLE_DATABASE_CACHE = getenv("ENABLE_DATABASE_CACHE", "True").lower() == "true"
 APPLICATION_VERSION = "2.0.0 Telethon Edition"
 
-# قائمة المستخدمين المحظورين - سيتم تحويلها لفلتر
-BANNED_USERS = []
+# قائمة المستخدمين المحظورين
+BANNED_USERS_LIST = []
 
-# إنشاء فلتر للمستخدمين المحظورين
-def create_banned_filter():
-    """إنشاء فلتر للمستخدمين المحظورين"""
-    from ZeMusic.compatibility import TDLibFilter
-    return TDLibFilter("banned_users")
+# فلتر المستخدمين المحظورين
+class BannedUsersFilter:
+    def __init__(self):
+        self.banned_users = set()
+    
+    def __invert__(self):
+        # تعريف العامل ~ للتوافق
+        return NotBannedFilter(self.banned_users)
+    
+    def add(self, user_id):
+        self.banned_users.add(user_id)
+    
+    def remove(self, user_id):
+        self.banned_users.discard(user_id)
+    
+    def __contains__(self, user_id):
+        return user_id in self.banned_users
 
-# تصدير فلتر المحظورين
-try:
-    from ZeMusic.compatibility import TDLibFilter
-    BANNED_USERS = TDLibFilter("banned_users")
-except ImportError:
-    # في حالة عدم توفر المودول بعد
-    BANNED_USERS = []
+class NotBannedFilter:
+    def __init__(self, banned_users):
+        self.banned_users = banned_users
+    
+    def __call__(self, update):
+        # فحص ما إذا كان المستخدم غير محظور
+        user_id = getattr(update, 'user_id', None) or getattr(update, 'sender_id', None)
+        return user_id not in self.banned_users
+
+# إنشاء فلتر المحظورين
+BANNED_USERS = BannedUsersFilter()
 
 # النسخة الخاصة بالبوت
 BOT_VERSION = "2.0.0"

@@ -70,7 +70,7 @@ class ZeMusicBot:
             # بدء مهمة تنظيف music_manager
             try:
                 from ZeMusic.core.music_manager import start_cleanup_task
-                start_cleanup_task()
+                asyncio.create_task(start_cleanup_task())
             except Exception as e:
                 LOGGER(__name__).warning(f"⚠️ خطأ في مهمة التنظيف: {e}")
             
