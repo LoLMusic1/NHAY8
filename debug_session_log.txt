@@ -40,3 +40,4 @@
 [21-Jul-25 23:35:07 - INFO] - ZeMusic.core.command_handler - ✅ تم اكتشاف session string من المالك
 [21-Jul-25 23:35:07 - INFO] - ZeMusic.core.command_handler - 🔄 بدء معالجة session string...
 [21-Jul-25 23:35:07 - INFO] - ZeMusic.core.command_handler - 📊 نتيجة المعالجة: {'success': True, 'message': '✅ تم قبول session string\n\n📝 الآن أرسل اسم مميز للحساب المساعد:', 'keyboard': [[{'text': '❌ إلغاء', 'callback_data': 'cancel_add_assistant'}]], 'waiting_input': True}
+[21-Jul-25 23:35:29 - INFO] - ZeMusic.core.command_handler - 🔍 فحص رسالة من المالك: طول=8
