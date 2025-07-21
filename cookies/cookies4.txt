@@ -1,0 +1,24 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+www.wikipedia.org	FALSE	/	TRUE	1747440000	WMF-Last-Access	15-Apr-2025
+.wikipedia.org	TRUE	/	TRUE	1747440000	WMF-Last-Access-Global	15-Apr-2025
+.wikipedia.org	TRUE	/	TRUE	0	GeoIP	YE:SA:Sanaa:15.35:44.21:v4
+www.wikipedia.org	FALSE	/	TRUE	1744690745	NetworkProbeLimit	0.001
+.instagram.com	TRUE	/	TRUE	1779246602	ps_l	1
+.instagram.com	TRUE	/	TRUE	1779246602	ps_n	1
+.instagram.com	TRUE	/	TRUE	1779246750	mid	Z_3OXwABAAEaxLcie9aHFbDFaOm5
+.instagram.com	TRUE	/	TRUE	1779246765	datr	X879Z73KGTu6KbeL9_ouSOAN
+.instagram.com	TRUE	/	TRUE	1776222765	ig_did	33EC0E7A-5BC8-4D47-96AC-34ED75AE3BC9
+.instagram.com	TRUE	/	FALSE	1779246771	ig_lang	ar_AR
+.instagram.com	TRUE	/	TRUE	1776222864	sessionid	73394726427%3AIwVVJTZJ0KnBXR%3A12%3AAYfnSmjLbDKXwlPqaeuvUCAzk2dECczvu-nYLGCQiQ
+.instagram.com	TRUE	/	TRUE	1745292164	wd	1225x2300
+.instagram.com	TRUE	/	TRUE	1745292164	dpr	1.5
+.instagram.com	TRUE	/	TRUE	1776137064	csrftoken	Qxfk0z32ZUf1F7nD167BGtODj4tOR093
+.instagram.com	TRUE	/	TRUE	0	rur	"LLA\05473394726427\0541776223464:01f72432ae2661993270964e8873c966585b79838e0268196e96af52d0c8d2bf2be7321d"
+.instagram.com	TRUE	/	TRUE	1752463464	ds_user_id	73394726427
+.mozilla.org	TRUE	/	FALSE	1744773843	_gid	GA1.2.799222453.1744687444
+.mozilla.org	TRUE	/	FALSE	1744687503	_gat	1
+.mozilla.org	TRUE	/	FALSE	1807759444	_ga	GA1.1.690511427.1744687444
+.mozilla.org	TRUE	/	FALSE	1807759455	_ga_B9CY1C9VBC	GS1.1.1744687444.1.1.1744687455.0.0.0
