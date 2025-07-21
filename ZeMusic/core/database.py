@@ -191,8 +191,11 @@ class DatabaseManager:
     def _get_connection(self):
         """الحصول على اتصال آمن بقاعدة البيانات"""
         with self._lock:
-            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
             conn.row_factory = sqlite3.Row
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('PRAGMA synchronous=NORMAL')
+            conn.execute('PRAGMA busy_timeout=30000')
             try:
                 yield conn
             finally:

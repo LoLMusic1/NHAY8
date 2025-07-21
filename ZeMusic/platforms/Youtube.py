@@ -1020,10 +1020,14 @@ async def periodic_cleanup():
         except Exception as e:
             logger.error(f"❌ خطأ في التنظيف الدوري: {str(e)}")
 
-# بدء مهمة التنظيف
+# بدء مهمة التنظيف (فقط إذا كان هناك event loop قيد التشغيل)
 try:
+    loop = asyncio.get_running_loop()
     asyncio.create_task(periodic_cleanup())
     logger.info("🚀 تم تشغيل نظام YouTube المحسن مع التنظيف التلقائي")
+except RuntimeError:
+    # لا يوجد event loop قيد التشغيل - سيتم بدء التنظيف لاحقاً
+    logger.info("⏸️ سيتم تشغيل التنظيف التلقائي عند بدء البوت")
 except Exception as e:
     logger.error(f"❌ خطأ في بدء النظام: {str(e)}")
 

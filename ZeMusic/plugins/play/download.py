@@ -895,4 +895,19 @@ async def cache_help_handler(event):
 
     await event.reply(help_text)
 
+# تهيئة آمنة للنظام
+try:
+    # تهيئة HyperSpeedDownloader فقط إذا كان في بيئة تشغيل مناسبة
+    if __name__ != "__main__":
+        # محاولة تهيئة النظام بأمان
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            asyncio.create_task(hyper_downloader.initialize())
+        except RuntimeError:
+            # لا يوجد event loop - سيتم التهيئة لاحقاً
+            pass
+except Exception as e:
+    LOGGER(__name__).error(f"❌ خطأ في تهيئة نظام التحميل: {e}")
+
 LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon")
