@@ -33,3 +33,6 @@ nohup: ignoring input
 [21-Jul-25 20:52:38 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: 'TDLibFilters' object has no attribute 'new_chat_members'
 [21-Jul-25 20:52:40 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: 'TDLibFilters' object has no attribute 'new_chat_members'
 [21-Jul-25 20:52:48 - ERROR] - ZeMusic.plugins.owner.owner_panel - خطأ في معالج /owner: 'dict' object has no attribute 'SUBCLASS_OF_ID'
+[21-Jul-25 20:52:57 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon
+[21-Jul-25 20:52:57 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تهيئة نظام التحميل الخارق مع Telethon
+[21-Jul-25 20:52:57 - WARNING] - ZeMusic.plugins.play.download - فشل YouTube Search: VideosSearch.__init__() got an unexpected keyword argument 'max_results'
