@@ -1,7 +1,13 @@
 import re
 
-import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
+try:
+    import spotipy
+    from spotipy.oauth2 import SpotifyClientCredentials
+    SPOTIPY_AVAILABLE = True
+except ImportError:
+    spotipy = None
+    SpotifyClientCredentials = None
+    SPOTIPY_AVAILABLE = False
 try:
     from youtubesearchpython.__future__ import VideosSearch
 except ImportError:

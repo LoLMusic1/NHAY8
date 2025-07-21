@@ -1,11 +1,11 @@
-from ZeMusic.pyrogram_compatibility.enums import ParseMode
-
-from ZeMusic import app
+from ZeMusic.pyrogram_compatibility import enums
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.utils.database import is_on_off
 from config import LOGGER_ID
 
 
 async def play_logs(message, streamtype):
+    """إرسال سجلات التشغيل باستخدام Telethon"""
     if await is_on_off(2):
         if message.from_user:
             ne = "تم التشغيل في المجموعة"
@@ -17,6 +17,7 @@ async def play_logs(message, streamtype):
             user_id = "مجهول"
             user_mention = "مجهول"
             user_username = "مجهول"
+        
         logger_text = f"""
 <b>{ne}</b>
 
@@ -30,14 +31,19 @@ async def play_logs(message, streamtype):
 
 <b>الاغنيه :</b> {message.text.split(None, 1)[1]}
 <b>اسم المشغل :</b> {streamtype}"""
+        
         if message.chat.id != LOGGER_ID:
             try:
-                await app.send_message(
-                    chat_id=LOGGER_ID,
-                    text=logger_text,
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=True,
-                )
-            except:
+                # استخدام Telethon لإرسال الرسالة
+                bot_client = telethon_manager.bot_client
+                if bot_client:
+                    await bot_client.send_message(
+                        entity=LOGGER_ID,
+                        message=logger_text,
+                        parse_mode='html',
+                        link_preview=False
+                    )
+            except Exception as e:
+                # تجاهل أخطاء السجلات
                 pass
         return

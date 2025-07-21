@@ -113,3 +113,16 @@ def on_inline_query():
 app.on_message = on_message
 app.on_callback_query = on_callback_query
 app.on_inline_query = on_inline_query
+
+# إضافة الكلاسات للاستيراد المباشر
+InlineKeyboardButton = types.InlineKeyboardButton
+InlineKeyboardMarkup = types.InlineKeyboardMarkup
+ReplyKeyboardMarkup = types.ReplyKeyboardMarkup
+InlineQueryResultArticle = types.InlineQueryResultArticle
+InputTextMessageContent = types.InputTextMessageContent
+InputMediaPhoto = types.InputMediaPhoto
+Voice = types.Voice
+Message = types.Message
+CallbackQuery = types.CallbackQuery
+User = types.User
+Chat = types.Chat

@@ -6,7 +6,8 @@ from typing import Union
 from ZeMusic.pyrogram_compatibility.types import InlineKeyboardMarkup
 
 import config
-from ZeMusic import Carbon, YouTube, app
+from ZeMusic import Carbon, YouTube
+from ZeMusic.pyrogram_compatibility import app
 from ZeMusic.core.call import Mody
 from ZeMusic.misc import db
 

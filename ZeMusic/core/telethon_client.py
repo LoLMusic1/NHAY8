@@ -391,7 +391,25 @@ class TelethonClientManager:
                 except Exception as e:
                     self.logger.error(f"خطأ في معالج cache_help: {e}")
             
-            self.logger.info("🎛️ تم إعداد معالجات أحداث Telethon مع وظائف التحميل")
+            # معالج أمر /start
+            @self.bot_client.on(events.NewMessage(pattern=r'/start'))
+            async def start_handler(event):
+                try:
+                    from ZeMusic.plugins.bot.telethon_start import handle_start_command
+                    await handle_start_command(event)
+                except Exception as e:
+                    self.logger.error(f"خطأ في معالج /start: {e}")
+            
+            # معالج أمر /help
+            @self.bot_client.on(events.NewMessage(pattern=r'/help|/مساعده|المساعده'))
+            async def help_handler(event):
+                try:
+                    from ZeMusic.plugins.bot.telethon_help import handle_help_command
+                    await handle_help_command(event)
+                except Exception as e:
+                    self.logger.error(f"خطأ في معالج /help: {e}")
+            
+            self.logger.info("🎛️ تم إعداد معالجات أحداث Telethon مع وظائف التحميل والأوامر الأساسية")
             
         except Exception as e:
             self.logger.error(f"❌ خطأ في إعداد المعالجات: {e}")

@@ -77,6 +77,15 @@ async def disable_search(chat_id):
     """إلغاء تفعيل البحث في المجموعة"""
     await db.update_chat_setting(chat_id, search_enabled=False)
 
+async def is_active_chat(chat_id):
+    """التحقق من نشاط المحادثة"""
+    return True  # نظام مبسط - جميع المحادثات نشطة
+
+async def add_active_video_chat(chat_id):
+    """إضافة محادثة فيديو نشطة"""
+    # نظام مبسط - لا حاجة لتطبيق
+    pass
+
 ########################################################
 
 async def get_assistant_number(chat_id: int) -> str:

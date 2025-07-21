@@ -2,7 +2,7 @@ from typing import Union
 
 from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from ZeMusic import app
+from ZeMusic.pyrogram_compatibility import app
 
 
 def help_pannel(_, START: Union[bool, int] = None):

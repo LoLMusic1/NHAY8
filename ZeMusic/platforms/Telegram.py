@@ -6,7 +6,7 @@ from typing import Union
 from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup, Voice
 
 import config
-from ZeMusic import app
+from ZeMusic.pyrogram_compatibility import app
 from ZeMusic.utils.formatters import (
     check_duration,
     convert_bytes,
