@@ -1,4 +1,4 @@
-from ZeMusic import app
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.utils.database import get_cmode
 
 
@@ -11,13 +11,18 @@ async def get_channeplayCB(_, command, CallbackQuery):
             except:
                 return
         try:
-            channel = (await app.get_chat(chat_id)).title
+            # استخدام Telethon بدلاً من Pyrogram
+            bot_client = telethon_manager.bot_client
+            if bot_client:
+                entity = await bot_client.get_entity(chat_id)
+                channel = entity.title
+            else:
+                channel = "Channel"
         except:
             try:
                 return await CallbackQuery.answer(_["cplay_4"], show_alert=True)
             except:
                 return
     else:
-        chat_id = CallbackQuery.message.chat.id
-        channel = None
-    return chat_id, channel
+        channel = CallbackQuery.message.chat.title
+    return channel

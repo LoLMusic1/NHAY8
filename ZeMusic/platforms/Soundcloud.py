@@ -1,6 +1,9 @@
 from os import path
 
-from yt_dlp import YoutubeDL
+try:
+    from yt_dlp import YoutubeDL
+except ImportError:
+    YoutubeDL = None
 
 from ZeMusic.utils.formatters import seconds_to_min
 

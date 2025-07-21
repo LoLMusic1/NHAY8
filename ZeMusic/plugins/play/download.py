@@ -34,7 +34,11 @@ except ImportError:
 try:
     from youtube_search import YoutubeSearch
 except ImportError:
-    YoutubeSearch = None
+    try:
+        from youtubesearchpython import VideosSearch
+        YoutubeSearch = VideosSearch
+    except ImportError:
+        YoutubeSearch = None
 
 # استيراد Telethon بدلاً من pyrogram
 from telethon import events

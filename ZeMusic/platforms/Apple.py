@@ -13,7 +13,13 @@ try:
 except ImportError:
     BS4_AVAILABLE = False
     BeautifulSoup = None
-from youtubesearchpython.__future__ import VideosSearch
+try:
+    from youtubesearchpython.__future__ import VideosSearch
+except ImportError:
+    try:
+        from youtube_search import YoutubeSearch as VideosSearch
+    except ImportError:
+        VideosSearch = None
 
 
 class AppleAPI:

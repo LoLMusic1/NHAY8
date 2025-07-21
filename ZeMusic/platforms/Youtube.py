@@ -28,8 +28,17 @@ from pathlib import Path
 
 from ZeMusic.pyrogram_compatibility.enums import MessageEntityType
 from ZeMusic.pyrogram_compatibility.types import Message
-from youtubesearchpython.__future__ import VideosSearch
-from yt_dlp import YoutubeDL
+try:
+    from youtubesearchpython.__future__ import VideosSearch
+except ImportError:
+    try:
+        from youtube_search import YoutubeSearch as VideosSearch
+    except ImportError:
+        VideosSearch = None
+try:
+    from yt_dlp import YoutubeDL
+except ImportError:
+    YoutubeDL = None
 
 import config
 from ZeMusic import app

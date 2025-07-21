@@ -25,7 +25,7 @@ class ChatSettings:
     auth_enabled: bool = False
     welcome_enabled: bool = False
     log_enabled: bool = False
-    search_enabled: bool = False
+    search_enabled: bool = True
     upvote_count: int = 3
 
 @dataclass
@@ -96,7 +96,7 @@ class DatabaseManager:
                     auth_enabled BOOLEAN DEFAULT 0,
                     welcome_enabled BOOLEAN DEFAULT 0,
                     log_enabled BOOLEAN DEFAULT 0,
-                    search_enabled BOOLEAN DEFAULT 0,
+                    search_enabled BOOLEAN DEFAULT 1,
                     upvote_count INTEGER DEFAULT 3,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -657,6 +657,9 @@ class DatabaseManager:
                     if self.cache_enabled:
                         self.cache.setdefault('temp', {})[key] = value
                     return value
+                # إذا كان البحث العام، نفعله افتراضياً
+                if key == "global_search_enabled":
+                    return True
                 return default
         
         return await asyncio.get_event_loop().run_in_executor(None, _get)
