@@ -155,6 +155,10 @@ class TDLibFilters:
         self.document = TDLibFilter("document")
         self.me = TDLibFilter("me")
         self.bot = TDLibFilter("bot")
+        self.new_chat_members = TDLibFilter("new_chat_members")
+        self.left_chat_member = TDLibFilter("left_chat_member")
+        self.service = TDLibFilter("service")
+        self.reply = TDLibFilter("reply")
     
     def regex(self, pattern):
         """محاكاة filters.regex"""

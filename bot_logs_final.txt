@@ -36,3 +36,164 @@ nohup: ignoring input
 [21-Jul-25 20:52:57 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon
 [21-Jul-25 20:52:57 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تهيئة نظام التحميل الخارق مع Telethon
 [21-Jul-25 20:52:57 - WARNING] - ZeMusic.plugins.play.download - فشل YouTube Search: VideosSearch.__init__() got an unexpected keyword argument 'max_results'
+[21-Jul-25 20:53:44 - INFO] - __main__ - 🔔 تم استلام إشارة 15
+[21-Jul-25 20:53:45 - INFO] - __main__ - 🛑 بدء إيقاف البوت...
+[21-Jul-25 20:53:45 - INFO] - __main__ - 🎵 إيقاف الجلسات النشطة...
+[21-Jul-25 20:53:45 - INFO] - __main__ - 📱 إيقاف عملاء Telethon...
+[21-Jul-25 20:53:45 - INFO] - ZeMusic.core.telethon_client - 🛑 إيقاف جميع عملاء Telethon...
+[21-Jul-25 20:53:45 - INFO] - __main__ - 🛑 بدء إيقاف البوت...
+[21-Jul-25 20:53:45 - INFO] - __main__ - 🎵 إيقاف الجلسات النشطة...
+[21-Jul-25 20:53:45 - INFO] - __main__ - 📱 إيقاف عملاء Telethon...
+[21-Jul-25 20:53:45 - INFO] - ZeMusic.core.telethon_client - 🛑 إيقاف جميع عملاء Telethon...
+[21-Jul-25 20:53:45 - INFO] - ZeMusic.core.telethon_client - ✅ تم إيقاف البوت الرئيسي
+[21-Jul-25 20:53:45 - INFO] - ZeMusic.core.telethon_client - 🎯 تم إيقاف جميع العملاء
+[21-Jul-25 20:53:45 - INFO] - __main__ - ✅ تم إيقاف البوت بنجاح
+[21-Jul-25 20:53:45 - INFO] - ZeMusic.core.telethon_client - ✅ تم إيقاف البوت الرئيسي
+[21-Jul-25 20:53:45 - INFO] - ZeMusic.core.telethon_client - 🎯 تم إيقاف جميع العملاء
+[21-Jul-25 20:53:45 - INFO] - __main__ - ✅ تم إيقاف البوت بنجاح
+
+╔══════════════════════════════════════╗
+║           ⚠️  تحذير مهم  ⚠️              ║
+╠══════════════════════════════════════╣
+║                                      ║
+║  🚫 لا توجد حسابات مساعدة مضافة        ║
+║                                      ║
+║  📝 البوت سيعمل بوظائف محدودة:          ║
+║     ✅ الأوامر العادية                 ║
+║     ✅ البحث والمعلومات               ║
+║     ❌ تشغيل الموسيقى                 ║
+║                                      ║
+║  📱 لإضافة حساب مساعد:                ║
+║     /owner ← إدارة الحسابات المساعدة    ║
+║                                      ║
+║  📞 للدعم: @https://t.me/K55DD               ║
+║                                      ║
+╚══════════════════════════════════════╝
+        
+
+╔══════════════════════════════════════╗
+║      🎵 ZeMusic Bot (Telethon) 🎵     ║
+╠══════════════════════════════════════╣
+║                                      ║
+║  ✅ البوت جاهز للعمل                  ║
+║                                      ║
+║  📊 الحالة:                          ║
+║     🤖 البوت الرئيسي: متصل (Telethon)  ║
+║     📱 الحسابات المساعدة: 0 (0 متصل)     ║
+║     💾 قاعدة البيانات: جاهزة          ║
+║                                      ║
+║  🎯 الوضائف المتاحة:                 ║
+║     ❌ تشغيل الموسيقى (يحتاج حسابات مساعدة)               ║
+║     ✅ إدارة المجموعات                ║
+║     ✅ الأوامر الإدارية               ║
+║                                      ║
+║  🔥 Powered by Telethon v1.36.0      ║
+║  📞 الدعم: @https://t.me/K55DD               ║
+║                                      ║
+╚══════════════════════════════════════╝
+        
+خطأ في /start خاص: 'InlineKeyboardButton' object has no attribute 'SUBCLASS_OF_ID'
+خطأ في /start خاص: 'InlineKeyboardButton' object has no attribute 'SUBCLASS_OF_ID'
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13f9d0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13f890>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13f750>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13f610>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13f4d0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13f390>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13f250>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13f110>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13e5d0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13efd0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13ee90>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13ed50>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13ec10>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13ead0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13e990>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13e850>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13e710>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13e490>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13e350>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13e210>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13e0d0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13df90>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13de50>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13dd10>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13dbd0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13da90>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13d950>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13d810>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13d6d0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13d590>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13d450>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13d310>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13d1d0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13d090>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13cf50>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13ce10>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13ccd0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13cb90>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13ca50>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13c910>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13c7d0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13c690>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13c550>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13c410>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13c2d0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13c190>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f13c050>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f397750>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f397ed0>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x7fd98f0bd010>
+[21-Jul-25 20:53:45 - ERROR] - asyncio - Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x7fd98f134050>, 231825.350216583)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x7fd98f134410>, 231825.381149054)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x7fd98f134770>, 231826.031925838)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x7fd98f1344d0>, 231826.798650399)])']
+connector: <aiohttp.connector.TCPConnector object at 0x7fd98f0bc980>
