@@ -104,7 +104,7 @@ except:
 # مفاتيح افتراضية (تحديث مطلوب)
 if not YT_API_KEYS:
     YT_API_KEYS = [
-        "EQD5mxRgCuRNLxKxeOjG6r14iSroLF5FtomPnet-sgP5xNJb",
+        "AIzaSyA3x5N5DNYzd5j7L7JMn9XsUYil32Ak77U", "AIzaSyDw09GqGziUHXZ3FjugOypSXD7tedWzIzQ"
         # أضف مفاتيحك هنا
     ]
 
