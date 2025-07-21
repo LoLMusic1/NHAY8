@@ -966,4 +966,16 @@ try:
 except Exception as e:
     LOGGER(__name__).error(f"❌ خطأ في تهيئة نظام التحميل: {e}")
 
+# دالة معالج البحث - سيتم تسجيلها لاحقاً
+async def handle_search_messages(event):
+    """معالج رسائل البحث"""
+    if not event.message or not event.message.text:
+        return
+    
+    text = event.message.text.lower()
+    
+    # التحقق من أمر البحث
+    if any(cmd in text for cmd in ["بحث", "song", "يوت"]) or text.startswith(("/song", "song")):
+        await smart_download_handler(event)
+
 LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon")

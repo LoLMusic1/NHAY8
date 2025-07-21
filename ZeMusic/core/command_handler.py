@@ -254,18 +254,67 @@ class TelethonCommandHandler:
     async def handle_start(self, update):
         """معالج أمر /start"""
         try:
-            # تحويل المعالجة للملف المناسب
-            from ZeMusic.plugins.bot.start import start_pm
-            # تحويل تحديث Telethon إلى كائن Message متوافق
-            from ZeMusic.pyrogram_compatibility import Message
-            message = Message(update)
-            from ZeMusic.utils.database import get_lang
+            # استخدام معالج مباشر بدلاً من start_pm
+            from ZeMusic.utils.inline.start import private_panel
+            from ZeMusic.pyrogram_compatibility import InlineKeyboardMarkup
+            from ZeMusic.utils.database import get_lang, add_served_user
             from strings import get_string
-            language = await get_lang(message.chat.id)
+            import config
+            
+            # إضافة المستخدم
+            await add_served_user(update.sender_id)
+            
+            # الحصول على اللغة
+            language = await get_lang(update.sender_id)
             _ = get_string(language)
-            await start_pm(self.bot_client, message, _)
+            
+            # إنشاء الأزرار
+            buttons_data = private_panel(_)
+            
+            # تحويل إلى أزرار Telethon
+            from telethon import Button
+            buttons = []
+            for row in buttons_data:
+                button_row = []
+                for btn in row:
+                    if hasattr(btn, 'url') and btn.url:
+                        button_row.append(Button.url(btn.text, btn.url))
+                    elif hasattr(btn, 'user_id') and btn.user_id:
+                        button_row.append(Button.mention(btn.text, btn.user_id))
+                    else:
+                        button_row.append(Button.inline(btn.text, data=btn.callback_data))
+                buttons.append(button_row)
+            
+            # إرسال الرسالة
+            try:
+                from ZeMusic import app
+                username = getattr(app, 'username', 'ZeMusicBot')
+                user_mention = f"[{update.sender.first_name}](tg://user?id={update.sender_id})"
+                
+                caption = _["start_2"].format(user_mention, f"@{username}")
+                
+                await update.reply(
+                    caption,
+                    file=config.START_IMG_URL,
+                    buttons=buttons
+                )
+                
+            except Exception as e:
+                # في حالة فشل إرسال الصورة، نرسل نص فقط
+                await update.reply(
+                    f"🎵 **مرحباً بك في ZeMusic Bot!**\n\n"
+                    f"👋 أهلاً {update.sender.first_name}\n\n"
+                    f"🎶 بوت تشغيل الموسيقى في المكالمات الصوتية\n\n"
+                    f"💡 استخدم /help لعرض الأوامر",
+                    buttons=buttons
+                )
+                
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج /start: {e}")
+            try:
+                await update.reply("❌ حدث خطأ في معالجة الأمر")
+            except:
+                pass
     
     async def handle_help(self, update):
         """معالج أمر /help"""

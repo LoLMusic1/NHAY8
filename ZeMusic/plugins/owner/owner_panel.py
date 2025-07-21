@@ -1,6 +1,7 @@
 import asyncio
 import json
 from typing import Dict, List
+from telethon import events
 
 import config
 from ZeMusic.logging import LOGGER
@@ -455,3 +456,57 @@ class OwnerPanel:
 
 # إنشاء مثيل عام للوحة التحكم
 owner_panel = OwnerPanel()
+
+# معالجات callback للأزرار - سيتم تسجيلها لاحقاً
+async def handle_owner_callbacks(event):
+    """معالج callbacks أزرار لوحة المطور"""
+    try:
+        data = event.data.decode('utf-8')
+        user_id = event.sender_id
+        
+        # التحقق من الصلاحيات
+        if user_id != config.OWNER_ID:
+            await event.answer("❌ هذا الأمر مخصص لمالك البوت فقط", alert=True)
+            return
+        
+        if data == "owner_assistants":
+            result = await owner_panel.show_assistants_panel(user_id)
+        elif data == "owner_stats":
+            result = await owner_panel.show_stats_panel(user_id)
+        elif data == "owner_settings":
+            result = await owner_panel.show_settings_panel(user_id)
+        elif data == "owner_main":
+            result = await owner_panel.show_main_panel(user_id)
+        elif data.startswith("add_assistant"):
+            result = await owner_panel.handle_add_assistant(user_id)
+        elif data.startswith("remove_assistant_"):
+            assistant_id = data.replace("remove_assistant_", "")
+            result = await owner_panel.handle_remove_assistant(user_id, assistant_id)
+        else:
+            await event.answer("⚠️ خيار غير معروف")
+            return
+        
+        if result and result.get('success'):
+            keyboard_data = result.get('keyboard')
+            if keyboard_data:
+                # تحويل إلى أزرار Telethon
+                from telethon import Button
+                buttons = []
+                for row in keyboard_data:
+                    button_row = []
+                    for btn in row:
+                        button_row.append(Button.inline(btn['text'], data=btn['callback_data']))
+                    buttons.append(button_row)
+                
+                await event.edit(result['message'], buttons=buttons)
+            else:
+                await event.edit(result['message'])
+        else:
+            await event.answer("❌ حدث خطأ في المعالجة")
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"خطأ في معالج callbacks: {e}")
+        try:
+            await event.answer("❌ حدث خطأ في معالجة الطلب", alert=True)
+        except:
+            pass
