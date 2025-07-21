@@ -764,23 +764,26 @@ async def smart_download_handler(event):
                     from youtubesearchpython import VideosSearch
                     search = VideosSearch(query, limit=1)
                     search_results = search.result()
-                except ImportError:
+                except Exception as e:
                     # استخدام youtube_search البديل
-                    from youtube_search import YoutubeSearch
-                    search = YoutubeSearch(query, max_results=1)
-                    results = search.to_dict()
-                    if results:
-                        video = results[0]
-                        search_results = {
-                            'result': [{
-                                'title': video.get('title', ''),
-                                'channel': {'name': video.get('channel', '')},
-                                'duration': video.get('duration', ''),
-                                'viewCount': {'short': video.get('views', '')},
-                                'link': f"https://youtube.com{video.get('url_suffix', '')}"
-                            }]
-                        }
-                    else:
+                    try:
+                        from youtube_search import YoutubeSearch
+                        search = YoutubeSearch(query, max_results=1)
+                        results = search.to_dict()
+                        if results:
+                            video = results[0]
+                            search_results = {
+                                'result': [{
+                                    'title': video.get('title', ''),
+                                    'channel': {'name': video.get('channel', '')},
+                                    'duration': video.get('duration', ''),
+                                    'viewCount': {'short': video.get('views', '')},
+                                    'link': f"https://youtube.com{video.get('url_suffix', '')}"
+                                }]
+                            }
+                        else:
+                            search_results = None
+                    except Exception:
                         search_results = None
                 
                 if search_results and search_results.get('result'):
@@ -1032,9 +1035,21 @@ async def handle_search_messages(event):
     # تجنب معالجة الرسائل القديمة
     if hasattr(event.message, 'date'):
         import time
-        from datetime import datetime
-        if (datetime.now() - event.message.date).total_seconds() > 30:
-            return
+        from datetime import datetime, timezone
+        try:
+            # التأكد من التوقيت مع timezone
+            now = datetime.now(timezone.utc)
+            message_date = event.message.date
+            if hasattr(message_date, 'replace'):
+                # إذا كان naive datetime، إضافة UTC
+                if message_date.tzinfo is None:
+                    message_date = message_date.replace(tzinfo=timezone.utc)
+            
+            if (now - message_date).total_seconds() > 30:
+                return
+        except Exception:
+            # تجاهل فحص التوقيت في حالة الخطأ
+            pass
     
     text = event.message.text.lower().strip()
     

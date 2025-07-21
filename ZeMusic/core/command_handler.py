@@ -117,9 +117,13 @@ class TelethonCommandHandler:
         """معالج الاستعلامات المضمنة من Telethon"""
         try:
             data = event.data.decode('utf-8') if isinstance(event.data, bytes) else str(event.data)
-            chat_id = event.chat_id
-            sender_id = event.sender_id
-            message_id = event.message.id if event.message else None
+            chat_id = getattr(event, 'chat_id', None)
+            sender_id = getattr(event, 'sender_id', None)
+            message_id = None
+            
+            # التحقق من وجود message بشكل آمن
+            if hasattr(event, 'message') and event.message:
+                message_id = getattr(event.message, 'id', None)
             
             # تحويل للتنسيق المتوافق
             mock_callback = self._create_mock_callback_from_telethon(event)
@@ -154,13 +158,22 @@ class TelethonCommandHandler:
         
         class MockMessage:
             def __init__(self, event):
-                self.text = event.message.text or ""
-                self.message_id = event.message.id
-                self.chat = MockChat(event.chat_id)
-                self.from_user = MockUser(event.sender_id)
-                self.date = event.message.date
+                # التحقق الآمن من الخصائص
+                if hasattr(event, 'message') and event.message:
+                    self.text = getattr(event.message, 'text', '') or ""
+                    self.message_id = getattr(event.message, 'id', 0)
+                    self.date = getattr(event.message, 'date', None)
+                    reply_to_msg_id = getattr(event.message, 'reply_to_msg_id', None)
+                else:
+                    self.text = ""
+                    self.message_id = 0
+                    self.date = None
+                    reply_to_msg_id = None
+                
+                self.chat = MockChat(getattr(event, 'chat_id', 0))
+                self.from_user = MockUser(getattr(event, 'sender_id', 0))
                 self.reply_to_message = None
-                if event.message.reply_to_msg_id:
+                if reply_to_msg_id:
                     self.reply_to_message = MockMessage(event)
         
         class MockChat:
@@ -181,15 +194,21 @@ class TelethonCommandHandler:
         class MockCallback:
             def __init__(self, event):
                 self.data = event.data.decode('utf-8') if isinstance(event.data, bytes) else str(event.data)
-                self.message = MockMessage(event) if event.message else None
-                self.from_user = MockUser(event.sender_id)
-                self.id = str(event.query_id) if hasattr(event, 'query_id') else "0"
+                self.message = MockMessage(event)
+                self.from_user = MockUser(getattr(event, 'sender_id', 0))
+                self.id = str(getattr(event, 'query_id', 0))
         
         class MockMessage:
             def __init__(self, event):
-                self.message_id = event.message.id if event.message else 0
-                self.chat = MockChat(event.chat_id)
-                self.text = event.message.text if event.message else ""
+                # التحقق الآمن من الخصائص
+                if hasattr(event, 'message') and event.message:
+                    self.message_id = getattr(event.message, 'id', 0)
+                    self.text = getattr(event.message, 'text', '')
+                else:
+                    self.message_id = 0
+                    self.text = ''
+                
+                self.chat = MockChat(getattr(event, 'chat_id', 0))
         
         class MockChat:
             def __init__(self, chat_id):
