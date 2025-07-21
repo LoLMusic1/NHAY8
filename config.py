@@ -181,7 +181,7 @@ SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/K55DD")
 # إعدادات المشروع العامة
 # ============================================
 DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 480))
-LOGGER_ID = int(getenv("LOGGER_ID", "-1001993781277"))
+LOGGER_ID = int(getenv("LOGGER_ID", "-1002766950323"))
 LANGUAGE = "ar"
 LANGS = "ar"
 
