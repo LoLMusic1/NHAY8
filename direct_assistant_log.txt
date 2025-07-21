@@ -39,3 +39,4 @@
 [21-Jul-25 23:40:20 - INFO] - ZeMusic.core.command_handler - 🔍 فحص رسالة من المالك: طول=353
 [21-Jul-25 23:40:20 - INFO] - ZeMusic.core.command_handler - ✅ تم اكتشاف session string من المالك
 [21-Jul-25 23:40:20 - INFO] - ZeMusic.core.command_handler - 🔄 بدء معالجة session string...
+[21-Jul-25 23:40:22 - INFO] - ZeMusic.core.command_handler - 📊 نتيجة المعالجة: {'success': False, 'message': '❌ **session string غير صالح أو منتهي الصلاحية**\n\n🔄 احصل على session string جديد وأرسله'}
