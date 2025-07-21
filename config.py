@@ -17,7 +17,7 @@ API_HASH = getenv("API_HASH", "986cb4ba434870a62fe96da3b5f6d411")
 
 # Get your token from @BotFather on Telegram
 BOT_TOKEN = getenv("BOT_TOKEN", "7727065450:AAH9Dcw3j1qsBF06-D2vITGSOuC9E8jtp-s")
-BOT_NAME = getenv("BOT_NAME", "ZeMusic Bot")
+BOT_NAME = getenv("BOT_NAME", "سعود")
 BOT_USERNAME = getenv("BOT_USERNAME", "")
 BOT_ID = getenv("BOT_ID", "0")  # معرف البوت الرقمي
 
@@ -67,7 +67,7 @@ STRING5 = getenv("STRING_SESSION5", None)
 # ============================================
 
 # قناة التخزين الذكي (للتخزين في قناة تيليجرام)
-CACHE_CHANNEL_USERNAME = getenv("CACHE_CHANNEL_USERNAME", None)
+CACHE_CHANNEL_USERNAME = getenv("CACHE_CHANNEL_USERNAME", "mccckc")
 
 # تحويل يوزر القناة إلى الشكل المناسب
 CACHE_CHANNEL_ID = None
@@ -197,7 +197,7 @@ HEROKU_API_KEY = getenv("HEROKU_API_KEY")
 # ============================================
 # إعدادات Git
 # ============================================
-UPSTREAM_REPO = getenv("UPSTREAM_REPO", "https://github.com/saud552/NHAY7")
+UPSTREAM_REPO = getenv("UPSTREAM_REPO", "https://github.com/LoLMusic1/NHAY8")
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "master")
 GIT_TOKEN = getenv("GIT_TOKEN", None)
 
