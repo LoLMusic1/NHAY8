@@ -34,3 +34,10 @@ nohup: ignoring input
 RuntimeWarning: Enable tracemalloc to get the object allocation traceback
 [21-Jul-25 20:48:32 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
 [21-Jul-25 20:49:06 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: bad operand type for unary ~: 'list'
+[21-Jul-25 20:49:09 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: bad operand type for unary ~: 'list'
+[21-Jul-25 20:49:17 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon
+[21-Jul-25 20:49:17 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تهيئة نظام التحميل الخارق مع Telethon
+[21-Jul-25 20:49:17 - WARNING] - ZeMusic.plugins.play.download - فشل YouTube Search: VideosSearch.__init__() got an unexpected keyword argument 'max_results'
+[21-Jul-25 20:49:19 - WARNING] - ZeMusic.plugins.play.download - فشل Invidious: 200, message='Attempt to decode JSON with unexpected mimetype: text/plain', url='https://invidious.materialio.us/api/v1/search?q=%D8%B9%D9%84%D9%8A%D9%83%D9%8A+%D8%B9%D9%8A%D9%88%D9%86&type=video'
+[21-Jul-25 20:49:26 - ERROR] - ZeMusic.plugins.owner.owner_panel - خطأ في معالج /owner: 'MockUpdate' object has no attribute 'sender_id'
+[21-Jul-25 20:49:26 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /owner: 'MockUpdate' object has no attribute 'reply'
