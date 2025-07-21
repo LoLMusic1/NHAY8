@@ -21,7 +21,11 @@ class OwnerPanel:
             result = await self.show_main_panel(user_id)
             
             if result['success']:
-                await event.reply(result['message'], buttons=result.get('keyboard'))
+                keyboard = result.get('keyboard')
+                if keyboard:
+                    await event.reply(result['message'], buttons=keyboard)
+                else:
+                    await event.reply(result['message'])
             else:
                 await event.reply(result['message'])
                 
