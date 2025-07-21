@@ -28,6 +28,35 @@ except Exception as e:
 
 LOGGER(__name__).info("🎵 ZeMusic جاهز للانطلاق مع Telethon!")
 
+# تهيئة مدير cookies
+try:
+    import asyncio
+    from ZeMusic.core.cookies_manager import cookies_manager
+    
+    # تهيئة مدير cookies في background
+    async def init_cookies():
+        try:
+            await cookies_manager.initialize()
+            LOGGER(__name__).info("✅ تم تهيئة مدير Cookies بنجاح")
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ تعذر تهيئة مدير Cookies: {e}")
+    
+    # تشغيل التهيئة
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # إذا كان هناك loop يعمل، استخدم task
+            asyncio.create_task(init_cookies())
+        else:
+            # إذا لم يكن هناك loop، ستعمل لاحقاً
+            pass
+    except:
+        # سيتم التهيئة عند أول استخدام
+        pass
+        
+except Exception as e:
+    LOGGER(__name__).warning(f"⚠️ تعذر تحميل مدير Cookies: {e}")
+
 # تصدير app من طبقة التوافق
 try:
     from ZeMusic.pyrogram_compatibility import app

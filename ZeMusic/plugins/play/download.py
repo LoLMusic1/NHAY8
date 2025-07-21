@@ -446,11 +446,17 @@ class HyperSpeedDownloader:
         
         url = f"https://youtu.be/{video_id}"
         
-        # محاولة مع الكوكيز أولاً
-        if COOKIES_CYCLE:
-            for _ in range(len(COOKIES_FILES)):
+        # محاولة مع مدير الكوكيز الذكي
+        try:
+            from ZeMusic.core.cookies_manager import cookies_manager, report_cookie_success, report_cookie_failure
+            
+            # محاولة مع الكوكيز أولاً
+            for attempt in range(3):  # محاولة 3 كوكيز مختلفة
                 try:
-                    cookies_file = next(COOKIES_CYCLE)
+                    cookies_file = await cookies_manager.get_next_cookie()
+                    if not cookies_file:
+                        break
+                        
                     opts = get_ytdlp_opts(cookies_file)
                     
                     loop = asyncio.get_running_loop()
@@ -462,18 +468,54 @@ class HyperSpeedDownloader:
                     if info:
                         audio_path = f"downloads/{video_id}.mp3"
                         if os.path.exists(audio_path):
+                            # تقرير نجاح
+                            await report_cookie_success(cookies_file)
+                            
                             return {
                                 "audio_path": audio_path,
                                 "title": info.get("title", video_info.get("title", ""))[:60],
                                 "artist": info.get("uploader", video_info.get("artist", "Unknown")),
                                 "duration": int(info.get("duration", 0)),
                                 "file_size": os.path.getsize(audio_path),
-                                "source": f"ytdlp_cookies_{cookies_file}"
+                                "source": f"ytdlp_cookies_{Path(cookies_file).name}"
                             }
                 
                 except Exception as e:
+                    # تقرير فشل
+                    if 'cookies_file' in locals() and cookies_file:
+                        await report_cookie_failure(cookies_file, str(e))
                     LOGGER(__name__).warning(f"فشل yt-dlp مع كوكيز {cookies_file}: {e}")
                     continue
+                    
+        except ImportError:
+            # العودة للنظام القديم إذا لم يكن المدير متاحاً
+            if COOKIES_CYCLE:
+                for _ in range(len(COOKIES_FILES)):
+                    try:
+                        cookies_file = next(COOKIES_CYCLE)
+                        opts = get_ytdlp_opts(cookies_file)
+                        
+                        loop = asyncio.get_running_loop()
+                        info = await loop.run_in_executor(
+                            self.executor_pool,
+                            lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)
+                        )
+                        
+                        if info:
+                            audio_path = f"downloads/{video_id}.mp3"
+                            if os.path.exists(audio_path):
+                                return {
+                                    "audio_path": audio_path,
+                                    "title": info.get("title", video_info.get("title", ""))[:60],
+                                    "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                                    "duration": int(info.get("duration", 0)),
+                                    "file_size": os.path.getsize(audio_path),
+                                    "source": f"ytdlp_cookies_{cookies_file}"
+                                }
+                    
+                    except Exception as e:
+                        LOGGER(__name__).warning(f"فشل yt-dlp مع كوكيز {cookies_file}: {e}")
+                        continue
         
         # محاولة بدون كوكيز
         try:
