@@ -413,14 +413,18 @@ class OwnerPanel:
             if user_id in self.pending_sessions:
                 del self.pending_sessions[user_id]
             
-            # تنظيف session string
-            session_string = session_string.strip().replace('\n', '').replace('\r', '').replace(' ', '')
+            # تنظيف session string بشكل شامل
+            import string
+            allowed_chars = string.ascii_letters + string.digits + '+/=-_'
+            session_string = session_string.strip().replace('\n', '').replace('\r', '').replace(' ', '').replace('\t', '')
+            # إزالة الأحرف غير المسموحة
+            session_string = ''.join(c for c in session_string if c in allowed_chars)
             
             # التحقق الأساسي من صيغة session string
             if not self._validate_session_string(session_string):
                 return {
                     'success': False,
-                    'message': f"❌ **صيغة session string غير صحيحة**\n\n📏 **الطول الحالي:** {len(session_string)} حرف\n💡 **المطلوب:** أكثر من 100 حرف من base64\n\n🔄 تأكد من نسخ الكود بشكل كامل وصحيح"
+                    'message': f"❌ **صيغة session string غير صحيحة**\n\n📏 **الطول الحالي:** {len(session_string)} حرف\n💡 **المطلوب:** أكثر من 100 حرف صالح\n\n🔧 **المشكلة:** قد يحتوي على أحرف غير مدعومة\n\n🔄 **الحل:**\n• انسخ session string كاملاً\n• تأكد من عدم وجود مسافات إضافية\n• استخدم session string من مصدر موثوق"
                 }
             
             # محاولة إنشاء واختبار الاتصال
@@ -435,17 +439,40 @@ class OwnerPanel:
             try:
                 # إنشاء عميل جديد باستخدام StringSession مباشرة
                 from telethon.sessions import StringSession
-                test_client = TelegramClient(StringSession(session_string), config.API_ID, config.API_HASH)
                 
-                # اختبار الاتصال
-                await test_client.connect()
+                # تجربة عدة طرق للاتصال
+                test_client = None
+                connection_success = False
+                
+                # المحاولة 1: الطريقة العادية
+                try:
+                    test_client = TelegramClient(StringSession(session_string), config.API_ID, config.API_HASH)
+                    await test_client.connect()
+                    connection_success = True
+                except Exception as e1:
+                    # المحاولة 2: مع إعدادات مختلفة
+                    try:
+                        if test_client:
+                            await test_client.disconnect()
+                        test_client = TelegramClient(StringSession(session_string), config.API_ID, config.API_HASH)
+                        test_client.session.timeout = 30
+                        await test_client.connect()
+                        connection_success = True
+                    except Exception as e2:
+                        raise e1  # استخدم الخطأ الأول
+                
+                if not connection_success or not test_client:
+                    return {
+                        'success': False,
+                        'message': "❌ **فشل في الاتصال**\n\n🔧 تحقق من اتصال الإنترنت وأعد المحاولة"
+                    }
                 
                 # التحقق من التفويض
                 if not await test_client.is_user_authorized():
                     await test_client.disconnect()
                     return {
                         'success': False,
-                        'message': "❌ **session string غير صالح أو منتهي الصلاحية**\n\n🔄 احصل على session string جديد وأرسله"
+                        'message': "❌ **session string غير صالح أو منتهي الصلاحية**\n\n🔄 **الحل:**\n• احصل على session string جديد\n• تأكد من عدم تسجيل الخروج من الحساب\n• استخدم نفس API_ID و API_HASH"
                     }
                 
                 # الحصول على معلومات الحساب
@@ -527,28 +554,24 @@ class OwnerPanel:
     def _validate_session_string(self, session_string: str) -> bool:
         """التحقق من صحة session string"""
         try:
-            # إزالة المسافات والسطور الجديدة
-            session_string = session_string.strip()
+            # إزالة المسافات والسطور الجديدة والأحرف الخاصة
+            session_string = session_string.strip().replace('\n', '').replace('\r', '').replace(' ', '').replace('\t', '')
             
             # التحقق من الطول الأدنى
             if len(session_string) < 100:
                 return False
             
-            # التحقق من أنه يحتوي على أحرف base64 صالحة
-            import base64
+            # التحقق البسيط: يجب أن يحتوي على أحرف وأرقام بشكل أساسي
+            # تساهل أكثر مع الأحرف المسموحة
             import string
-            valid_chars = string.ascii_letters + string.digits + '+/='
-            if not all(c in valid_chars for c in session_string):
-                return False
+            allowed_chars = string.ascii_letters + string.digits + '+/=-_'
+            clean_session = ''.join(c for c in session_string if c in allowed_chars)
             
-            # محاولة فك التشفير للتأكد من صحة التنسيق
-            try:
-                # تجربة StringSession مع الـ string
-                from telethon.sessions import StringSession
-                StringSession(session_string)
+            # إذا كان معظم الـ string صالح، قبله
+            if len(clean_session) >= len(session_string) * 0.8:  # 80% من الأحرف صالحة
                 return True
-            except:
-                return False
+            
+            return False
             
         except Exception:
             return False
