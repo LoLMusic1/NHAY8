@@ -822,13 +822,87 @@ async def smart_download_handler(event):
             await status_msg.edit("❌ **المكتبات المطلوبة غير متوفرة**\n\n🔧 **يحتاج تثبيت:** yt-dlp, youtube-search")
             return
         
-        # التحميل بالنظام الخارق
+        # المحاولة الأولى: التحميل المباشر
+        await status_msg.edit("🔍 **جاري البحث عن الأغنية...**")
+        
+        # بحث بسيط أولاً لاستخراج video_id
+        video_info = None
+        try:
+            from youtubesearchpython import VideosSearch
+            search = VideosSearch(query, limit=1)
+            search_results = search.result()
+            if search_results and search_results.get('result'):
+                video_info = search_results['result'][0]
+        except Exception:
+            try:
+                from youtube_search import YoutubeSearch
+                search = YoutubeSearch(query, max_results=1)
+                results = search.to_dict()
+                if results:
+                    video = results[0]
+                    video_info = {
+                        'title': video.get('title', ''),
+                        'channel': {'name': video.get('channel', '')},
+                        'duration': video.get('duration', ''),
+                        'viewCount': {'short': video.get('views', '')},
+                        'link': f"https://youtube.com{video.get('url_suffix', '')}"
+                    }
+            except Exception:
+                video_info = None
+        
+        # محاولة التحميل المباشر إذا تم العثور على الفيديو
+        result = None
+        if video_info:
+            video_url = video_info.get('link', '')
+            video_id = ""
+            if "watch?v=" in video_url:
+                video_id = video_url.split("watch?v=")[1].split("&")[0]
+            elif "youtu.be/" in video_url:
+                video_id = video_url.split("youtu.be/")[1].split("?")[0]
+            
+            if video_id:
+                await status_msg.edit("🔄 **جاري تحميل الملف الصوتي...**")
+                
+                download_result = await downloader.direct_ytdlp_download(video_id, video_info.get('title', 'Unknown'))
+                
+                if download_result and download_result.get('success'):
+                    # إرسال الملف الصوتي
+                    audio_file = download_result.get('file_path')
+                    if audio_file and Path(audio_file).exists():
+                        await status_msg.edit("📤 **جاري إرسال الملف...**")
+                        
+                        caption = f"""🎵 **{download_result.get('title', 'Unknown')[:60]}**
+🎤 {download_result.get('uploader', 'Unknown')[:40]}
+⏱️ {video_info.get('duration', 'Unknown')}
+
+📥 تم التحميل بنجاح"""
+                        
+                        await event.respond(
+                            caption,
+                            file=audio_file,
+                            attributes=[
+                                DocumentAttributeAudio(
+                                    duration=download_result.get('duration', 0),
+                                    title=download_result.get('title', 'Unknown')[:60],
+                                    performer=download_result.get('uploader', 'Unknown')[:40]
+                                )
+                            ]
+                        )
+                        await status_msg.delete()
+                        
+                        # حذف الملف المؤقت
+                        try:
+                            Path(audio_file).unlink()
+                        except:
+                            pass
+                        return
+        
+        # إذا فشل التحميل المباشر، جرب النظام الخارق
         result = await downloader.hyper_download(query)
         
         if not result:
-            # معالج بديل بسيط - البحث فقط
+            # معالج بديل بسيط - عرض المعلومات فقط
             try:
-                await status_msg.edit("🔍 **جاري البحث عن الأغنية...**")
                 
                 # بحث بسيط باستخدام youtube_search فقط
                 try:
