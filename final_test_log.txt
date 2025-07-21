@@ -34,3 +34,16 @@
 [21-Jul-25 22:48:45 - INFO] - __main__ - 👨‍💼 تم تحميل 0 مدير
 [21-Jul-25 22:48:45 - INFO] - __main__ - ⏰ تم بدء المهام الدورية
 [21-Jul-25 22:48:45 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
+[21-Jul-25 22:49:41 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: 'KeyboardButtonCallback' object has no attribute 'callback_data'
+[21-Jul-25 22:49:50 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:49:52 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:51:15 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:51:17 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:51:18 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:51:22 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:51:41 - WARNING] - ZeMusic.core.cookies_manager - ⚠️ لا توجد ملفات cookies متاحة
+ERROR: [youtube] cTXLxXj88kw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+[21-Jul-25 22:51:43 - ERROR] - ZeMusic.plugins.play.download - خطأ في البحث البديل: post() got an unexpected keyword argument 'proxies'
+[21-Jul-25 22:51:44 - WARNING] - ZeMusic.core.cookies_manager - ⚠️ لا توجد ملفات cookies متاحة
+ERROR: [youtube] cTXLxXj88kw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+[21-Jul-25 22:51:46 - ERROR] - ZeMusic.plugins.play.download - خطأ في البحث البديل: post() got an unexpected keyword argument 'proxies'
