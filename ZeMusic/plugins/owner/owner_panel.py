@@ -185,26 +185,8 @@ class OwnerPanel:
         session = self.pending_sessions[user_id]
         
         if session['step'] == 'waiting_session':
-            # التحقق من صيغة session string
-            if not self._validate_session_string(text):
-                return {
-                    'success': False,
-                    'message': "❌ صيغة session string غير صحيحة\nأرسل session string صحيح:"
-                }
-            
-            session['session_string'] = text
-            session['step'] = 'waiting_name'
-            
-            keyboard = [
-                [{'text': '❌ إلغاء', 'callback_data': 'cancel_add_assistant'}]
-            ]
-            
-            return {
-                'success': True,
-                'message': "✅ تم قبول session string\n\n📝 الآن أرسل اسم مميز للحساب المساعد:",
-                'keyboard': keyboard,
-                'waiting_input': True
-            }
+            # فحص وإضافة الحساب مباشرة
+            return await self._process_session_directly(user_id, text)
         
         elif session['step'] == 'waiting_name':
             if len(text) < 3 or len(text) > 50:
@@ -423,6 +405,116 @@ class OwnerPanel:
             'message': message,
             'keyboard': keyboard
         }
+    
+    async def _process_session_directly(self, user_id: int, session_string: str) -> Dict:
+        """فحص وإضافة session string مباشرة بدون خطوات إضافية"""
+        try:
+            # إزالة الجلسة من pending_sessions
+            if user_id in self.pending_sessions:
+                del self.pending_sessions[user_id]
+            
+            # التحقق الأساسي من صيغة session string
+            if not self._validate_session_string(session_string):
+                return {
+                    'success': False,
+                    'message': "❌ **صيغة session string غير صحيحة**\n\n💡 تأكد من نسخ الكود بشكل صحيح"
+                }
+            
+            # محاولة إنشاء واختبار الاتصال
+            import tempfile
+            import os
+            from telethon import TelegramClient
+            
+            # إنشاء ملف جلسة مؤقت
+            temp_session = tempfile.NamedTemporaryFile(delete=False, suffix='.session')
+            temp_session.close()
+            
+            try:
+                # إنشاء عميل جديد لاختبار الجلسة
+                test_client = TelegramClient(temp_session.name, config.API_ID, config.API_HASH)
+                
+                # تطبيق session string
+                test_client.session.set_dc(1, '149.154.175.50', 443)
+                test_client.session.auth_key = None
+                
+                # محاولة فك تشفير session string وتطبيقه
+                from telethon.sessions import StringSession
+                string_session = StringSession(session_string)
+                test_client.session = string_session
+                
+                # اختبار الاتصال
+                await test_client.connect()
+                
+                if not await test_client.is_user_authorized():
+                    await test_client.disconnect()
+                    return {
+                        'success': False,
+                        'message': "❌ **session string غير صالح أو منتهي الصلاحية**\n\n🔄 احصل على session string جديد وأرسله"
+                    }
+                
+                # الحصول على معلومات الحساب
+                user_info = await test_client.get_me()
+                await test_client.disconnect()
+                
+                # إنشاء اسم تلقائي للحساب
+                auto_name = f"Assistant_{user_info.id}"
+                if user_info.first_name:
+                    auto_name = f"{user_info.first_name}_{user_info.id}"
+                
+                # إضافة الحساب للنظام
+                from ZeMusic.core.telethon_client import telethon_manager
+                success = await telethon_manager.add_assistant(session_string, auto_name)
+                
+                if success:
+                    # تحديث الإحصائيات
+                    assistants = await db.get_all_assistants()
+                    connected_count = telethon_manager.get_connected_assistants_count()
+                    
+                    return {
+                        'success': True,
+                        'message': f"""✅ **تم إضافة الحساب المساعد بنجاح!**
+
+👤 **معلومات الحساب:**
+• الاسم: {user_info.first_name or 'غير محدد'}
+• المعرف: `{user_info.id}`
+• اليوزر: {'@' + user_info.username if user_info.username else 'غير متاح'}
+
+📊 **إحصائيات محدثة:**
+• إجمالي الحسابات: `{len(assistants)}`
+• متصل الآن: `{connected_count}`
+
+🎉 **الحساب جاهز للاستخدام فوراً!**""",
+                        'keyboard': [
+                            [{'text': '📱 إدارة الحسابات', 'callback_data': 'owner_assistants'}],
+                            [{'text': '🔙 العودة للوحة الرئيسية', 'callback_data': 'owner_main'}]
+                        ]
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'message': "❌ **فشل في إضافة الحساب للنظام**\n\n🔧 تحقق من سجلات النظام أو أعد المحاولة"
+                    }
+                
+            except Exception as e:
+                return {
+                    'success': False,
+                    'message': f"❌ **خطأ في التحقق من الجلسة**\n\n📝 **السبب:** {str(e)[:100]}...\n\n🔄 تأكد من صحة session string وأعد المحاولة"
+                }
+            finally:
+                # حذف الملف المؤقت
+                try:
+                    if os.path.exists(temp_session.name):
+                        os.unlink(temp_session.name)
+                    if os.path.exists(temp_session.name + '.session'):
+                        os.unlink(temp_session.name + '.session')
+                except:
+                    pass
+                    
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f"❌ **حدث خطأ عام**\n\n📝 **التفاصيل:** {str(e)[:100]}..."
+            }
     
     def _validate_session_string(self, session_string: str) -> bool:
         """التحقق من صحة session string"""
