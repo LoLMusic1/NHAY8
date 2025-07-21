@@ -78,6 +78,14 @@ class enums:
         DEFAULT = None
         MARKDOWN = "markdown"
         HTML = "html"
+    
+    class MessageEntityType:
+        TEXT_MENTION = "text_mention"
+        URL = "url"
+        TEXT_LINK = "text_link"
+        MENTION = "mention"
+        HASHTAG = "hashtag"
+        BOT_COMMAND = "bot_command"
 
 # أزرار للتوافق
 def InlineKeyboardButton(text, callback_data=None, url=None, **kwargs):
@@ -164,6 +172,7 @@ class ChatMembersFilter:
 ChatMemberStatus = enums.ChatMemberStatus
 ChatType = enums.ChatType
 ParseMode = enums.ParseMode
+MessageEntityType = enums.MessageEntityType
 
 # مرشحات للتوافق
 class filters:
