@@ -36,3 +36,72 @@
 [21-Jul-25 23:25:31 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
 [21-Jul-25 23:26:14 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج owner callback: 'OwnerPanel' object has no attribute 'handle_callback'
 [21-Jul-25 23:26:15 - WARNING] - ZeMusic.core.command_handler - Callback غير معروف: add_assistant
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies10.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies3.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies1.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies9.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: test_cookie.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies7.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies13.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies2.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies6.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies5.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies8.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies11.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies4.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 🆕 تم اكتشاف ملف cookies جديد: cookies12.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 📁 تم إضافة 14 ملف cookies جديد: cookies10.txt, cookies3.txt, cookies1.txt, cookies9.txt, test_cookie.txt, cookies7.txt, cookies13.txt, cookies2.txt, cookies6.txt, cookies5.txt, cookies8.txt, cookies11.txt, cookies4.txt, cookies12.txt
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.core.cookies_manager - 📋 تم العثور على 14 ملف cookies صالح
+[21-Jul-25 23:27:34 - INFO] - ZeMusic.plugins.play.download - 🍪 تم تهيئة cookies_manager للتحميل
+[21-Jul-25 23:27:36 - INFO] - ZeMusic.plugins.play.download - 🍪 تم الحصول على cookie: cookies/cookies10.txt
+[21-Jul-25 23:27:36 - INFO] - ZeMusic.plugins.play.download - 🍪 استخدام cookies: cookies10.txt
+[download]   0.0% of    3.24MiB at  Unknown B/s ETA Unknown
+╔══════════════════════════════════════╗
+║           ⚠️  تحذير مهم  ⚠️              ║
+╠══════════════════════════════════════╣
+║                                      ║
+║  🚫 لا توجد حسابات مساعدة مضافة        ║
+║                                      ║
+║  📝 البوت سيعمل بوظائف محدودة:          ║
+║     ✅ الأوامر العادية                 ║
+║     ✅ البحث والمعلومات               ║
+║     ❌ تشغيل الموسيقى                 ║
+║                                      ║
+║  📱 لإضافة حساب مساعد:                ║
+║     /owner ← إدارة الحسابات المساعدة    ║
+║                                      ║
+║  📞 للدعم: @https://t.me/K55DD               ║
+║                                      ║
+╚══════════════════════════════════════╝
+        
+
+╔══════════════════════════════════════╗
+║      🎵 ZeMusic Bot (Telethon) 🎵     ║
+╠══════════════════════════════════════╣
+║                                      ║
+║  ✅ البوت جاهز للعمل                  ║
+║                                      ║
+║  📊 الحالة:                          ║
+║     🤖 البوت الرئيسي: متصل (Telethon)  ║
+║     📱 الحسابات المساعدة: 0 (0 متصل)     ║
+║     💾 قاعدة البيانات: جاهزة          ║
+║                                      ║
+║  🎯 الوضائف المتاحة:                 ║
+║     ❌ تشغيل الموسيقى (يحتاج حسابات مساعدة)               ║
+║     ✅ إدارة المجموعات                ║
+║     ✅ الأوامر الإدارية               ║
+║                                      ║
+║  🔥 Powered by Telethon v1.36.0      ║
+║  📞 الدعم: @https://t.me/K55DD               ║
+║                                      ║
+╚══════════════════════════════════════╝
+        
+خطأ في معالج /start: argument of type 'CombinedFilter' is not iterable
+[download]   0.1% of    3.24MiB at    1.50MiB/s ETA 00:02  [download]   0.2% of    3.24MiB at    2.85MiB/s ETA 00:01[download]   0.5% of    3.24MiB at    5.22MiB/s ETA 00:00[download]   0.9% of    3.24MiB at    9.92MiB/s ETA 00:00[download]   1.9% of    3.24MiB at   11.67MiB/s ETA 00:00[download]   3.8% of    3.24MiB at   21.06MiB/s ETA 00:00[download]   7.7% of    3.24MiB at   22.25MiB/s ETA 00:00[download]  15.4% of    3.24MiB at   36.39MiB/s ETA 00:00[download]  30.8% of    3.24MiB at   45.87MiB/s ETA 00:00[download]  61.7% of    3.24MiB at   61.79MiB/s ETA 00:00[download] 100.0% of    3.24MiB at   74.00MiB/s ETA 00:00[download] 100% of    3.24MiB in 00:00:00 at 34.77MiB/s                                                         [21-Jul-25 23:27:40 - ERROR] - ZeMusic.plugins.play.download - خطأ في المعالج: cannot access local variable 'Path' where it is not associated with a value
+[21-Jul-25 23:27:41 - INFO] - ZeMusic.core.cookies_manager - 📋 تم العثور على 14 ملف cookies صالح
+[21-Jul-25 23:27:41 - INFO] - ZeMusic.plugins.play.download - 🍪 تم تهيئة cookies_manager للتحميل
+[21-Jul-25 23:27:43 - INFO] - ZeMusic.plugins.play.download - 🍪 تم الحصول على cookie: cookies/cookies12.txt
+[21-Jul-25 23:27:43 - INFO] - ZeMusic.plugins.play.download - 🍪 استخدام cookies: cookies12.txt
+ERROR: [youtube] cTXLxXj88kw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+[21-Jul-25 23:27:44 - ERROR] - ZeMusic.plugins.play.download - خطأ في التحميل المباشر: ERROR: [youtube] cTXLxXj88kw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+[21-Jul-25 23:27:44 - ERROR] - ZeMusic.plugins.play.download - خطأ في المعالج: 'CookiesManager' object has no attribute 'record_failure'
