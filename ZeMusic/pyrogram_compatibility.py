@@ -23,11 +23,15 @@ class Message:
             self.chat = MockChat(event.chat_id if hasattr(event, 'chat_id') else 0)
             self.from_user = MockUser(event.sender_id if hasattr(event, 'sender_id') else 0)
             self.message_id = getattr(event.message, 'id', 0)
+            self.document = getattr(event.message, 'document', None)
+            self.caption = getattr(event.message, 'message', '')
         else:
             self.text = ''
             self.chat = MockChat(0)
             self.from_user = MockUser(0)
             self.message_id = 0
+            self.document = None
+            self.caption = ''
     
     async def reply(self, text, **kwargs):
         if self.event:
@@ -279,6 +283,13 @@ class filters:
         def filter_func(event):
             return (hasattr(event, 'message') and event.message and 
                    hasattr(event.message, 'text') and event.message.text)
+        return CombinedFilter(filter_func)
+    
+    @staticmethod
+    def document():
+        def filter_func(event):
+            return (hasattr(event, 'message') and event.message and 
+                   hasattr(event.message, 'document') and event.message.document)
         return CombinedFilter(filter_func)
     
     @staticmethod
