@@ -24,6 +24,7 @@ from typing import Dict, Optional, List
 from itertools import cycle
 import aiohttp
 import aiofiles
+from telethon.tl.types import DocumentAttributeAudio
 
 # استيراد المكتبات مع معالجة الأخطاء
 try:
@@ -672,6 +673,62 @@ class HyperSpeedDownloader:
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في التحميل الخارق: {e}")
             return None
+    
+    async def direct_ytdlp_download(self, video_id: str, title: str = "Unknown") -> Optional[Dict]:
+        """تحميل مباشر باستخدام yt-dlp مع cookies"""
+        if not yt_dlp:
+            return None
+            
+        try:
+            # إنشاء مجلد مؤقت
+            temp_dir = Path("downloads/temp")
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            
+            # إعداد yt-dlp
+            from ZeMusic.core.cookies_manager import cookies_manager
+            
+            # الحصول على أفضل cookie متاح
+            best_cookie = await cookies_manager.get_best_cookie()
+            
+            ydl_opts = {
+                'format': 'bestaudio[ext=m4a]/best[ext=m4a]/bestaudio/best',
+                'outtmpl': str(temp_dir / f'{video_id}.%(ext)s'),
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
+                'writethumbnail': False,
+            }
+            
+            # إضافة cookies إذا كانت متاحة
+            if best_cookie:
+                ydl_opts['cookiefile'] = best_cookie
+                LOGGER(__name__).info(f"🍪 استخدام cookies: {Path(best_cookie).name}")
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # تحميل الفيديو
+                video_url = f"https://www.youtube.com/watch?v={video_id}"
+                info = ydl.extract_info(video_url, download=True)
+                
+                if info:
+                    # البحث عن الملف المحمل
+                    for file_path in temp_dir.glob(f"{video_id}.*"):
+                        if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4']:
+                            return {
+                                'success': True,
+                                'file_path': str(file_path),
+                                'title': info.get('title', title),
+                                'duration': info.get('duration', 0),
+                                'uploader': info.get('uploader', 'Unknown')
+                            }
+            
+            return None
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في التحميل المباشر: {e}")
+            # تحديث حالة cookie في حالة الفشل
+            if best_cookie:
+                await cookies_manager.record_failure(best_cookie)
+            return None
 
 # إنشاء مدير التحميل العالمي
 downloader = HyperSpeedDownloader()
@@ -755,9 +812,9 @@ async def smart_download_handler(event):
         result = await downloader.hyper_download(query)
         
         if not result:
-            # معالج بديل بسيط
+            # معالج بديل بسيط - البحث فقط
             try:
-                await status_msg.edit("🔄 **جاري المحاولة بطريقة أخرى...**")
+                await status_msg.edit("🔍 **جاري البحث عن الأغنية...**")
                 
                 # بحث بسيط باستخدام youtube_search فقط
                 try:
@@ -788,7 +845,58 @@ async def smart_download_handler(event):
                 
                 if search_results and search_results.get('result'):
                     video = search_results['result'][0]
+                    video_url = video.get('link', '')
                     
+                    # استخراج video_id من الرابط
+                    video_id = ""
+                    if "watch?v=" in video_url:
+                        video_id = video_url.split("watch?v=")[1].split("&")[0]
+                    elif "youtu.be/" in video_url:
+                        video_id = video_url.split("youtu.be/")[1].split("?")[0]
+                    
+                    if video_id:
+                        # محاولة التحميل المباشر
+                        await status_msg.edit("🔄 **جاري تحميل الملف الصوتي...**")
+                        
+                        try:
+                            # استخدام yt-dlp للتحميل
+                            download_result = await downloader.direct_ytdlp_download(video_id, video.get('title', 'Unknown'))
+                            
+                            if download_result and download_result.get('success'):
+                                # إرسال الملف الصوتي
+                                audio_file = download_result.get('file_path')
+                                if audio_file and Path(audio_file).exists():
+                                    await status_msg.edit("📤 **جاري إرسال الملف...**")
+                                    
+                                    caption = f"""🎵 **{video.get('title', 'Unknown')[:60]}**
+🎤 {video.get('channel', {}).get('name', 'Unknown')[:40]}
+⏱️ {video.get('duration', 'Unknown')}
+
+📥 تم التحميل بنجاح"""
+                                    
+                                    await event.respond(
+                                        caption,
+                                        file=audio_file,
+                                        attributes=[
+                                            DocumentAttributeAudio(
+                                                duration=0,
+                                                title=video.get('title', 'Unknown')[:60],
+                                                performer=video.get('channel', {}).get('name', 'Unknown')[:40]
+                                            )
+                                        ]
+                                    )
+                                    await status_msg.delete()
+                                    
+                                    # حذف الملف المؤقت
+                                    try:
+                                        Path(audio_file).unlink()
+                                    except:
+                                        pass
+                                    return
+                        except Exception as e:
+                            LOGGER(__name__).error(f"فشل التحميل المباشر: {e}")
+                    
+                    # إذا فشل التحميل، عرض المعلومات فقط
                     result_text = f"""🎵 **تم العثور على:**
 
 📝 **العنوان:** {video.get('title', 'غير معروف')}
@@ -798,8 +906,8 @@ async def smart_download_handler(event):
 
 🔗 **الرابط:** {video.get('link', '')}
 
-⚠️ **ملاحظة:** تم العثور على النتيجة ولكن التحميل معطل حالياً
-🔧 **للمطور:** يحتاج إصلاح نظام التحميل أو إضافة cookies صالحة"""
+⚠️ **ملاحظة:** التحميل غير متاح حالياً
+🔧 **للمطور:** يحتاج إضافة cookies صالحة لـ YouTube"""
                     
                     await status_msg.edit(result_text)
                     return
@@ -812,7 +920,12 @@ async def smart_download_handler(event):
                 LOGGER(__name__).error(f"خطأ في البحث البديل: {e}")
                 return
         
-        # تحديث الرسالة
+        # إذا لم يتم العثور على أي نتيجة من التحميل
+        if not result:
+            await status_msg.edit("❌ **لم يتم العثور على النتيجة أو فشل التحميل**\n\n💡 **جرب:**\n• كلمات أخرى\n• اسم الفنان\n• جزء من كلمات الأغنية")
+            return
+        
+        # تحديث الرسالة للتحميل الناجح
         source_emoji = {
             'cache': '⚡ من التخزين السريع',
             'youtube_api': '🔍 YouTube API',

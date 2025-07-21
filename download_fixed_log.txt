@@ -1,0 +1,45 @@
+[21-Jul-25 23:13:23 - INFO] - ZeMusic - 🔥 تهيئة ZeMusic مع Telethon
+[21-Jul-25 23:13:23 - INFO] - ZeMusic - 🚀 Powered by Telethon v1.36.0
+[21-Jul-25 23:13:23 - INFO] - ZeMusic - ✅ تم تحميل مدير Telethon بنجاح
+[21-Jul-25 23:13:23 - INFO] - ZeMusic.core.database - ✅ تم إنشاء قاعدة البيانات SQLite بنجاح
+[21-Jul-25 23:13:23 - INFO] - ZeMusic.core.database - ✅ نظام قاعدة البيانات Telethon جاهز للاستخدام
+[21-Jul-25 23:13:23 - INFO] - ZeMusic - ✅ تم تحميل قاعدة البيانات بنجاح
+[21-Jul-25 23:13:23 - INFO] - ZeMusic.plugins.owner.force_subscribe_handler - تم تحميل إعدادات الاشتراك الإجباري - مفعل: False
+[21-Jul-25 23:13:23 - INFO] - ZeMusic.plugins.owner.assistants_handler - تم تحميل إعدادات المغادرة التلقائية - مفعل: False
+[21-Jul-25 23:13:23 - INFO] - ZeMusic - ✅ تم تحميل معالج أوامر Telethon بنجاح
+[21-Jul-25 23:13:23 - INFO] - ZeMusic - 🎵 ZeMusic جاهز للانطلاق مع Telethon!
+[21-Jul-25 23:13:23 - INFO] - ZeMusic.core.cookies_manager - 🍪 تم تهيئة مدير Cookies الذكي
+[21-Jul-25 23:13:23 - INFO] - ZeMusic - ✅ تم تصدير app من Telethon
+[21-Jul-25 23:13:23 - INFO] - ZeMusic.platforms.Youtube - ⏸️ سيتم تشغيل التنظيف التلقائي عند بدء البوت
+[21-Jul-25 23:13:23 - INFO] - ZeMusic.platforms.Youtube - 🎵 YouTube Platform Handler - Enhanced Edition تم تحميله بنجاح!
+[21-Jul-25 23:13:23 - INFO] - ZeMusic - ✅ تم تصدير منصات الموسيقى
+[21-Jul-25 23:13:23 - INFO] - __main__ - 🚀 بدء تهيئة ZeMusic Bot مع Telethon...
+[21-Jul-25 23:13:23 - INFO] - __main__ - 📊 تهيئة قاعدة البيانات...
+[21-Jul-25 23:13:23 - INFO] - __main__ - 📊 قاعدة البيانات جاهزة - 1 مستخدم، 2 مجموعة
+[21-Jul-25 23:13:23 - INFO] - __main__ - 🤖 تشغيل البوت الرئيسي مع Telethon...
+[21-Jul-25 23:13:23 - INFO] - ZeMusic.core.telethon_client - 🤖 تهيئة البوت الرئيسي باستخدام Telethon...
+[21-Jul-25 23:13:24 - INFO] - ZeMusic.core.telethon_client - ✅ تم تسجيل دخول البوت: @Msnisbisbot (7727065450)
+[21-Jul-25 23:13:24 - INFO] - ZeMusic.core.telethon_client - 🎛️ تم إعداد معالجات أحداث Telethon مع وظائف التحميل والأوامر الأساسية
+[21-Jul-25 23:13:24 - INFO] - __main__ - ✅ تم تشغيل البوت مع Telethon بنجاح
+[21-Jul-25 23:13:24 - INFO] - ZeMusic.core.handlers_registry - ✅ تم تسجيل معالج callbacks المطور
+[21-Jul-25 23:13:24 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon
+[21-Jul-25 23:13:24 - INFO] - ZeMusic.core.handlers_registry - ✅ تم تسجيل معالج البحث
+[21-Jul-25 23:13:24 - INFO] - ZeMusic.core.handlers_registry - ✅ تم تسجيل معالج cookies callbacks
+[21-Jul-25 23:13:24 - INFO] - __main__ - ✅ تم تسجيل جميع المعالجات
+[21-Jul-25 23:13:24 - INFO] - __main__ - 📱 تحميل الحسابات المساعدة...
+[21-Jul-25 23:13:24 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تهيئة نظام التحميل الخارق مع Telethon
+[21-Jul-25 23:13:24 - INFO] - ZeMusic.core.telethon_client - 📊 تم تحميل 0 من 0 حساب مساعد
+[21-Jul-25 23:13:24 - INFO] - __main__ - 📊 حالة الحسابات المساعدة: 0 إجمالي، 0 متصل
+[21-Jul-25 23:13:24 - WARNING] - __main__ - ⚠️ لا توجد حسابات مساعدة - البوت سيعمل بوظائف محدودة
+[21-Jul-25 23:13:24 - INFO] - __main__ - 👨‍💼 تم تحميل 0 مدير
+[21-Jul-25 23:13:24 - INFO] - __main__ - ⏰ تم بدء المهام الدورية
+[21-Jul-25 23:13:24 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
+[21-Jul-25 23:13:58 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: 'MockUpdate' object has no attribute 'sender'
+[21-Jul-25 23:14:06 - WARNING] - ZeMusic.core.cookies_manager - ⚠️ لا توجد ملفات cookies متاحة
+ERROR: [youtube] cTXLxXj88kw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+[21-Jul-25 23:14:09 - ERROR] - ZeMusic.plugins.play.download - خطأ في التحميل المباشر: name 'Path' is not defined
+[21-Jul-25 23:14:09 - ERROR] - ZeMusic.plugins.play.download - فشل التحميل المباشر: cannot access local variable 'best_cookie' where it is not associated with a value
+[21-Jul-25 23:14:11 - WARNING] - ZeMusic.core.cookies_manager - ⚠️ لا توجد ملفات cookies متاحة
+ERROR: [youtube] cTXLxXj88kw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+[21-Jul-25 23:14:13 - ERROR] - ZeMusic.plugins.play.download - خطأ في التحميل المباشر: name 'Path' is not defined
+[21-Jul-25 23:14:13 - ERROR] - ZeMusic.plugins.play.download - فشل التحميل المباشر: cannot access local variable 'best_cookie' where it is not associated with a value
