@@ -5,7 +5,7 @@ import config
 from ZeMusic.logging import LOGGER
 from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
-from ZeMusic.core.music_manager import music_manager
+from ZeMusic.core.music_manager import telethon_music_manager as music_manager
 from ZeMusic.plugins.owner.owner_panel import owner_panel
 from ZeMusic.plugins.owner.admin_panel import admin_panel
 from ZeMusic.plugins.owner.stats_handler import stats_handler

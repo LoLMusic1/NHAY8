@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Union
 
-from ZeMusic.compatibility import CompatibilityClient as Client
+from ZeMusic.pyrogram_compatibility import CompatibilityClient as Client
 from pytgcalls import PyTgCalls, StreamType
 from pytgcalls.exceptions import (
     AlreadyJoinedError,

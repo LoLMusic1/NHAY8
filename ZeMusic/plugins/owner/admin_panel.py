@@ -114,7 +114,7 @@ class AdminPanel:
             assistants_connected = telethon_manager.get_connected_assistants_count()
             
             # إحصائيات الجلسات النشطة
-            from ZeMusic.core.music_manager import music_manager
+            from ZeMusic.core.music_manager import telethon_music_manager as music_manager
             active_sessions = len(music_manager.active_sessions)
             
             # تفريق المجموعات والقنوات
