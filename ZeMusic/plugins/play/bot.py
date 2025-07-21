@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+معالج تشغيل الموسيقى للبوت مع Telethon
+"""
+
+from telethon import events, Button
+from telethon.tl.types import Message
+from ZeMusic.core.telethon_client import telethon_manager
 import asyncio
 from ZeMusic import app
 from config import OWNER_ID

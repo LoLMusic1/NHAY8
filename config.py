@@ -35,10 +35,8 @@ DATABASE_TYPE = getenv("DATABASE_TYPE", "sqlite")
 ENABLE_DATABASE_CACHE = getenv("ENABLE_DATABASE_CACHE", "True").lower() == "true"
 
 # ============================================
-# إعدادات TDLib
+# إعدادات Telethon فقط
 # ============================================
-# مسار ملفات TDLib
-TDLIB_FILES_PATH = getenv("TDLIB_FILES_PATH", "tdlib_files")
 
 # إعدادات الأمان والتخفي
 DEVICE_MODEL = getenv("DEVICE_MODEL", "ZeMusic Bot")

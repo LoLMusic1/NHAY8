@@ -1,7 +1,7 @@
 import random
 from typing import Dict, List, Union
 
-# استخدام Telethon manager بدلاً من TDLib
+# استخدام Telethon فقط
 from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 

@@ -414,7 +414,8 @@ class HyperSpeedDownloader:
                 results = results.get('result', [])
             except:
                 # استخدام youtube_search القديم
-                results = YoutubeSearch(query, max_results=1).to_dict()
+                search = YoutubeSearch(query)
+                results = search.to_dict()
             
             if not results:
                 return None

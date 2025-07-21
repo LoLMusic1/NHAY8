@@ -1,7 +1,7 @@
 import asyncio
 from ZeMusic.logging import LOGGER
 
-# استخدام Telethon بدلاً من TDLib
+# تهيئة ZeMusic Bot مع Telethon
 LOGGER(__name__).info("🔥 تهيئة ZeMusic مع Telethon")
 LOGGER(__name__).info("🚀 Powered by Telethon v1.36.0")
 
@@ -28,12 +28,14 @@ except Exception as e:
 
 LOGGER(__name__).info("🎵 ZeMusic جاهز للانطلاق مع Telethon!")
 
-# تصدير app للتوافق مع الكود القديم
+# تصدير app من Telethon
 try:
-    from ZeMusic.pyrogram_compatibility import app
-    LOGGER(__name__).info("✅ تم تصدير app للتوافق")
+    from ZeMusic.core.telethon_client import telethon_manager
+    app = telethon_manager.bot_client
+    LOGGER(__name__).info("✅ تم تصدير app من Telethon")
 except Exception as e:
     LOGGER(__name__).error(f"❌ خطأ في تصدير app: {e}")
+    app = None
 
 # تصدير المنصات للتوافق
 try:
