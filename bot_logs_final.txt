@@ -28,3 +28,7 @@ nohup: ignoring input
 [21-Jul-25 20:59:26 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
 [21-Jul-25 20:59:56 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: No module named 'ZeMusic.pyrogram_compatibility'
 [21-Jul-25 20:59:56 - ERROR] - ZeMusic.core.telethon_client - خطأ في معالج /start: No module named 'ZeMusic.pyrogram_compatibility'
+[21-Jul-25 21:00:37 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: No module named 'ZeMusic.pyrogram_compatibility'
+[21-Jul-25 21:00:37 - ERROR] - ZeMusic.core.telethon_client - خطأ في معالج /start: No module named 'ZeMusic.pyrogram_compatibility'
+[21-Jul-25 21:00:40 - ERROR] - ZeMusic.plugins.owner.owner_panel - خطأ في معالج /owner: 'dict' object has no attribute 'SUBCLASS_OF_ID'
+[21-Jul-25 21:00:47 - ERROR] - ZeMusic.core.telethon_client - خطأ في معالج التحميل: No module named 'ZeMusic.pyrogram_compatibility'
