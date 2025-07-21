@@ -473,15 +473,33 @@ class TelethonCommandHandler:
                 message_text = update.message.text.strip()
                 
                 # التحقق من أن هذا session string
-                if (user_id == config.OWNER_ID and 
-                    len(message_text) > 200 and  # session strings طويلة
-                    '1BVtsOHU' in message_text):  # علامة session string
+                # سجل محاولة الفحص
+                if user_id == config.OWNER_ID:
+                    LOGGER(__name__).info(f"🔍 فحص رسالة من المالك: طول={len(message_text)}")
+                
+                # شروط session string أوسع
+                is_session_string = (
+                    user_id == config.OWNER_ID and 
+                    len(message_text) > 150 and  # session strings عادة طويلة
+                    (
+                        '1BVtsOHU' in message_text or  # علامة Telethon session
+                        'BQA' in message_text or       # علامة أخرى
+                        'BAA' in message_text or       # علامة أخرى  
+                        'AQAA' in message_text or      # علامة أخرى
+                        len(message_text) > 300        # أو طول كبير جداً
+                    )
+                )
+                
+                if is_session_string:
+                    LOGGER(__name__).info(f"✅ تم اكتشاف session string من المالك")
                     
                     try:
                         from ZeMusic.plugins.owner.owner_panel import owner_panel
                         
                         # معالجة session string
+                        LOGGER(__name__).info(f"🔄 بدء معالجة session string...")
                         result = await owner_panel.process_add_assistant_input(user_id, message_text)
+                        LOGGER(__name__).info(f"📊 نتيجة المعالجة: {result}")
                         
                         if result and result.get('success'):
                             keyboard_data = result.get('keyboard', [])

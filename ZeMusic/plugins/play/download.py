@@ -1081,7 +1081,7 @@ try:
 except Exception as e:
     LOGGER(__name__).error(f"❌ خطأ في تهيئة نظام التحميل: {e}")
 
-# دالة معالج البحث - سيتم تسجيلها لاحقاً
+# دالة معالج البحث - يتم تسجيلها في handlers_registry.py
 async def handle_search_messages(event):
     """معالج رسائل البحث"""
     # التحقق من أن هذه رسالة وليس callback

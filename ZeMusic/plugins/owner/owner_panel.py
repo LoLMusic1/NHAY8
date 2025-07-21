@@ -173,8 +173,14 @@ class OwnerPanel:
     
     async def process_add_assistant_input(self, user_id: int, text: str) -> Dict:
         """معالجة إدخالات إضافة الحساب المساعد"""
+        # إنشاء جلسة جديدة إذا لم تكن موجودة
         if user_id not in self.pending_sessions:
-            return {'success': False, 'message': "❌ لا توجد جلسة نشطة"}
+            session_id = f"add_assistant_{user_id}_{int(asyncio.get_event_loop().time())}"
+            self.pending_sessions[user_id] = {
+                'type': 'add_assistant',
+                'session_id': session_id,
+                'step': 'waiting_session'
+            }
         
         session = self.pending_sessions[user_id]
         
