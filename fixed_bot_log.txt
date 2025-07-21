@@ -1,0 +1,25 @@
+[21-Jul-25 22:55:00 - INFO] - ZeMusic - 🔥 تهيئة ZeMusic مع Telethon
+[21-Jul-25 22:55:00 - INFO] - ZeMusic - 🚀 Powered by Telethon v1.36.0
+[21-Jul-25 22:55:01 - INFO] - ZeMusic - ✅ تم تحميل مدير Telethon بنجاح
+[21-Jul-25 22:55:01 - INFO] - ZeMusic.core.database - ✅ تم إنشاء قاعدة البيانات SQLite بنجاح
+[21-Jul-25 22:55:01 - INFO] - ZeMusic.core.database - ✅ نظام قاعدة البيانات Telethon جاهز للاستخدام
+[21-Jul-25 22:55:01 - INFO] - ZeMusic - ✅ تم تحميل قاعدة البيانات بنجاح
+[21-Jul-25 22:55:01 - ERROR] - ZeMusic - ❌ خطأ في تحميل معالج الأوامر: unexpected indent (owner_panel.py, line 791)
+[21-Jul-25 22:55:01 - INFO] - ZeMusic - 🎵 ZeMusic جاهز للانطلاق مع Telethon!
+[21-Jul-25 22:55:01 - INFO] - ZeMusic.core.cookies_manager - 🍪 تم تهيئة مدير Cookies الذكي
+[21-Jul-25 22:55:01 - INFO] - ZeMusic - ✅ تم تصدير app من Telethon
+[21-Jul-25 22:55:01 - INFO] - ZeMusic.platforms.Youtube - ⏸️ سيتم تشغيل التنظيف التلقائي عند بدء البوت
+[21-Jul-25 22:55:01 - INFO] - ZeMusic.platforms.Youtube - 🎵 YouTube Platform Handler - Enhanced Edition تم تحميله بنجاح!
+[21-Jul-25 22:55:01 - INFO] - ZeMusic - ✅ تم تصدير منصات الموسيقى
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/ZeMusic/__main__.py", line 12, in <module>
+    from ZeMusic.core.command_handler import telethon_command_handler
+  File "/workspace/ZeMusic/core/command_handler.py", line 8, in <module>
+    from ZeMusic.plugins.bot.basic_commands import command_handler as basic_commands
+  File "/workspace/ZeMusic/plugins/bot/basic_commands.py", line 9, in <module>
+    from ZeMusic.plugins.owner.owner_panel import owner_panel
+  File "/workspace/ZeMusic/plugins/owner/owner_panel.py", line 791
+    return {
+IndentationError: unexpected indent

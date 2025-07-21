@@ -793,6 +793,63 @@ class OwnerPanel:
             'message': message,
             'keyboard': keyboard
         }
+    
+    async def execute_restart(self, user_id: int) -> Dict:
+        """تنفيذ إعادة التشغيل"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            message = "🔄 **جاري إعادة تشغيل البوت...**\n\n⏳ سيتم الانتهاء خلال 30-60 ثانية"
+            
+            # إرسال رسالة وإغلاق البوت
+            asyncio.create_task(self._restart_process())
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': []
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f"❌ فشل في إعادة التشغيل: {str(e)}"
+            }
+    
+    async def execute_shutdown(self, user_id: int) -> Dict:
+        """تنفيذ إيقاف البوت"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            message = "🛑 **جاري إيقاف البوت...**\n\n⚠️ البوت سيتوقف نهائياً"
+            
+            # إرسال رسالة وإغلاق البوت
+            asyncio.create_task(self._shutdown_process())
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': []
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f"❌ فشل في إيقاف البوت: {str(e)}"
+            }
+    
+    async def _restart_process(self):
+        """عملية إعادة التشغيل"""
+        import os
+        import sys
+        await asyncio.sleep(3)  # انتظار 3 ثواني
+        os.execv(sys.executable, ['python'] + sys.argv)
+    
+    async def _shutdown_process(self):
+        """عملية الإيقاف"""
+        import sys
+        await asyncio.sleep(3)  # انتظار 3 ثواني
+        sys.exit(0)
 
 # إنشاء مثيل عام للوحة التحكم
 owner_panel = OwnerPanel()
@@ -832,6 +889,10 @@ async def handle_owner_callbacks(event):
             result = await owner_panel.handle_restart(user_id)
         elif data == "owner_shutdown":
             result = await owner_panel.handle_shutdown(user_id)
+        elif data == "confirm_restart":
+            result = await owner_panel.execute_restart(user_id)
+        elif data == "confirm_shutdown":
+            result = await owner_panel.execute_shutdown(user_id)
         else:
             await event.answer("⚠️ خيار غير معروف")
             return

@@ -760,9 +760,28 @@ async def smart_download_handler(event):
                 await status_msg.edit("🔄 **جاري المحاولة بطريقة أخرى...**")
                 
                 # بحث بسيط باستخدام youtube_search فقط
-                from youtubesearchpython import VideosSearch
-                search = VideosSearch(query, limit=1)
-                search_results = search.result()
+                try:
+                    from youtubesearchpython import VideosSearch
+                    search = VideosSearch(query, limit=1)
+                    search_results = search.result()
+                except ImportError:
+                    # استخدام youtube_search البديل
+                    from youtube_search import YoutubeSearch
+                    search = YoutubeSearch(query, max_results=1)
+                    results = search.to_dict()
+                    if results:
+                        video = results[0]
+                        search_results = {
+                            'result': [{
+                                'title': video.get('title', ''),
+                                'channel': {'name': video.get('channel', '')},
+                                'duration': video.get('duration', ''),
+                                'viewCount': {'short': video.get('views', '')},
+                                'link': f"https://youtube.com{video.get('url_suffix', '')}"
+                            }]
+                        }
+                    else:
+                        search_results = None
                 
                 if search_results and search_results.get('result'):
                     video = search_results['result'][0]
@@ -1006,13 +1025,34 @@ except Exception as e:
 # دالة معالج البحث - سيتم تسجيلها لاحقاً
 async def handle_search_messages(event):
     """معالج رسائل البحث"""
-    if not event.message or not event.message.text:
+    # التحقق من أن هذه رسالة وليس callback
+    if not hasattr(event, 'message') or not event.message or not event.message.text:
         return
     
-    text = event.message.text.lower()
+    # تجنب معالجة الرسائل القديمة
+    if hasattr(event.message, 'date'):
+        import time
+        from datetime import datetime
+        if (datetime.now() - event.message.date).total_seconds() > 30:
+            return
     
-    # التحقق من أمر البحث
-    if any(cmd in text for cmd in ["بحث", "song", "يوت"]) or text.startswith(("/song", "song")):
+    text = event.message.text.lower().strip()
+    
+    # التحقق من أمر البحث بدقة أكبر
+    is_search_command = False
+    
+    # التحقق من أوامر البحث
+    search_commands = ["بحث ", "/song ", "song ", "يوت "]
+    for cmd in search_commands:
+        if text.startswith(cmd):
+            is_search_command = True
+            break
+    
+    # أو إذا كان يحتوي على كلمة بحث منفصلة
+    if " بحث " in text or text == "بحث":
+        is_search_command = True
+    
+    if is_search_command:
         await smart_download_handler(event)
 
 LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon")

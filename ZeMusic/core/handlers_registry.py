@@ -28,6 +28,10 @@ async def register_all_handlers(bot_client):
 async def handle_cookies_callbacks(event):
     """معالج callbacks أزرار cookies"""
     try:
+        # التحقق من أن هذا callback query وليس رسالة عادية
+        if not hasattr(event, 'data'):
+            return
+            
         data = event.data.decode('utf-8')
         
         if data.startswith('cookies_'):

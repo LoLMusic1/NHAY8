@@ -281,8 +281,11 @@ class TelethonCommandHandler:
                         button_row.append(Button.url(btn.text, btn.url))
                     elif hasattr(btn, 'user_id') and btn.user_id:
                         button_row.append(Button.mention(btn.text, btn.user_id))
-                    else:
+                    elif hasattr(btn, 'callback_data') and btn.callback_data:
                         button_row.append(Button.inline(btn.text, data=btn.callback_data))
+                    else:
+                        # زر عادي بدون callback
+                        button_row.append(Button.inline(btn.text, data="default"))
                 buttons.append(button_row)
             
             # إرسال الرسالة
