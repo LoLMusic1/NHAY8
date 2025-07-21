@@ -689,8 +689,17 @@ class HyperSpeedDownloader:
             # إعداد yt-dlp
             try:
                 from ZeMusic.core.cookies_manager import cookies_manager
+                
+                # التأكد من تهيئة cookies_manager
+                try:
+                    await cookies_manager.initialize()
+                    LOGGER(__name__).info("🍪 تم تهيئة cookies_manager للتحميل")
+                except Exception as init_error:
+                    LOGGER(__name__).warning(f"تعذر تهيئة cookies_manager: {init_error}")
+                
                 # الحصول على أفضل cookie متاح
                 best_cookie = await cookies_manager.get_next_cookie()
+                LOGGER(__name__).info(f"🍪 تم الحصول على cookie: {best_cookie}")
             except Exception as e:
                 LOGGER(__name__).warning(f"تعذر الحصول على cookies: {e}")
                 best_cookie = None
