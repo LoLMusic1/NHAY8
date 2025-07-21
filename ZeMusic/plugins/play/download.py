@@ -407,27 +407,32 @@ class HyperSpeedDownloader:
             return None
             
         try:
-            # محاولة استخدام youtube-search-python أولاً
-            try:
-                search = YoutubeSearch(query, limit=1)
-                results = await search.next()
-                results = results.get('result', [])
-            except:
-                # استخدام youtube_search القديم
-                search = YoutubeSearch(query)
-                results = search.to_dict()
+            # استخدام youtube_search مع معالجة محسنة
+            search = YoutubeSearch(query, max_results=1)
+            results = search.to_dict()
             
             if not results:
                 return None
             
             result = results[0]
+            
+            # استخراج video_id من الرابط
+            video_id = ""
+            if 'url_suffix' in result:
+                video_id = result['url_suffix'].replace('/watch?v=', '')
+            elif 'id' in result:
+                video_id = result['id']
+            
+            # معالجة المدة
+            duration = result.get('duration', '0:00')
+            
             return {
-                "video_id": result.get("id", ""),
-                "title": result.get("title", "")[:60],
-                "artist": result.get("channel", {}).get("name", "Unknown") if isinstance(result.get("channel"), dict) else result.get("channel", "Unknown"),
-                "duration": result.get("duration", ""),
-                "thumb": result.get("thumbnails", [{}])[0].get("url") if result.get("thumbnails") else None,
-                "link": result.get("link", f"https://youtube.com{result.get('url_suffix', '')}"),
+                "video_id": video_id,
+                "title": result.get("title", "Unknown Title")[:60],
+                "artist": result.get("channel", "Unknown Artist")[:40],
+                "duration": duration,
+                "thumb": result.get("thumbnails", [None])[0] if result.get("thumbnails") else None,
+                "link": f"https://youtube.com{result.get('url_suffix', '')}",
                 "source": "youtube_search"
             }
             
@@ -750,8 +755,40 @@ async def smart_download_handler(event):
         result = await downloader.hyper_download(query)
         
         if not result:
-            await status_msg.edit("❌ **فشل في العثور على النتائج، جرب استعلاماً آخر**")
-            return
+            # معالج بديل بسيط
+            try:
+                await status_msg.edit("🔄 **جاري المحاولة بطريقة أخرى...**")
+                
+                # بحث بسيط باستخدام youtube_search فقط
+                from youtubesearchpython import VideosSearch
+                search = VideosSearch(query, limit=1)
+                search_results = search.result()
+                
+                if search_results and search_results.get('result'):
+                    video = search_results['result'][0]
+                    
+                    result_text = f"""🎵 **تم العثور على:**
+
+📝 **العنوان:** {video.get('title', 'غير معروف')}
+🎤 **القناة:** {video.get('channel', {}).get('name', 'غير معروف')}
+⏱️ **المدة:** {video.get('duration', 'غير معروف')}
+👁️ **المشاهدات:** {video.get('viewCount', {}).get('short', 'غير معروف')}
+
+🔗 **الرابط:** {video.get('link', '')}
+
+⚠️ **ملاحظة:** تم العثور على النتيجة ولكن التحميل معطل حالياً
+🔧 **للمطور:** يحتاج إصلاح نظام التحميل أو إضافة cookies صالحة"""
+                    
+                    await status_msg.edit(result_text)
+                    return
+                else:
+                    await status_msg.edit("❌ **لم يتم العثور على نتائج للبحث**\n\n💡 **جرب:**\n• كلمات مختلفة\n• اسم الفنان\n• جزء من كلمات الأغنية")
+                    return
+                    
+            except Exception as e:
+                await status_msg.edit("❌ **فشل في العثور على النتائج، جرب استعلاماً آخر**")
+                LOGGER(__name__).error(f"خطأ في البحث البديل: {e}")
+                return
         
         # تحديث الرسالة
         source_emoji = {

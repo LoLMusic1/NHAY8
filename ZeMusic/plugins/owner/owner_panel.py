@@ -454,6 +454,232 @@ class OwnerPanel:
         
         return await self.show_assistants_panel(user_id)
     
+    async def show_stats_panel(self, user_id: int) -> Dict:
+        """عرض لوحة الإحصائيات المفصلة"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        stats = await self._get_bot_stats()
+        
+        message = f"""📊 **إحصائيات مفصلة للبوت**
+
+👥 **المستخدمين:**
+• إجمالي المستخدمين: `{stats['users']}`
+• مستخدمين جدد اليوم: `{stats.get('new_users_today', 0)}`
+• المستخدمين النشطين: `{stats.get('active_users', 0)}`
+
+💬 **المجموعات:**
+• إجمالي المجموعات: `{stats['chats']}`
+• مجموعات جديدة اليوم: `{stats.get('new_chats_today', 0)}`
+• المجموعات النشطة: `{stats.get('active_chats', 0)}`
+
+🤖 **الحسابات المساعدة:**
+• إجمالي الحسابات: `{stats['assistants']}`
+• الحسابات المتصلة: `{stats.get('connected_assistants', 0)}`
+• الحسابات النشطة: `{stats.get('active_assistants', 0)}`
+
+🎵 **الجلسات الموسيقية:**
+• الجلسات النشطة: `{stats['active_sessions']}`
+• إجمالي التشغيلات: `{stats.get('total_plays', 0)}`
+• أغاني اليوم: `{stats.get('plays_today', 0)}`
+
+💾 **النظام:**
+• وقت التشغيل: `{self._get_uptime()}`
+• آخر إعادة تشغيل: `{self._get_last_restart()}`
+• استخدام الذاكرة: `{stats.get('memory_usage', 'غير متاح')}`"""
+
+        keyboard = [
+            [
+                {'text': '🔄 تحديث', 'callback_data': 'owner_stats'},
+                {'text': '📊 تفاصيل أكثر', 'callback_data': 'owner_detailed_stats'}
+            ],
+            [{'text': '🔙 العودة', 'callback_data': 'owner_main'}]
+        ]
+        
+        return {
+            'success': True,
+            'message': message,
+            'keyboard': keyboard
+        }
+    
+    async def show_settings_panel(self, user_id: int) -> Dict:
+        """عرض لوحة إعدادات البوت"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        message = """⚙️ **إعدادات البوت**
+
+🔧 **الإعدادات المتاحة:**
+
+📱 **الحسابات المساعدة:**
+• إدارة الحسابات المساعدة
+• إعدادات المغادرة التلقائية
+• حدود الاستخدام
+
+🎵 **إعدادات الموسيقى:**
+• جودة الصوت الافتراضية
+• حد مدة الأغاني
+• إعدادات التخزين
+
+🛡️ **الأمان:**
+• قائمة المحظورين
+• إعدادات الصلاحيات
+• حماية من السبام
+
+🌐 **عام:**
+• لغة البوت
+• رسائل الترحيب
+• إعدادات السجلات"""
+
+        keyboard = [
+            [
+                {'text': '📱 إعدادات المساعدين', 'callback_data': 'settings_assistants'},
+                {'text': '🎵 إعدادات الموسيقى', 'callback_data': 'settings_music'}
+            ],
+            [
+                {'text': '🛡️ إعدادات الأمان', 'callback_data': 'settings_security'},
+                {'text': '🌐 إعدادات عامة', 'callback_data': 'settings_general'}
+            ],
+            [{'text': '🔙 العودة', 'callback_data': 'owner_main'}]
+        ]
+        
+        return {
+            'success': True,
+            'message': message,
+            'keyboard': keyboard
+        }
+    
+    async def show_maintenance_panel(self, user_id: int) -> Dict:
+        """عرض لوحة صيانة النظام"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        message = """🔧 **صيانة النظام**
+
+🛠️ **الأدوات المتاحة:**
+
+🧹 **التنظيف:**
+• تنظيف الملفات المؤقتة
+• تنظيف ذاكرة التخزين المؤقت
+• تنظيف سجلات قديمة
+
+🔄 **التحديث:**
+• تحديث المكتبات
+• تحديث قاعدة البيانات
+• إعادة تحميل الإعدادات
+
+🔍 **الفحص:**
+• فحص سلامة النظام
+• فحص الاتصالات
+• فحص قاعدة البيانات
+
+⚡ **الأداء:**
+• تحسين قاعدة البيانات
+• تحسين الذاكرة
+• إعادة تشغيل الخدمات"""
+
+        keyboard = [
+            [
+                {'text': '🧹 تنظيف النظام', 'callback_data': 'maintenance_cleanup'},
+                {'text': '🔄 تحديث النظام', 'callback_data': 'maintenance_update'}
+            ],
+            [
+                {'text': '🔍 فحص النظام', 'callback_data': 'maintenance_check'},
+                {'text': '⚡ تحسين الأداء', 'callback_data': 'maintenance_optimize'}
+            ],
+            [{'text': '🔙 العودة', 'callback_data': 'owner_main'}]
+        ]
+        
+        return {
+            'success': True,
+            'message': message,
+            'keyboard': keyboard
+        }
+    
+    async def show_logs_panel(self, user_id: int) -> Dict:
+        """عرض لوحة سجلات النظام"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        # قراءة آخر 20 سطر من السجل
+        try:
+            import subprocess
+            result = subprocess.run(['tail', '-20', 'final_bot_log.txt'], 
+                                  capture_output=True, text=True, timeout=5)
+            recent_logs = result.stdout if result.stdout else "لا توجد سجلات متاحة"
+        except:
+            recent_logs = "تعذر قراءة السجلات"
+        
+        message = f"""📋 **سجلات النظام**
+
+📝 **آخر العمليات:**
+```
+{recent_logs[-1000:]}  
+```
+
+🔍 **خيارات السجلات:**"""
+
+        keyboard = [
+            [
+                {'text': '📄 سجل كامل', 'callback_data': 'logs_full'},
+                {'text': '⚠️ الأخطاء فقط', 'callback_data': 'logs_errors'}
+            ],
+            [
+                {'text': '📊 إحصائيات السجل', 'callback_data': 'logs_stats'},
+                {'text': '🗑️ مسح السجلات', 'callback_data': 'logs_clear'}
+            ],
+            [{'text': '🔙 العودة', 'callback_data': 'owner_main'}]
+        ]
+        
+        return {
+            'success': True,
+            'message': message,
+            'keyboard': keyboard
+        }
+    
+    async def show_database_panel(self, user_id: int) -> Dict:
+        """عرض لوحة قاعدة البيانات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        stats = await self._get_bot_stats()
+        
+        message = f"""🗃️ **إدارة قاعدة البيانات**
+
+📊 **حالة قاعدة البيانات:**
+• نوع قاعدة البيانات: `SQLite`
+• حجم قاعدة البيانات: `{stats.get('db_size', 'غير متاح')}`
+• آخر نسخة احتياطية: `{stats.get('last_backup', 'لم يتم عمل نسخة')}`
+
+📋 **الجداول:**
+• جدول المستخدمين: `{stats['users']} سجل`
+• جدول المجموعات: `{stats['chats']} سجل`
+• جدول الحسابات المساعدة: `{stats['assistants']} سجل`
+
+🛠️ **العمليات المتاحة:**"""
+
+        keyboard = [
+            [
+                {'text': '💾 نسخة احتياطية', 'callback_data': 'db_backup'},
+                {'text': '📤 استيراد نسخة', 'callback_data': 'db_restore'}
+            ],
+            [
+                {'text': '🧹 تنظيف البيانات', 'callback_data': 'db_cleanup'},
+                {'text': '🔧 تحسين قاعدة البيانات', 'callback_data': 'db_optimize'}
+            ],
+            [
+                {'text': '📊 إحصائيات مفصلة', 'callback_data': 'db_detailed_stats'},
+                {'text': '🔍 فحص سلامة البيانات', 'callback_data': 'db_integrity_check'}
+            ],
+            [{'text': '🔙 العودة', 'callback_data': 'owner_main'}]
+        ]
+        
+        return {
+            'success': True,
+            'message': message,
+            'keyboard': keyboard
+        }
+    
     async def handle_add_assistant(self, user_id: int) -> Dict:
         """بدء عملية إضافة حساب مساعد"""
         return {
@@ -503,6 +729,70 @@ class OwnerPanel:
                 'success': False,
                 'message': f"❌ حدث خطأ: {str(e)}"
             }
+    
+    async def handle_restart(self, user_id: int) -> Dict:
+        """إعادة تشغيل البوت"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        message = """🔄 **إعادة تشغيل البوت**
+
+⚠️ **تحذير:** سيتم إعادة تشغيل البوت خلال 10 ثواني
+
+📝 **ما سيحدث:**
+• إيقاف جميع الجلسات النشطة
+• قطع الاتصال بالحسابات المساعدة
+• إعادة تحميل جميع الإعدادات
+• إعادة تشغيل النظام
+
+⏱️ **المدة المتوقعة:** 30-60 ثانية
+
+❓ **هل أنت متأكد؟**"""
+
+        keyboard = [
+            [
+                {'text': '✅ نعم، أعد التشغيل', 'callback_data': 'confirm_restart'},
+                {'text': '❌ إلغاء', 'callback_data': 'owner_main'}
+            ]
+        ]
+        
+        return {
+            'success': True,
+            'message': message,
+            'keyboard': keyboard
+        }
+    
+    async def handle_shutdown(self, user_id: int) -> Dict:
+        """إيقاف البوت"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        message = """🛑 **إيقاف البوت**
+
+⚠️ **تحذير خطير:** سيتم إيقاف البوت تماماً!
+
+📝 **ما سيحدث:**
+• إيقاف جميع الجلسات النشطة
+• قطع الاتصال بجميع الحسابات
+• إغلاق قاعدة البيانات
+• إيقاف البوت نهائياً
+
+🔴 **البوت لن يعمل حتى إعادة تشغيله يدوياً**
+
+❓ **هل أنت متأكد من إيقاف البوت؟**"""
+
+        keyboard = [
+            [
+                {'text': '🛑 نعم، أوقف البوت', 'callback_data': 'confirm_shutdown'},
+                {'text': '❌ إلغاء', 'callback_data': 'owner_main'}
+            ]
+        ]
+        
+        return {
+            'success': True,
+            'message': message,
+            'keyboard': keyboard
+        }
 
 # إنشاء مثيل عام للوحة التحكم
 owner_panel = OwnerPanel()
@@ -525,6 +815,12 @@ async def handle_owner_callbacks(event):
             result = await owner_panel.show_stats_panel(user_id)
         elif data == "owner_settings":
             result = await owner_panel.show_settings_panel(user_id)
+        elif data == "owner_maintenance":
+            result = await owner_panel.show_maintenance_panel(user_id)
+        elif data == "owner_logs":
+            result = await owner_panel.show_logs_panel(user_id)
+        elif data == "owner_database":
+            result = await owner_panel.show_database_panel(user_id)
         elif data == "owner_main":
             result = await owner_panel.show_main_panel(user_id)
         elif data.startswith("add_assistant"):
@@ -532,6 +828,10 @@ async def handle_owner_callbacks(event):
         elif data.startswith("remove_assistant_"):
             assistant_id = data.replace("remove_assistant_", "")
             result = await owner_panel.handle_remove_assistant(user_id, assistant_id)
+        elif data == "owner_restart":
+            result = await owner_panel.handle_restart(user_id)
+        elif data == "owner_shutdown":
+            result = await owner_panel.handle_shutdown(user_id)
         else:
             await event.answer("⚠️ خيار غير معروف")
             return
