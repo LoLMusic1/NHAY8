@@ -28,3 +28,16 @@
 [21-Jul-25 22:28:25 - INFO] - __main__ - 👨‍💼 تم تحميل 0 مدير
 [21-Jul-25 22:28:25 - INFO] - __main__ - ⏰ تم بدء المهام الدورية
 [21-Jul-25 22:28:25 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
+[21-Jul-25 22:32:26 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: 'TelethonCommandHandler' object has no attribute 'bot_client'
+[21-Jul-25 22:32:31 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:32:42 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:32:44 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:32:45 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:32:45 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:32:46 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:33:21 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج الcallbacks: 'Event' object has no attribute 'message'
+[21-Jul-25 22:33:26 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon
+[21-Jul-25 22:33:26 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تهيئة نظام التحميل الخارق مع Telethon
+[21-Jul-25 22:33:27 - WARNING] - ZeMusic.plugins.play.download - فشل YouTube Search: 'str' object has no attribute 'get'
+[21-Jul-25 22:33:31 - WARNING] - ZeMusic.core.cookies_manager - ⚠️ لا توجد ملفات cookies متاحة
+ERROR: [youtube] cTXLxXj88kw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
