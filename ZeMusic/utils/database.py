@@ -1,8 +1,8 @@
 import random
 from typing import Dict, List, Union
 
-# استخدام TDLib manager بدلاً من userbot
-from ZeMusic.core.tdlib_client import tdlib_manager
+# استخدام Telethon manager بدلاً من TDLib
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 
 # متغيرات الذاكرة للحالات المؤقتة (كما في الكود الأصلي)
@@ -91,16 +91,16 @@ async def get_assistant_number(chat_id: int) -> str:
     return str(settings.assistant_id)
 
 async def get_client(assistant: int):
-    """الحصول على عميل المساعد - TDLib version"""
+    """الحصول على عميل المساعد - Telethon version"""
     try:
-        # الحصول على المساعد من TDLib manager
-        for tdlib_assistant in tdlib_manager.assistants:
-            if tdlib_assistant.assistant_id == assistant:
-                return tdlib_assistant
+        # الحصول على المساعد من Telethon manager
+        for assistant_id, assistant_client in telethon_manager.assistant_clients.items():
+            if assistant_id == assistant:
+                return assistant_client
         
         # إذا لم يتم العثور على المساعد، إرجاع أول مساعد متاح
-        if tdlib_manager.assistants:
-            return tdlib_manager.assistants[0]
+        if telethon_manager.assistant_clients:
+            return list(telethon_manager.assistant_clients.values())[0]
         
         return None
     except Exception:
@@ -113,29 +113,30 @@ async def set_assistant_new(chat_id, number):
     await db.update_chat_setting(chat_id, assistant_id=number)
 
 async def set_assistant(chat_id):
-    """تعيين مساعد عشوائي - TDLib version"""
+    """تعيين مساعد عشوائي - Telethon version"""
     try:
         # الحصول على قائمة المساعدين المتصلين
-        connected_assistants = [
-            assistant for assistant in tdlib_manager.assistants 
-            if assistant.is_connected
-        ]
+        connected_assistants = []
+        for assistant_id, assistant_client in telethon_manager.assistant_clients.items():
+            if assistant_client.is_connected():
+                connected_assistants.append(assistant_id)
         
         if not connected_assistants:
             return None
         
         # اختيار مساعد عشوائي
-        selected_assistant = random.choice(connected_assistants)
+        selected_assistant_id = random.choice(connected_assistants)
+        selected_assistant = telethon_manager.assistant_clients[selected_assistant_id]
         
-        assistantdict[chat_id] = selected_assistant.assistant_id
-        await db.update_chat_setting(chat_id, assistant_id=selected_assistant.assistant_id)
+        assistantdict[chat_id] = selected_assistant_id
+        await db.update_chat_setting(chat_id, assistant_id=selected_assistant_id)
         
         return selected_assistant
     except Exception:
         return None
 
 async def get_assistant(chat_id: int) -> str:
-    """الحصول على المساعد - TDLib version"""
+    """الحصول على المساعد - Telethon version"""
     try:
         assistant = assistantdict.get(chat_id)
         if assistant:
@@ -147,11 +148,11 @@ async def get_assistant(chat_id: int) -> str:
             assistantdict[chat_id] = got_assis
             return got_assis
         else:
-            # اختيار مساعد متاح من TDLib
-            available_assistants = [
-                assistant.assistant_id for assistant in tdlib_manager.assistants 
-                if assistant.is_connected
-            ]
+            # اختيار مساعد متاح من Telethon
+            available_assistants = []
+            for assistant_id, assistant_client in telethon_manager.assistant_clients.items():
+                if assistant_client.is_connected():
+                    available_assistants.append(assistant_id)
             
             if available_assistants:
                 ran_assistant = random.choice(available_assistants)
@@ -164,7 +165,7 @@ async def get_assistant(chat_id: int) -> str:
         return None
 
 async def get_assistant_details(chat_id: int) -> str:
-    """الحصول على تفاصيل المساعد - TDLib version"""
+    """الحصول على تفاصيل المساعد - Telethon version"""
     try:
         assistant = assistantdict.get(chat_id)
         if assistant:
@@ -176,11 +177,11 @@ async def get_assistant_details(chat_id: int) -> str:
             assistantdict[chat_id] = got_assis
             return got_assis
         else:
-            # اختيار مساعد متاح من TDLib
-            available_assistants = [
-                assistant.assistant_id for assistant in tdlib_manager.assistants 
-                if assistant.is_connected
-            ]
+            # اختيار مساعد متاح من Telethon
+            available_assistants = []
+            for assistant_id, assistant_client in telethon_manager.assistant_clients.items():
+                if assistant_client.is_connected():
+                    available_assistants.append(assistant_id)
             
             if available_assistants:
                 ran_assistant = random.choice(available_assistants)

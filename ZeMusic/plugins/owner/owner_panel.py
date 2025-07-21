@@ -4,7 +4,7 @@ from typing import Dict, List
 
 import config
 from ZeMusic.logging import LOGGER
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 from ZeMusic.core.music_manager import music_manager
 
@@ -65,7 +65,7 @@ class OwnerPanel:
             return {'success': False, 'message': "❌ غير مصرح"}
         
         assistants = await db.get_all_assistants()
-        connected_count = tdlib_manager.get_connected_assistants_count()
+        connected_count = telethon_manager.get_connected_assistants_count()
         
         keyboard = [
             [
@@ -223,7 +223,7 @@ class OwnerPanel:
         
         try:
             # إضافة الحساب للنظام
-            success = await tdlib_manager.add_assistant(
+            success = await telethon_manager.add_assistant(
                 session['session_string'],
                 session['assistant_id'],
                 session['name']
@@ -289,7 +289,7 @@ class OwnerPanel:
             is_connected = False
             active_calls = 0
             
-            for tdlib_assistant in tdlib_manager.assistants:
+            for tdlib_assistant in telethon_manager.assistants:
                 if tdlib_assistant.assistant_id == assistant['assistant_id']:
                     is_connected = tdlib_assistant.is_connected
                     active_calls = tdlib_assistant.get_active_calls_count()
@@ -335,7 +335,7 @@ class OwnerPanel:
         
         # إحصائيات الحسابات المساعدة
         assistants = await db.get_all_assistants()
-        connected_assistants = tdlib_manager.get_connected_assistants_count()
+        connected_assistants = telethon_manager.get_connected_assistants_count()
         
         # إحصائيات الجلسات النشطة
         active_sessions = len(music_manager.active_sessions)

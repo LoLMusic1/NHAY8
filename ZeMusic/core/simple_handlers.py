@@ -8,7 +8,7 @@ from ZeMusic.logging import LOGGER
 
 # Import advanced real TDLib manager
 try:
-    from .advanced_real_tdlib_manager import get_advanced_real_tdlib_handlers
+    from .advanced_real_telethon_manager import get_advanced_real_tdlib_handlers
     ADVANCED_REAL_TDLIB_AVAILABLE = True
 except ImportError as e:
     LOGGER(__name__).warning(f"Advanced Real TDLib not available: {e}")
@@ -148,9 +148,9 @@ class SimpleHandlers:
             try:
                 from ZeMusic.core.database import db
                 stats = await db.get_stats()
-                from ZeMusic.core.tdlib_client import tdlib_manager
-                assistants_count = tdlib_manager.get_assistants_count()
-                connected_count = tdlib_manager.get_connected_assistants_count()
+                from ZeMusic.core.tdlib_client import telethon_manager
+                assistants_count = telethon_manager.get_assistants_count()
+                connected_count = telethon_manager.get_connected_assistants_count()
             except Exception as e:
                 LOGGER(__name__).error(f"خطأ في الحصول على الإحصائيات: {e}")
                 stats = {'users': 0, 'chats': 0}
@@ -377,9 +377,9 @@ class SimpleHandlers:
         """البحث وتشغيل الأغنية"""
         try:
             # التحقق من وجود حسابات مساعدة
-            from ZeMusic.core.tdlib_client import tdlib_manager
+            from ZeMusic.core.tdlib_client import telethon_manager
             
-            if tdlib_manager.get_assistants_count() == 0:
+            if telethon_manager.get_assistants_count() == 0:
                 await waiting_msg.edit_text(
                     f"❌ **لا يمكن تشغيل الموسيقى**\n\n"
                     f"🔍 **تم العثور على:** `{query}`\n"
@@ -519,7 +519,7 @@ class SimpleHandlers:
             elif callback_data == 'start_advanced_real_tdlib_assistant':
                 # Import and handle advanced real TDLib
                 if ADVANCED_REAL_TDLIB_AVAILABLE:
-                    from .advanced_real_tdlib_manager import start_advanced_real_tdlib_assistant
+                    from .advanced_real_telethon_manager import start_advanced_real_tdlib_assistant
                     await start_advanced_real_tdlib_assistant(update, context)
                 else:
                     await query.edit_message_text(
@@ -532,12 +532,12 @@ class SimpleHandlers:
                     )
             elif callback_data == 'use_default_api':
                 # استخدام الإعدادات الافتراضية لـ API
-                from .advanced_real_tdlib_manager import advanced_real_tdlib_manager
-                await advanced_real_tdlib_manager.use_default_api(update, context)
+                from .advanced_real_telethon_manager import advanced_real_telethon_manager
+                await advanced_real_telethon_manager.use_default_api(update, context)
             elif callback_data == 'use_custom_api':
                 # إدخال API مخصص
-                from .advanced_real_tdlib_manager import advanced_real_tdlib_manager
-                await advanced_real_tdlib_manager.use_custom_api(update, context)
+                from .advanced_real_telethon_manager import advanced_real_telethon_manager
+                await advanced_real_telethon_manager.use_custom_api(update, context)
             elif callback_data == 'real_tdlib_start_simple':
                 # Handle simple TDLib
                 from ZeMusic.core.real_tdlib_assistant_manager import real_tdlib_assistant_manager
@@ -563,10 +563,10 @@ class SimpleHandlers:
     async def _handle_assistants_panel(self, query):
         """لوحة إدارة الحسابات المساعدة"""
         try:
-            from ZeMusic.core.tdlib_client import tdlib_manager
+            from ZeMusic.core.tdlib_client import telethon_manager
             
-            assistants_count = tdlib_manager.get_assistants_count()
-            connected_count = tdlib_manager.get_connected_assistants_count()
+            assistants_count = telethon_manager.get_assistants_count()
+            connected_count = telethon_manager.get_connected_assistants_count()
             
             keyboard = [
                 [
@@ -609,11 +609,11 @@ class SimpleHandlers:
         """لوحة الإحصائيات"""
         try:
             from ZeMusic.core.database import db
-            from ZeMusic.core.tdlib_client import tdlib_manager
+            from ZeMusic.core.tdlib_client import telethon_manager
             
             stats = await db.get_stats()
-            assistants_count = tdlib_manager.get_assistants_count()
-            connected_count = tdlib_manager.get_connected_assistants_count()
+            assistants_count = telethon_manager.get_assistants_count()
+            connected_count = telethon_manager.get_connected_assistants_count()
             
             text = f"""
 📊 **إحصائيات مفصلة**
@@ -797,9 +797,9 @@ class SimpleHandlers:
             try:
                 from ZeMusic.core.database import db
                 stats = await db.get_stats()
-                from ZeMusic.core.tdlib_client import tdlib_manager
-                assistants_count = tdlib_manager.get_assistants_count()
-                connected_count = tdlib_manager.get_connected_assistants_count()
+                from ZeMusic.core.tdlib_client import telethon_manager
+                assistants_count = telethon_manager.get_assistants_count()
+                connected_count = telethon_manager.get_connected_assistants_count()
             except Exception as e:
                 LOGGER(__name__).error(f"خطأ في الحصول على الإحصائيات: {e}")
                 stats = {'users': 0, 'chats': 0}
@@ -863,8 +863,8 @@ class SimpleHandlers:
     async def _handle_remove_assistant(self, query):
         """معالج إزالة حساب مساعد"""
         try:
-            from ZeMusic.core.tdlib_client import tdlib_manager
-            assistants_count = tdlib_manager.get_assistants_count()
+            from ZeMusic.core.tdlib_client import telethon_manager
+            assistants_count = telethon_manager.get_assistants_count()
             
             if assistants_count == 0:
                 text = """
@@ -903,10 +903,10 @@ class SimpleHandlers:
     async def _handle_list_assistants(self, query):
         """معالج قائمة الحسابات المساعدة"""
         try:
-            from ZeMusic.core.tdlib_client import tdlib_manager
+            from ZeMusic.core.tdlib_client import telethon_manager
             
-            assistants_count = tdlib_manager.get_assistants_count()
-            connected_count = tdlib_manager.get_connected_assistants_count()
+            assistants_count = telethon_manager.get_assistants_count()
+            connected_count = telethon_manager.get_connected_assistants_count()
             
             if assistants_count == 0:
                 text = """
@@ -951,9 +951,9 @@ class SimpleHandlers:
     async def _handle_restart_assistants(self, query):
         """معالج إعادة تشغيل الحسابات المساعدة"""
         try:
-            from ZeMusic.core.tdlib_client import tdlib_manager
+            from ZeMusic.core.tdlib_client import telethon_manager
             
-            assistants_count = tdlib_manager.get_assistants_count()
+            assistants_count = telethon_manager.get_assistants_count()
             
             if assistants_count == 0:
                 text = """
@@ -1354,30 +1354,30 @@ class SimpleHandlers:
             # مسح الجلسات النشطة
             if ADVANCED_REAL_TDLIB_AVAILABLE:
                 try:
-                    from .advanced_real_tdlib_manager import advanced_real_tdlib_manager
+                    from .advanced_real_telethon_manager import advanced_real_telethon_manager
                     
                     # مسح من الجلسات النشطة
-                    if user_id in advanced_real_tdlib_manager.active_sessions:
-                        del advanced_real_tdlib_manager.active_sessions[user_id]
+                    if user_id in advanced_real_telethon_manager.active_sessions:
+                        del advanced_real_telethon_manager.active_sessions[user_id]
                     
                     # مسح من حالات المستخدم
-                    if user_id in advanced_real_tdlib_manager.user_states:
-                        del advanced_real_tdlib_manager.user_states[user_id]
+                    if user_id in advanced_real_telethon_manager.user_states:
+                        del advanced_real_telethon_manager.user_states[user_id]
                     
                     # مسح من مدير TDLib الرسمي
                     try:
-                        from .official_tdlib_client import official_tdlib_manager
-                        if user_id in official_tdlib_manager.pending_auth:
-                            client = official_tdlib_manager.pending_auth[user_id].get('client')
+                        from .official_tdlib_client import official_telethon_manager
+                        if user_id in official_telethon_manager.pending_auth:
+                            client = official_telethon_manager.pending_auth[user_id].get('client')
                             if client:
                                 client.close()
-                            del official_tdlib_manager.pending_auth[user_id]
+                            del official_telethon_manager.pending_auth[user_id]
                         
-                        if user_id in official_tdlib_manager.active_clients:
-                            client = official_tdlib_manager.active_clients[user_id]
+                        if user_id in official_telethon_manager.active_clients:
+                            client = official_telethon_manager.active_clients[user_id]
                             if client:
                                 client.close()
-                            del official_tdlib_manager.active_clients[user_id]
+                            del official_telethon_manager.active_clients[user_id]
                     except:
                         pass
                     

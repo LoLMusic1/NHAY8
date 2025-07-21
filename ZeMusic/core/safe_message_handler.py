@@ -54,7 +54,7 @@ class SafeMessageHandler:
         
         # محاولة تحميل جميع المدراء المتاحين
         realistic_manager = None
-        real_tdlib_manager = None
+        real_telethon_manager = None
         advanced_real_manager = None
         
         try:
@@ -65,20 +65,20 @@ class SafeMessageHandler:
             
         try:
             from ZeMusic.core.real_tdlib_assistant_manager import real_tdlib_assistant_manager
-            real_tdlib_manager = real_tdlib_assistant_manager
+            real_telethon_manager = real_tdlib_assistant_manager
         except ImportError:
             pass
             
         try:
-            from ZeMusic.core.advanced_real_tdlib_manager import advanced_real_tdlib_manager
-            advanced_real_manager = advanced_real_tdlib_manager
+            from ZeMusic.core.advanced_real_telethon_manager import advanced_real_telethon_manager
+            advanced_real_manager = advanced_real_telethon_manager
         except ImportError:
             pass
         
         # فحص جميع المدراء للعثور على حالة المستخدم
         managers_to_check = [
             (realistic_manager, 'realistic'),
-            (real_tdlib_manager, 'real_tdlib'),
+            (real_telethon_manager, 'real_tdlib'),
             (advanced_real_manager, 'advanced_real')
         ]
         

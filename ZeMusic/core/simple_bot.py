@@ -61,7 +61,7 @@ class SimpleBotManager:
             
             # معالج أزرار advanced TDLib
             try:
-                from .advanced_real_tdlib_manager import get_advanced_real_tdlib_handlers
+                from .advanced_real_telethon_manager import get_advanced_real_tdlib_handlers
                 for handler in get_advanced_real_tdlib_handlers():
                     self.application.add_handler(handler)
                 self.logger.info("📝 Advanced TDLib handlers added")

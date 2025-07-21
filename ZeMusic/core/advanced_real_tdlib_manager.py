@@ -324,10 +324,10 @@ class AdvancedRealTDLibAssistantManager:
             
             # استخدام النظام الرسمي لـ TDLib
             try:
-                from .official_tdlib_client import official_tdlib_manager
+                from .official_tdlib_client import official_telethon_manager
                 
                 # إكمال التفويض باستخدام الكود
-                success = await official_tdlib_manager.complete_authorization(
+                success = await official_telethon_manager.complete_authorization(
                     user_id=user_id, 
                     code=code
                 )
@@ -416,9 +416,9 @@ class AdvancedRealTDLibAssistantManager:
             
             # إنشاء TDLib Client باستخدام النظام الرسمي
             try:
-                from .official_tdlib_client import official_tdlib_manager
+                from .official_tdlib_client import official_telethon_manager
                 # إنشاء عميل TDLib رسمي
-                client = await official_tdlib_manager.create_client(api_id, api_hash, phone, user_id)
+                client = await official_telethon_manager.create_client(api_id, api_hash, phone, user_id)
                 client_id = client.client_id if client.client_id else random.randint(1, 1000)
                 
                 await query.edit_message_text(
@@ -707,8 +707,8 @@ class AdvancedRealTDLibAssistantManager:
             user_id = update.effective_user.id
             
             # Create TDLib client using official system  
-            from .official_tdlib_client import official_tdlib_manager
-            client = await official_tdlib_manager.create_client(api_id, api_hash, phone, user_id)
+            from .official_tdlib_client import official_telethon_manager
+            client = await official_telethon_manager.create_client(api_id, api_hash, phone, user_id)
             session['client'] = client
             
             # Show initialization status
@@ -997,47 +997,47 @@ class AdvancedRealTDLibAssistantManager:
 
 
 # Global instance
-advanced_real_tdlib_manager = AdvancedRealTDLibAssistantManager()
+advanced_real_telethon_manager = AdvancedRealTDLibAssistantManager()
 
 # Handler functions for the bot
 async def start_advanced_real_tdlib_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start advanced real TDLib assistant flow"""
-    await advanced_real_tdlib_manager.start_assistant_flow(update, context)
+    await advanced_real_telethon_manager.start_assistant_flow(update, context)
 
 async def use_default_api_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Use default API handler"""
-    await advanced_real_tdlib_manager.use_default_api(update, context)
+    await advanced_real_telethon_manager.use_default_api(update, context)
 
 async def skip_2fa_password_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Skip 2FA password handler"""
-    await advanced_real_tdlib_manager.skip_2fa_password(update, context)
+    await advanced_real_telethon_manager.skip_2fa_password(update, context)
 
 async def cancel_real_tdlib_session_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel real TDLib session handler"""
-    await advanced_real_tdlib_manager.cancel_session(update, context)
+    await advanced_real_telethon_manager.cancel_session(update, context)
 
 async def list_real_tdlib_sessions_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List real TDLib sessions handler"""
-    await advanced_real_tdlib_manager.list_sessions(update, context)
+    await advanced_real_telethon_manager.list_sessions(update, context)
 
 async def handle_real_tdlib_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle messages for real TDLib flow"""
     user_id = update.effective_user.id
     
-    if user_id not in advanced_real_tdlib_manager.active_sessions:
+    if user_id not in advanced_real_telethon_manager.active_sessions:
         return
     
-    session = advanced_real_tdlib_manager.active_sessions[user_id]
+    session = advanced_real_telethon_manager.active_sessions[user_id]
     step = session['step']
     
     if step == 'phone_input':
-        await advanced_real_tdlib_manager.handle_phone_input(update, context)
+        await advanced_real_telethon_manager.handle_phone_input(update, context)
     elif step == 'api_credentials':
-        await advanced_real_tdlib_manager.handle_api_credentials(update, context)
+        await advanced_real_telethon_manager.handle_api_credentials(update, context)
     elif step == 'verification_code':
-        await advanced_real_tdlib_manager.handle_verification_code(update, context)
+        await advanced_real_telethon_manager.handle_verification_code(update, context)
     elif step == '2fa_password':
-        await advanced_real_tdlib_manager.handle_2fa_password(update, context)
+        await advanced_real_telethon_manager.handle_2fa_password(update, context)
 
 def get_advanced_real_tdlib_handlers():
     """Get handlers for advanced real TDLib assistant manager"""

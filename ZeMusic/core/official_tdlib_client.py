@@ -390,4 +390,4 @@ class OfficialTDLibManager:
 
 
 # مثيل مدير TDLib الرسمي
-official_tdlib_manager = OfficialTDLibManager()
+official_telethon_manager = OfficialTDLibManager()

@@ -5,7 +5,7 @@
 
 import asyncio
 from typing import Optional, Dict, Any
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.logging import LOGGER
 import config
 
@@ -30,12 +30,12 @@ class CompatibilityClient:
         """بدء العميل - يستخدم TDLib في الخلفية"""
         try:
             # التأكد من تشغيل TDLib
-            if not tdlib_manager.bot_client:
-                await tdlib_manager.initialize_bot()
+            if not telethon_manager.bot_client:
+                await telethon_manager.initialize_bot()
             
-            if tdlib_manager.bot_client:
+            if telethon_manager.bot_client:
                 # الحصول على معلومات البوت
-                bot_info = await tdlib_manager.bot_client.get_me()
+                bot_info = await telethon_manager.bot_client.get_me()
                 self.id = bot_info.get('id')
                 self.username = bot_info.get('username', '')
                 self.me = bot_info
@@ -55,8 +55,8 @@ class CompatibilityClient:
     async def send_message(self, chat_id: int, text: str, **kwargs):
         """إرسال رسالة"""
         try:
-            if tdlib_manager.bot_client:
-                return await tdlib_manager.bot_client.send_message(chat_id, text)
+            if telethon_manager.bot_client:
+                return await telethon_manager.bot_client.send_message(chat_id, text)
             else:
                 LOGGER(__name__).error("TDLib bot client غير متاح")
                 return None
@@ -67,8 +67,8 @@ class CompatibilityClient:
     async def get_chat_member(self, chat_id: int, user_id: int):
         """الحصول على معلومات عضو في مجموعة"""
         try:
-            if tdlib_manager.bot_client:
-                return await tdlib_manager.bot_client.get_chat_member(chat_id, user_id)
+            if telethon_manager.bot_client:
+                return await telethon_manager.bot_client.get_chat_member(chat_id, user_id)
             else:
                 LOGGER(__name__).error("TDLib bot client غير متاح")
                 return None
@@ -79,8 +79,8 @@ class CompatibilityClient:
     async def get_chat(self, chat_id: int):
         """الحصول على معلومات المحادثة"""
         try:
-            if tdlib_manager.bot_client:
-                return await tdlib_manager.bot_client.get_chat(chat_id)
+            if telethon_manager.bot_client:
+                return await telethon_manager.bot_client.get_chat(chat_id)
             else:
                 LOGGER(__name__).error("TDLib bot client غير متاح")
                 return None

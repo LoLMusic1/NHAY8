@@ -8,7 +8,7 @@ from typing import Dict, Tuple
 
 import config
 from ZeMusic.logging import LOGGER
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 from ZeMusic.core.music_manager import music_manager
 
@@ -302,19 +302,19 @@ class StatsHandler:
         """الحصول على إحصائيات البوت الشاملة"""
         try:
             # إحصائيات الحسابات المساعدة
-            assistants_total = tdlib_manager.get_assistants_count()
-            assistants_connected = tdlib_manager.get_connected_assistants_count()
+            assistants_total = telethon_manager.get_assistants_count()
+            assistants_connected = telethon_manager.get_connected_assistants_count()
             
             # إحصائيات الجلسات الموسيقية
             active_sessions = len(music_manager.active_sessions)
             
             # حالة البوت الرئيسي
-            bot_connected = (tdlib_manager.bot_client and 
-                           tdlib_manager.bot_client.is_connected)
+            bot_connected = (telethon_manager.bot_client and 
+                           telethon_manager.bot_client.is_connected)
             
             # إحصائيات تفصيلية للحسابات المساعدة
             assistants_details = []
-            for assistant in tdlib_manager.assistants:
+            for assistant in telethon_manager.assistants:
                 assistant_info = {
                     'id': assistant.assistant_id,
                     'connected': assistant.is_connected,

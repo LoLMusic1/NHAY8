@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 import config
 from ZeMusic.logging import LOGGER
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 
 class AssistantsHandler:
@@ -306,7 +306,7 @@ class AssistantsHandler:
             )
             
             # محاولة الاتصال بالحساب
-            connection_result = await tdlib_manager.add_assistant(
+            connection_result = await telethon_manager.add_assistant(
                 session['session_string'],
                 session['assistant_name']
             )
@@ -446,8 +446,8 @@ class AssistantsHandler:
             # حذف الحساب من قاعدة البيانات
             await db.remove_assistant(assistant_id)
             
-            # إيقاف الحساب في tdlib_manager
-            await tdlib_manager.remove_assistant(assistant_id)
+            # إيقاف الحساب في telethon_manager
+            await telethon_manager.remove_assistant(assistant_id)
             
             # إنهاء الجلسة
             if user_id in self.pending_sessions:
@@ -521,10 +521,10 @@ class AssistantsHandler:
             accounts_info = []
             for i, assistant in enumerate(assistants, 1):
                 # التحقق من حالة الاتصال
-                is_connected = tdlib_manager.is_assistant_connected(assistant['assistant_id'])
+                is_connected = telethon_manager.is_assistant_connected(assistant['assistant_id'])
                 
                 # الحصول على معلومات إضافية
-                calls_count = tdlib_manager.get_assistant_calls_count(assistant['assistant_id'])
+                calls_count = telethon_manager.get_assistant_calls_count(assistant['assistant_id'])
                 last_activity = assistant.get('last_activity', 'غير متاح')
                 
                 status_emoji = "🟢" if is_connected else "🔴"
@@ -559,7 +559,7 @@ class AssistantsHandler:
             ]
             
             total_assistants = len(assistants)
-            connected_count = sum(1 for a in assistants if tdlib_manager.is_assistant_connected(a['assistant_id']))
+            connected_count = sum(1 for a in assistants if telethon_manager.is_assistant_connected(a['assistant_id']))
             
             message = (
                 f"📋 **قائمة الحسابات المساعدة**\n\n"
@@ -596,7 +596,7 @@ class AssistantsHandler:
         
         try:
             # إعادة تحميل الحسابات من قاعدة البيانات
-            restart_result = await tdlib_manager.restart_assistants()
+            restart_result = await telethon_manager.restart_assistants()
             
             # الحصول على إحصائيات بعد إعادة التشغيل
             stats = await self._get_assistants_stats()
@@ -696,7 +696,7 @@ class AssistantsHandler:
         """فحص عدم وجود حسابات مساعدة وإرسال تنبيه"""
         try:
             # فحص الحسابات المساعدة النشطة
-            active_assistants = tdlib_manager.get_connected_assistants_count()
+            active_assistants = telethon_manager.get_connected_assistants_count()
             
             if active_assistants == 0:
                 # إرسال رسالة للمستخدم
@@ -712,7 +712,7 @@ class AssistantsHandler:
                 )
                 
                 # إرسال رسالة للمستخدم
-                bot_client = tdlib_manager.bot_client
+                bot_client = telethon_manager.bot_client
                 if bot_client and bot_client.is_connected:
                     await bot_client.send_message(chat_id, user_message)
                 
@@ -751,14 +751,14 @@ class AssistantsHandler:
     async def _get_assistants_stats(self) -> Dict:
         """الحصول على إحصائيات الحسابات المساعدة"""
         try:
-            total = tdlib_manager.get_assistants_count()
-            connected = tdlib_manager.get_connected_assistants_count()
+            total = telethon_manager.get_assistants_count()
+            connected = telethon_manager.get_connected_assistants_count()
             
             # حساب النشطة (المتصلة وليس لديها مشاكل)
             active = 0
             in_calls = 0
             
-            for assistant in tdlib_manager.assistants:
+            for assistant in telethon_manager.assistants:
                 if assistant.is_connected:
                     active += 1
                     in_calls += len(assistant.active_calls)
@@ -812,7 +812,7 @@ class AssistantsHandler:
         try:
             current_time = time.time()
             
-            for assistant in tdlib_manager.assistants:
+            for assistant in telethon_manager.assistants:
                 if not assistant.is_connected:
                     continue
                 

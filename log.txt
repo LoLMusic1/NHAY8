@@ -2022,3 +2022,29 @@ KeyError: 'verification_code'
 [21-Jul-25 05:28:58 - INFO] - __main__ - ⏰ تم بدء المهام الدورية
 [21-Jul-25 05:28:58 - INFO] - ZeMusic.core.music_manager - 🧹 تم بدء مهمة التنظيف الدورية
 [21-Jul-25 05:28:58 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
+[21-Jul-25 08:34:53 - INFO] - ZeMusic - 🔥 تهيئة ZeMusic مع Telethon
+[21-Jul-25 08:34:53 - INFO] - ZeMusic - 🚀 Powered by Telethon v1.36.0
+[21-Jul-25 08:34:53 - INFO] - ZeMusic - ✅ تم تحميل مدير Telethon بنجاح
+[21-Jul-25 08:34:53 - INFO] - ZeMusic.core.database - ✅ تم إنشاء قاعدة البيانات SQLite بنجاح
+[21-Jul-25 08:34:53 - INFO] - ZeMusic.core.database - ✅ نظام قاعدة البيانات TDLib جاهز للاستخدام
+[21-Jul-25 08:34:53 - INFO] - ZeMusic - ✅ تم تحميل قاعدة البيانات بنجاح
+[21-Jul-25 08:34:53 - ERROR] - ZeMusic - ❌ خطأ في تحميل معالج الأوامر: No module named 'ZeMusic.core.tdlib_client'
+[21-Jul-25 08:34:53 - INFO] - ZeMusic - 🎵 ZeMusic جاهز للانطلاق مع Telethon!
+[21-Jul-25 08:36:48 - INFO] - ZeMusic - 🔥 تهيئة ZeMusic مع Telethon
+[21-Jul-25 08:36:48 - INFO] - ZeMusic - 🚀 Powered by Telethon v1.36.0
+[21-Jul-25 08:36:48 - INFO] - ZeMusic - ✅ تم تحميل مدير Telethon بنجاح
+[21-Jul-25 08:36:48 - INFO] - ZeMusic.core.database - ✅ تم إنشاء قاعدة البيانات SQLite بنجاح
+[21-Jul-25 08:36:48 - INFO] - ZeMusic.core.database - ✅ نظام قاعدة البيانات TDLib جاهز للاستخدام
+[21-Jul-25 08:36:48 - INFO] - ZeMusic - ✅ تم تحميل قاعدة البيانات بنجاح
+[21-Jul-25 08:36:48 - ERROR] - ZeMusic - ❌ خطأ في تحميل معالج الأوامر: No module named 'psutil'
+[21-Jul-25 08:36:48 - INFO] - ZeMusic - 🎵 ZeMusic جاهز للانطلاق مع Telethon!
+[21-Jul-25 08:37:06 - INFO] - ZeMusic - 🔥 تهيئة ZeMusic مع Telethon
+[21-Jul-25 08:37:06 - INFO] - ZeMusic - 🚀 Powered by Telethon v1.36.0
+[21-Jul-25 08:37:06 - INFO] - ZeMusic - ✅ تم تحميل مدير Telethon بنجاح
+[21-Jul-25 08:37:06 - INFO] - ZeMusic.core.database - ✅ تم إنشاء قاعدة البيانات SQLite بنجاح
+[21-Jul-25 08:37:06 - INFO] - ZeMusic.core.database - ✅ نظام قاعدة البيانات TDLib جاهز للاستخدام
+[21-Jul-25 08:37:06 - INFO] - ZeMusic - ✅ تم تحميل قاعدة البيانات بنجاح
+[21-Jul-25 08:37:06 - INFO] - ZeMusic.plugins.owner.force_subscribe_handler - تم تحميل إعدادات الاشتراك الإجباري - مفعل: False
+[21-Jul-25 08:37:06 - INFO] - ZeMusic.plugins.owner.assistants_handler - تم تحميل إعدادات المغادرة التلقائية - مفعل: False
+[21-Jul-25 08:37:06 - INFO] - ZeMusic - ✅ تم تحميل معالج أوامر Telethon بنجاح
+[21-Jul-25 08:37:06 - INFO] - ZeMusic - 🎵 ZeMusic جاهز للانطلاق مع Telethon!

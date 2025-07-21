@@ -1,7 +1,5 @@
-# TDLib Python wrapper
-python-telegram==0.18.0
-python-telegram-bot==21.9
-python-tdlib==0.8.10
+# Telethon - Modern Telegram client library
+telethon==1.36.0
 
 # Core dependencies
 aiofiles

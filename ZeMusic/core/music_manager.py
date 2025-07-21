@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import config
 from ZeMusic.logging import LOGGER
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 
 @dataclass
@@ -234,7 +234,7 @@ class MusicManager:
     
     def _get_assistant_by_id(self, assistant_id: int) -> Optional[Any]:
         """الحصول على المساعد بالمعرف"""
-        for assistant in tdlib_manager.assistants:
+        for assistant in telethon_manager.assistants:
             if assistant.assistant_id == assistant_id:
                 return assistant
         return None
@@ -302,7 +302,7 @@ class AssistantAllocator:
             
             # البحث عن أفضل مساعد متاح
             available_assistants = [
-                a for a in tdlib_manager.assistants 
+                a for a in telethon_manager.assistants 
                 if a.is_connected and a.get_active_calls_count() < 10
             ]
             
@@ -323,7 +323,7 @@ class AssistantAllocator:
     
     def _get_assistant_by_id(self, assistant_id: int) -> Optional[Any]:
         """الحصول على المساعد بالمعرف"""
-        for assistant in tdlib_manager.assistants:
+        for assistant in telethon_manager.assistants:
             if assistant.assistant_id == assistant_id:
                 return assistant
         return None
@@ -357,7 +357,7 @@ class VoiceChatManager:
     async def create_voice_chat(chat_id: int, title: str = "🎵 ZeMusic") -> bool:
         """إنشاء مكالمة صوتية جديدة"""
         try:
-            bot_client = tdlib_manager.bot_client
+            bot_client = telethon_manager.bot_client
             if not bot_client or not bot_client.is_connected:
                 return False
             
@@ -376,7 +376,7 @@ class VoiceChatManager:
     async def end_voice_chat(chat_id: int) -> bool:
         """إنهاء المكالمة الصوتية"""
         try:
-            bot_client = tdlib_manager.bot_client
+            bot_client = telethon_manager.bot_client
             if not bot_client or not bot_client.is_connected:
                 return False
             
@@ -407,7 +407,7 @@ async def cleanup_task():
         try:
             await asyncio.sleep(1800)  # كل 30 دقيقة
             await music_manager.cleanup_sessions()
-            await tdlib_manager.cleanup_idle_assistants()
+            await telethon_manager.cleanup_idle_assistants()
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في مهمة التنظيف: {e}")
 

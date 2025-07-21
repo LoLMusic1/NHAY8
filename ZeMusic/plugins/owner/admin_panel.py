@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 import config
 from ZeMusic.logging import LOGGER
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 
 class AdminPanel:
@@ -110,8 +110,8 @@ class AdminPanel:
             stats = await db.get_stats()
             
             # إحصائيات الحسابات المساعدة
-            assistants_total = tdlib_manager.get_assistants_count()
-            assistants_connected = tdlib_manager.get_connected_assistants_count()
+            assistants_total = telethon_manager.get_assistants_count()
+            assistants_connected = telethon_manager.get_connected_assistants_count()
             
             # إحصائيات الجلسات النشطة
             from ZeMusic.core.music_manager import music_manager

@@ -3,7 +3,7 @@ from typing import Union
 
 import config
 from ZeMusic.logging import LOGGER
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 from ZeMusic.core.music_manager import music_manager
 from ZeMusic.plugins.owner.owner_panel import owner_panel
@@ -34,7 +34,7 @@ class BasicCommandHandler:
                 f"🎵 **مرحباً {first_name}!**\n\n"
                 f"أنا **{config.BOT_NAME}** - بوت الموسيقى الخاص بك\n\n"
                 f"🎶 **الميزات المتاحة:**\n"
-                f"{'✅' if tdlib_manager.get_assistants_count() > 0 else '⚠️'} تشغيل الموسيقى في المكالمات الصوتية\n"
+                f"{'✅' if telethon_manager.get_assistants_count() > 0 else '⚠️'} تشغيل الموسيقى في المكالمات الصوتية\n"
                 f"✅ البحث عن الأغاني\n"
                 f"✅ قوائم التشغيل\n"
                 f"✅ التحكم في التشغيل\n"
@@ -50,7 +50,7 @@ class BasicCommandHandler:
             )
             
             # إضافة تحذير إذا لم توجد حسابات مساعدة
-            if tdlib_manager.get_assistants_count() == 0:
+            if telethon_manager.get_assistants_count() == 0:
                 welcome_message += (
                     f"\n\n⚠️ **ملاحظة:** لا توجد حسابات مساعدة حالياً\n"
                     f"📞 للمساعدة: {config.SUPPORT_CHAT or '@YourSupport'}"
@@ -338,8 +338,8 @@ class BasicCommandHandler:
         """معالج أمر /stats"""
         try:
             stats = await db.get_stats()
-            assistants_count = tdlib_manager.get_assistants_count()
-            connected_count = tdlib_manager.get_connected_assistants_count()
+            assistants_count = telethon_manager.get_assistants_count()
+            connected_count = telethon_manager.get_connected_assistants_count()
             active_sessions = len(music_manager.active_sessions)
             
             stats_message = (
