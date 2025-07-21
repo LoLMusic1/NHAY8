@@ -14,6 +14,21 @@ class OwnerPanel:
     def __init__(self):
         self.pending_sessions = {}  # جلسات انتظار إضافة الحسابات
     
+    async def handle_owner_command(self, event):
+        """معالج أمر /owner"""
+        try:
+            user_id = event.sender_id
+            result = await self.show_main_panel(user_id)
+            
+            if result['success']:
+                await event.reply(result['message'], buttons=result.get('keyboard'))
+            else:
+                await event.reply(result['message'])
+                
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في معالج /owner: {e}")
+            await event.reply("❌ حدث خطأ في معالجة الأمر")
+    
     async def show_main_panel(self, user_id: int) -> Dict:
         """عرض اللوحة الرئيسية"""
         if user_id != config.OWNER_ID:

@@ -898,7 +898,7 @@ async def cache_help_handler(event):
 # تهيئة آمنة للنظام
 try:
     # تهيئة HyperSpeedDownloader فقط إذا كان في بيئة تشغيل مناسبة
-    if __name__ != "__main__":
+    if __name__ != "__main__" and 'hyper_downloader' in globals():
         # محاولة تهيئة النظام بأمان
         import asyncio
         try:

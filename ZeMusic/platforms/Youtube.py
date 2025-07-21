@@ -31,9 +31,12 @@ try:
     from youtubesearchpython.__future__ import VideosSearch
 except ImportError:
     try:
-        from youtube_search import YoutubeSearch as VideosSearch
+        from youtube_search_python import VideosSearch
     except ImportError:
-        VideosSearch = None
+        try:
+            from youtube_search import YoutubeSearch as VideosSearch
+        except ImportError:
+            VideosSearch = None
 try:
     from yt_dlp import YoutubeDL
 except ImportError:

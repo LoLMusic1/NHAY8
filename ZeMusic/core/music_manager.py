@@ -388,3 +388,12 @@ async def get_queue(chat_id: int):
 async def get_current_session(chat_id: int):
     """دالة للتوافق"""
     return await telethon_music_manager.get_current_session(chat_id)
+
+async def start_cleanup_task():
+    """بدء مهمة التنظيف الدورية"""
+    try:
+        while True:
+            await asyncio.sleep(3600)  # كل ساعة
+            await telethon_music_manager.cleanup_expired_sessions()
+    except Exception as e:
+        LOGGER(__name__).error(f"خطأ في مهمة التنظيف: {e}")
