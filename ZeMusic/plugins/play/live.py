@@ -4,7 +4,7 @@ from ZeMusic import YouTube, app
 from ZeMusic.utils.channelplay import get_channeplayCB
 from ZeMusic.utils.decorators.language import languageCB
 from ZeMusic.utils.stream.stream import stream
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_callback_query(filters.regex("LiveStream") & ~BANNED_USERS)

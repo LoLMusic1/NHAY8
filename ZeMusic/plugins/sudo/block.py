@@ -6,7 +6,7 @@ from ZeMusic.misc import SUDOERS
 from ZeMusic.utils.database import add_gban_user, remove_gban_user
 from ZeMusic.utils.decorators.language import language
 from ZeMusic.utils.extraction import extract_user
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(filters.command(["حظر","block"]) & SUDOERS)

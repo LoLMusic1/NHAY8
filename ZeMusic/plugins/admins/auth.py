@@ -11,7 +11,8 @@ from ZeMusic.utils.database import (
 )
 from ZeMusic.utils.decorators import AdminActual, language
 from ZeMusic.utils.inline import close_markup
-from config import BANNED_USERS, adminlist
+from config import admi
+from ZeMusic.pyrogram_compatibility import BANNED_USERSnlist
 
 
 @app.on_message(filters.command(("رفع ادمن"),"") & filters.group & ~BANNED_USERS)

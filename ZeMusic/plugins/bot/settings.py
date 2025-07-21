@@ -34,7 +34,8 @@ from ZeMusic.utils.inline.settings import (
     vote_mode_markup,
 )
 from ZeMusic.utils.inline.start import private_panel
-from config import BANNED_USERS, OWNER_ID
+from config import OWNER_ID
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(

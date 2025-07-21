@@ -4,6 +4,15 @@ from typing import Union
 from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, InlineKeyboardMarkup
 from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.misc import SUDOERS, db
+
+try:
+    from telethon.tl.functions.channels import GetParticipantRequest
+    from telethon.tl.types import ChannelParticipantAdmin, ChannelParticipantCreator
+except ImportError:
+    # في حالة عدم توفر telethon، سنستخدم التحقق البسيط
+    GetParticipantRequest = None
+    ChannelParticipantAdmin = None
+    ChannelParticipantCreator = None
 from ZeMusic.utils.database import (
     get_authuser_names,
     get_cmode,

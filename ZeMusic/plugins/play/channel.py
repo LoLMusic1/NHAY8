@@ -5,7 +5,7 @@ from ZeMusic.pyrogram_compatibility import Message
 from ZeMusic import app
 from ZeMusic.utils.database import set_cmode
 from ZeMusic.utils.decorators.admins import AdminActual
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(filters.command(["channelplay","ربط"]) & filters.group & ~BANNED_USERS)

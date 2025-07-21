@@ -8,7 +8,8 @@ from ZeMusic.utils import AdminRightsCheck
 from ZeMusic.utils.database import is_active_chat, is_nonadmin_chat
 from ZeMusic.utils.decorators.language import languageCB
 from ZeMusic.utils.inline import close_markup, speed_markup
-from config import BANNED_USERS, adminlist
+from config import admi
+from ZeMusic.pyrogram_compatibility import BANNED_USERSnlist
 
 checker = []
 

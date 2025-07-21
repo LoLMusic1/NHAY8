@@ -28,10 +28,9 @@ except Exception as e:
 
 LOGGER(__name__).info("🎵 ZeMusic جاهز للانطلاق مع Telethon!")
 
-# تصدير app من Telethon
+# تصدير app من طبقة التوافق
 try:
-    from ZeMusic.core.telethon_client import telethon_manager
-    app = telethon_manager.bot_client
+    from ZeMusic.pyrogram_compatibility import app
     LOGGER(__name__).info("✅ تم تصدير app من Telethon")
 except Exception as e:
     LOGGER(__name__).error(f"❌ خطأ في تصدير app: {e}")

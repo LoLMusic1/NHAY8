@@ -8,7 +8,8 @@ from ZeMusic.core.call import Mody
 from ZeMusic.utils import bot_sys_stats
 from ZeMusic.utils.decorators.language import language
 from ZeMusic.utils.inline import supp_markup
-from config import BANNED_USERS, PING_IMG_URL
+from config import PING_IMG_URL
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(filters.command(["ping","بنج", "alive","البنج"],"") & ~BANNED_USERS)

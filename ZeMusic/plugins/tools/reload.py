@@ -11,7 +11,8 @@ from ZeMusic.misc import db
 from ZeMusic.utils.database import get_assistant, get_authuser_names, get_cmode
 from ZeMusic.utils.decorators import ActualAdminCB, AdminActual, language
 from ZeMusic.utils.formatters import alpha_to_int, get_readable_time
-from config import BANNED_USERS, adminlist, lyrical
+from config import admi
+from ZeMusic.pyrogram_compatibility import BANNED_USERSnlist, lyrical
 
 rel = {}
 

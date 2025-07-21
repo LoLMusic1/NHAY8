@@ -6,7 +6,7 @@ from ZeMusic.core.call import Mody
 from ZeMusic.utils.database import set_loop
 from ZeMusic.utils.decorators import AdminRightsCheck
 from ZeMusic.utils.inline import close_markup
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 from strings.filters import command
 from strings import get_string
 #import config
@@ -14,10 +14,7 @@ from strings import get_string
 #Nem = config.BOT_NAME + " اسكت"
 #Men = config.BOT_NAME + " ايقاف"
 @app.on_message(
-    filters.command(["end", "stop", "cend", "cstop"]) & filters.group & ~BANNED_USERS
-)
-@app.on_message(
-    command(["اسكت","ايقاف"]) & filters.group & ~BANNED_USERS
+    (filters.command(["end", "stop", "cend", "cstop"]) | filters.command(["اسكت","ايقاف"])) & filters.group & ~BANNED_USERS
 )
 @AdminRightsCheck
 async def stop_music(cli, message: Message, _, chat_id):
@@ -32,10 +29,7 @@ async def stop_music(cli, message: Message, _, chat_id):
 
 
 @app.on_message(
-    filters.command(["end", "stop", "cend", "cstop"]) & filters.channel & ~BANNED_USERS
-)
-@app.on_message(
-    command(["اسكت","ايقاف"]) & filters.channel & ~BANNED_USERS
+    (filters.command(["end", "stop", "cend", "cstop"]) | filters.command(["اسكت","ايقاف"])) & filters.channel & ~BANNED_USERS
 )
 async def stop_music(cli, message: Message):
     try:

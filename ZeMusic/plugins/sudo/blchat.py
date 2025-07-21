@@ -5,7 +5,7 @@ from ZeMusic import app
 from ZeMusic.misc import SUDOERS
 from ZeMusic.utils.database import blacklist_chat, blacklisted_chats, whitelist_chat
 from ZeMusic.utils.decorators.language import language
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(filters.command(["blacklistchat","مجموعه حظر" , "blchat","مجموعة حظر"]) & SUDOERS)

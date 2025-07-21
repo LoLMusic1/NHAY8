@@ -8,8 +8,9 @@ from ZeMusic.utils import help_pannel
 from ZeMusic.utils.database import get_lang
 from ZeMusic.utils.decorators.language import LanguageStart, languageCB
 from ZeMusic.utils.inline.help import help_back_markup, private_help_panel
-from config import BANNED_USERS, START_IMG_URL, SUPPORT_CHAT
+from config import START_IMG_URL, SUPPORT_CHAT
 from strings import get_string, helpers
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(filters.command(["مساعده", "help", "المساعده"]) & filters.private & ~BANNED_USERS)

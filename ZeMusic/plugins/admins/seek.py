@@ -6,7 +6,7 @@ from ZeMusic.core.call import Mody
 from ZeMusic.misc import db
 from ZeMusic.utils import AdminRightsCheck, seconds_to_min
 from ZeMusic.utils.inline import close_markup
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(

@@ -7,7 +7,7 @@ from youtubesearchpython.__future__ import VideosSearch
 
 from ZeMusic import app
 from ZeMusic.utils.inlinequery import answer
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_inline_query(~BANNED_USERS)
