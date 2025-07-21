@@ -59,7 +59,7 @@ class AssistantData:
     total_calls: int = 0
 
 class DatabaseManager:
-    """مدير قاعدة البيانات المحسّن لـ TDLib"""
+    """مدير قاعدة البيانات المحسّن لـ Telethon"""
     
     def __init__(self, db_path: str = DATABASE_PATH):
         self.db_path = db_path
@@ -769,4 +769,4 @@ class DatabaseManager:
 # إنشاء مثيل مدير قاعدة البيانات
 db = DatabaseManager()
 
-logger.info("✅ نظام قاعدة البيانات TDLib جاهز للاستخدام")
+logger.info("✅ نظام قاعدة البيانات Telethon جاهز للاستخدام")
