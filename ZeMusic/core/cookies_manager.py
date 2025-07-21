@@ -83,7 +83,11 @@ class CookiesManager:
             LOGGER(__name__).error(f"❌ فشل حفظ حالة cookies: {e}")
     
     async def _scan_cookies_files(self):
-        """فحص ملفات cookies في المجلد"""
+        """فحص ملفات cookies في المجلد مع دعم الإضافة والحذف الديناميكي"""
+        current_files = set()
+        new_files = []
+        
+        # فحص جميع ملفات .txt في المجلد
         for file_path in self.cookies_dir.glob("*.txt"):
             if file_path.name.startswith('.'):
                 continue
@@ -91,11 +95,13 @@ class CookiesManager:
             try:
                 # التحقق من أن الملف ليس فارغاً
                 if file_path.stat().st_size == 0:
+                    LOGGER(__name__).warning(f"🗑️ ملف cookies فارغ: {file_path.name}")
                     continue
                 
                 cookie_path = str(file_path)
+                current_files.add(cookie_path)
                 
-                # إنشاء حالة افتراضية إذا لم تكن موجودة
+                # إنشاء حالة افتراضية إذا لم تكن موجودة (ملف جديد)
                 if cookie_path not in self.cookies_status:
                     self.cookies_status[cookie_path] = {
                         'active': True,
@@ -104,11 +110,31 @@ class CookiesManager:
                         'last_failure': 0,
                         'success_count': 0,
                         'total_requests': 0,
-                        'blocked_until': 0
+                        'blocked_until': 0,
+                        'added_at': int(time.time())
                     }
+                    new_files.append(file_path.name)
+                    LOGGER(__name__).info(f"🆕 تم اكتشاف ملف cookies جديد: {file_path.name}")
                     
             except Exception as e:
                 LOGGER(__name__).warning(f"⚠️ خطأ في فحص {file_path}: {e}")
+        
+        # إزالة ملفات محذوفة من القائمة
+        removed_files = []
+        for cookie_path in list(self.cookies_status.keys()):
+            if cookie_path not in current_files:
+                removed_files.append(Path(cookie_path).name)
+                del self.cookies_status[cookie_path]
+                LOGGER(__name__).info(f"🗑️ تم حذف ملف cookies من النظام: {Path(cookie_path).name}")
+        
+        # تقرير التغييرات
+        if new_files:
+            LOGGER(__name__).info(f"📁 تم إضافة {len(new_files)} ملف cookies جديد: {', '.join(new_files)}")
+        
+        if removed_files:
+            LOGGER(__name__).info(f"🗑️ تم إزالة {len(removed_files)} ملف cookies: {', '.join(removed_files)}")
+        
+        return {'added': new_files, 'removed': removed_files}
     
     async def _update_available_cookies(self):
         """تحديث قائمة الcookies المتاحة"""
