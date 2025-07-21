@@ -413,11 +413,14 @@ class OwnerPanel:
             if user_id in self.pending_sessions:
                 del self.pending_sessions[user_id]
             
+            # تنظيف session string
+            session_string = session_string.strip().replace('\n', '').replace('\r', '').replace(' ', '')
+            
             # التحقق الأساسي من صيغة session string
             if not self._validate_session_string(session_string):
                 return {
                     'success': False,
-                    'message': "❌ **صيغة session string غير صحيحة**\n\n💡 تأكد من نسخ الكود بشكل صحيح"
+                    'message': f"❌ **صيغة session string غير صحيحة**\n\n📏 **الطول الحالي:** {len(session_string)} حرف\n💡 **المطلوب:** أكثر من 100 حرف من base64\n\n🔄 تأكد من نسخ الكود بشكل كامل وصحيح"
                 }
             
             # محاولة إنشاء واختبار الاتصال
@@ -430,21 +433,14 @@ class OwnerPanel:
             temp_session.close()
             
             try:
-                # إنشاء عميل جديد لاختبار الجلسة
-                test_client = TelegramClient(temp_session.name, config.API_ID, config.API_HASH)
-                
-                # تطبيق session string
-                test_client.session.set_dc(1, '149.154.175.50', 443)
-                test_client.session.auth_key = None
-                
-                # محاولة فك تشفير session string وتطبيقه
+                # إنشاء عميل جديد باستخدام StringSession مباشرة
                 from telethon.sessions import StringSession
-                string_session = StringSession(session_string)
-                test_client.session = string_session
+                test_client = TelegramClient(StringSession(session_string), config.API_ID, config.API_HASH)
                 
                 # اختبار الاتصال
                 await test_client.connect()
                 
+                # التحقق من التفويض
                 if not await test_client.is_user_authorized():
                     await test_client.disconnect()
                     return {
@@ -494,12 +490,24 @@ class OwnerPanel:
                         'success': False,
                         'message': "❌ **فشل في إضافة الحساب للنظام**\n\n🔧 تحقق من سجلات النظام أو أعد المحاولة"
                     }
-                
+                 
             except Exception as e:
-                return {
-                    'success': False,
-                    'message': f"❌ **خطأ في التحقق من الجلسة**\n\n📝 **السبب:** {str(e)[:100]}...\n\n🔄 تأكد من صحة session string وأعد المحاولة"
-                }
+                error_msg = str(e)
+                if "Unauthorized" in error_msg or "AUTH_KEY" in error_msg:
+                    return {
+                        'success': False,
+                        'message': "❌ **session string منتهي الصلاحية**\n\n🔄 **الحل:** احصل على session string جديد من:\n• https://my.telegram.org\n• أو استخدم session generator\n\n💡 تأكد من عدم تسجيل الخروج من الحساب"
+                    }
+                elif "Invalid" in error_msg or "400" in error_msg:
+                    return {
+                        'success': False,
+                        'message': f"❌ **session string غير صالح**\n\n📝 **السبب:** تنسيق خاطئ\n🔄 **الحل:** تأكد من نسخ الكود كاملاً بدون مسافات إضافية\n\n💡 **طول الكود الحالي:** {len(session_string)} حرف"
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'message': f"❌ **خطأ في التحقق من الجلسة**\n\n📝 **التفاصيل:** {error_msg[:100]}{'...' if len(error_msg) > 100 else ''}\n\n🔄 جرب session string آخر أو تواصل مع المطور"
+                    }
             finally:
                 # حذف الملف المؤقت
                 try:
@@ -519,12 +527,28 @@ class OwnerPanel:
     def _validate_session_string(self, session_string: str) -> bool:
         """التحقق من صحة session string"""
         try:
-            # التحقق الأساسي من طول وتشفير session string
-            if len(session_string) < 50:
+            # إزالة المسافات والسطور الجديدة
+            session_string = session_string.strip()
+            
+            # التحقق من الطول الأدنى
+            if len(session_string) < 100:
                 return False
             
-            # يمكن إضافة المزيد من التحققات هنا
-            return True
+            # التحقق من أنه يحتوي على أحرف base64 صالحة
+            import base64
+            import string
+            valid_chars = string.ascii_letters + string.digits + '+/='
+            if not all(c in valid_chars for c in session_string):
+                return False
+            
+            # محاولة فك التشفير للتأكد من صحة التنسيق
+            try:
+                # تجربة StringSession مع الـ string
+                from telethon.sessions import StringSession
+                StringSession(session_string)
+                return True
+            except:
+                return False
             
         except Exception:
             return False
