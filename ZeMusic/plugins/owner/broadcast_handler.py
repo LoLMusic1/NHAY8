@@ -7,7 +7,7 @@ from datetime import datetime
 
 import config
 from ZeMusic.logging import LOGGER
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 
 @dataclass
@@ -556,7 +556,7 @@ class BroadcastHandler:
                                     forward_mode: bool, pin_message: bool) -> bool:
         """إرسال رسالة الإذاعة لهدف محدد"""
         try:
-            bot_client = tdlib_manager.bot_client
+            bot_client = telethon_manager.bot_client
             if not bot_client or not bot_client.is_connected:
                 return False
             
@@ -640,7 +640,7 @@ class BroadcastHandler:
                 f"💾 تم حفظ التقرير في سجل الإذاعات"
             )
             
-            bot_client = tdlib_manager.bot_client
+            bot_client = telethon_manager.bot_client
             if bot_client and bot_client.is_connected:
                 await bot_client.send_message(broadcast_session.user_id, report_message)
             

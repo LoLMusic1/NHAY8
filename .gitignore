@@ -1,2 +1,39 @@
 node_modules/
 .env
+
+# Log files
+*.log
+log.txt
+activity_log.txt
+error_log.txt
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+*.bak
+*.backup
+
+# Database journals
+*.db-journal
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Session files (keep only templates)
+*.session
+!telethon_sessions/.gitkeep

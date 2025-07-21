@@ -8,7 +8,7 @@ from io import StringIO
 from time import time
 
 from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from ZeMusic import app
 from config import OWNER_ID

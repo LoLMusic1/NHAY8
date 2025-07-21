@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 import config
 from ZeMusic.logging import LOGGER
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 
 class ForceSubscribeHandler:
@@ -388,7 +388,7 @@ class ForceSubscribeHandler:
                 return cached_data['is_member']
         
         try:
-            bot_client = tdlib_manager.bot_client
+            bot_client = telethon_manager.bot_client
             if not bot_client or not bot_client.is_connected:
                 return True  # السماح إذا كان البوت غير متصل
             
@@ -534,7 +534,7 @@ class ForceSubscribeHandler:
     async def _get_channel_info(self, username: str) -> Optional[Dict]:
         """الحصول على معلومات القناة"""
         try:
-            bot_client = tdlib_manager.bot_client
+            bot_client = telethon_manager.bot_client
             if not bot_client or not bot_client.is_connected:
                 return None
             
@@ -562,7 +562,7 @@ class ForceSubscribeHandler:
     async def _check_bot_admin_status_in_channel(self, channel_id: int) -> bool:
         """فحص حالة البوت كمدير في قناة محددة"""
         try:
-            bot_client = tdlib_manager.bot_client
+            bot_client = telethon_manager.bot_client
             if not bot_client or not bot_client.is_connected:
                 return False
             
@@ -583,7 +583,7 @@ class ForceSubscribeHandler:
     async def _check_join_requests(self, user_id: int) -> bool:
         """فحص طلبات الانضمام للمستخدم"""
         try:
-            bot_client = tdlib_manager.bot_client
+            bot_client = telethon_manager.bot_client
             if not bot_client or not bot_client.is_connected or not self.channel_id:
                 return False
             

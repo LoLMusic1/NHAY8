@@ -1,4 +1,4 @@
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 def speed_markup(_, chat_id):

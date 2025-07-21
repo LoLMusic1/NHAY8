@@ -25,7 +25,7 @@ class ChatSettings:
     auth_enabled: bool = False
     welcome_enabled: bool = False
     log_enabled: bool = False
-    search_enabled: bool = False
+    search_enabled: bool = True
     upvote_count: int = 3
 
 @dataclass
@@ -59,7 +59,7 @@ class AssistantData:
     total_calls: int = 0
 
 class DatabaseManager:
-    """مدير قاعدة البيانات المحسّن لـ TDLib"""
+    """مدير قاعدة البيانات المحسّن لـ Telethon"""
     
     def __init__(self, db_path: str = DATABASE_PATH):
         self.db_path = db_path
@@ -96,7 +96,7 @@ class DatabaseManager:
                     auth_enabled BOOLEAN DEFAULT 0,
                     welcome_enabled BOOLEAN DEFAULT 0,
                     log_enabled BOOLEAN DEFAULT 0,
-                    search_enabled BOOLEAN DEFAULT 0,
+                    search_enabled BOOLEAN DEFAULT 1,
                     upvote_count INTEGER DEFAULT 3,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -191,8 +191,11 @@ class DatabaseManager:
     def _get_connection(self):
         """الحصول على اتصال آمن بقاعدة البيانات"""
         with self._lock:
-            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
             conn.row_factory = sqlite3.Row
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('PRAGMA synchronous=NORMAL')
+            conn.execute('PRAGMA busy_timeout=30000')
             try:
                 yield conn
             finally:
@@ -548,17 +551,41 @@ class DatabaseManager:
                 
                 if set_clause:
                     values.append(user_id)
-                    query = f"UPDATE users SET {', '.join(set_clause)}, last_seen = CURRENT_TIMESTAMP WHERE user_id = ?"
+                    query = f"UPDATE users SET {', '.join(set_clause)} WHERE user_id = ?"
                     cursor.execute(query, values)
-                    
-                    if cursor.rowcount == 0:
-                        # إنشاء المستخدم إذا لم يكن موجوداً
-                        cursor.execute('INSERT INTO users (user_id) VALUES (?)', (user_id,))
-                        cursor.execute(query, values)
-                    
                     conn.commit()
         
         await asyncio.get_event_loop().run_in_executor(None, _update)
+    
+    async def get_served_users(self) -> List[int]:
+        """الحصول على جميع المستخدمين المخدومين"""
+        def _get():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT user_id FROM users')
+                return [row['user_id'] for row in cursor.fetchall()]
+        
+        return await asyncio.get_event_loop().run_in_executor(None, _get)
+    
+    async def get_served_chats(self) -> List[int]:
+        """الحصول على جميع المحادثات المخدومة"""
+        def _get():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT chat_id FROM chats')
+                return [row['chat_id'] for row in cursor.fetchall()]
+        
+        return await asyncio.get_event_loop().run_in_executor(None, _get)
+    
+    async def get_banned_users(self) -> List[int]:
+        """الحصول على جميع المستخدمين المحظورين"""
+        def _get():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT user_id FROM users WHERE is_banned = 1')
+                return [row['user_id'] for row in cursor.fetchall()]
+        
+        return await asyncio.get_event_loop().run_in_executor(None, _get)
 
     async def add_auth_user(self, chat_id: int, user_id: int):
         """إضافة مستخدم للمصرح لهم في المجموعة"""
@@ -657,6 +684,9 @@ class DatabaseManager:
                     if self.cache_enabled:
                         self.cache.setdefault('temp', {})[key] = value
                     return value
+                # إذا كان البحث العام، نفعله افتراضياً
+                if key == "global_search_enabled":
+                    return True
                 return default
         
         return await asyncio.get_event_loop().run_in_executor(None, _get)
@@ -680,17 +710,30 @@ class DatabaseManager:
         
         await asyncio.get_event_loop().run_in_executor(None, _log)
     
-    async def add_assistant(self, session_string: str, name: str) -> int:
-        """إضافة حساب مساعد جديد"""
+    async def add_assistant(self, assistant_id: int = None, session_string: str = None, name: str = None, user_id: int = None, username: str = None, phone: str = None) -> int:
+        """إضافة حساب مساعد جديد (متوافق مع الطرق القديمة والجديدة)"""
         def _add():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO assistants (session_string, name, is_active, added_date)
-                    VALUES (?, ?, 1, ?)
-                ''', (session_string, name, datetime.now().isoformat()))
-                conn.commit()
-                return cursor.lastrowid
+                
+                # إذا تم تمرير assistant_id، نستخدم الطريقة القديمة
+                if assistant_id is not None:
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO assistants 
+                        (assistant_id, session_string, name, user_id, username, phone, is_active, added_date)
+                        VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                    ''', (assistant_id, session_string or "", name or f"Assistant {assistant_id}", 
+                          user_id, username or "", phone or "", datetime.now().isoformat()))
+                    conn.commit()
+                    return assistant_id
+                else:
+                    # الطريقة الجديدة - إنشاء ID تلقائياً
+                    cursor.execute('''
+                        INSERT INTO assistants (session_string, name, user_id, username, phone, is_active, added_date)
+                        VALUES (?, ?, ?, ?, ?, 1, ?)
+                    ''', (session_string, name, user_id, username or "", phone or "", datetime.now().isoformat()))
+                    conn.commit()
+                    return cursor.lastrowid
         
         return await asyncio.get_event_loop().run_in_executor(None, _add)
     
@@ -720,18 +763,21 @@ class DatabaseManager:
         return await asyncio.get_event_loop().run_in_executor(None, _get)
     
     async def get_assistant_by_id(self, assistant_id: int) -> Optional[Dict]:
-        """الحصول على معلومات حساب مساعد محدد"""
+        """الحصول على حساب مساعد بالمعرف"""
         def _get():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT assistant_id, session_string, name, is_active, added_date as created_at, last_used as last_activity
-                    FROM assistants WHERE assistant_id = ?
+                    SELECT assistant_id, session_string, name, user_id, username, phone, is_active, added_date as created_at, last_used as last_activity
+                    FROM assistants
+                    WHERE assistant_id = ?
                 ''', (assistant_id,))
                 row = cursor.fetchone()
                 return dict(row) if row else None
         
         return await asyncio.get_event_loop().run_in_executor(None, _get)
+    
+
     
     async def update_assistant_activity(self, assistant_id: int):
         """تحديث آخر نشاط للحساب المساعد"""
@@ -750,4 +796,4 @@ class DatabaseManager:
 # إنشاء مثيل مدير قاعدة البيانات
 db = DatabaseManager()
 
-logger.info("✅ نظام قاعدة البيانات TDLib جاهز للاستخدام")
+logger.info("✅ نظام قاعدة البيانات Telethon جاهز للاستخدام")

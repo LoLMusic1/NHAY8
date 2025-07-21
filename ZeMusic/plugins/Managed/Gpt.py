@@ -3,7 +3,7 @@ import time
 import requests
 from ZeMusic import app
 
-from ZeMusic.pyrogram_compatibility.enums import ChatAction, ParseMode
+from ZeMusic.pyrogram_compatibility import ChatAction, ParseMode
 from ZeMusic.pyrogram_compatibility import filters
 
 @app.on_message(filters.command(["رون"],""))

@@ -2,7 +2,7 @@
 import asyncio
 from strings.filters import command
 from ZeMusic.utils.decorators import AdminActual
-from ZeMusic.pyrogram_compatibility.types import (
+from ZeMusic.pyrogram_compatibility import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -13,7 +13,7 @@ from ZeMusic.pyrogram_compatibility.types import (
 )
 from ZeMusic import (Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app)
 from ZeMusic.pyrogram_compatibility import Client, filters
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, InlineKeyboardMarkup
 from config import OWNER_ID
 
 

@@ -3,11 +3,19 @@ import os
 from random import randint
 from typing import Union
 
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import InlineKeyboardMarkup
 
 import config
-from ZeMusic import Carbon, YouTube, app
-from ZeMusic.core.call import Mody
+from ZeMusic import YouTube
+try:
+    from ZeMusic import Carbon
+except ImportError:
+    Carbon = None
+from ZeMusic.pyrogram_compatibility import app
+try:
+    from ZeMusic.core.call import Mody
+except ImportError:
+    Mody = None
 from ZeMusic.misc import db
 
 from ZeMusic.utils.database import add_active_video_chat, is_active_chat
@@ -124,7 +132,10 @@ async def stream(
                 car = os.linesep.join(msg.split(os.linesep)[:17])
             else:
                 car = msg
-            carbon = await Carbon.generate(car, randint(100, 10000000))
+            if Carbon:
+                carbon = await Carbon.generate(car, randint(100, 10000000))
+            else:
+                carbon = None
             upl = close_markup(_)
             return await app.send_photo(
                 original_chat_id,

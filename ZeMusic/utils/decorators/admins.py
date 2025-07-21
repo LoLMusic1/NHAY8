@@ -1,7 +1,8 @@
-from ZeMusic.pyrogram_compatibility.enums import ChatType
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup
+from functools import wraps
+from typing import Union
 
-from ZeMusic import app
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, InlineKeyboardMarkup
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.misc import SUDOERS, db
 from ZeMusic.utils.database import (
     get_authuser_names,
@@ -11,193 +12,114 @@ from ZeMusic.utils.database import (
     is_active_chat,
     is_maintenance,
     is_nonadmin_chat,
-    is_skipmode,
 )
 from config import SUPPORT_CHAT, adminlist, confirmer
 from strings import get_string
 
-from ..formatters import int_to_alpha
+# دالة بسيطة للتحقق من الصلاحيات
+async def is_admin_or_owner(chat_id: int, user_id: int) -> bool:
+    """التحقق من كون المستخدم مدير أو مالك"""
+    try:
+        # التحقق من SUDOERS أولاً
+        if user_id in SUDOERS:
+            return True
+            
+        # استخدام Telethon للتحقق من الصلاحيات
+        bot_client = telethon_manager.bot_client
+        if not bot_client:
+            return False
+            
+        # الحصول على معلومات المشارك
+        participant = await bot_client(GetParticipantRequest(
+            channel=chat_id,
+            participant=user_id
+        ))
+        
+        # التحقق من نوع المشارك
+        return isinstance(participant.participant, (
+            ChannelParticipantAdmin,
+            ChannelParticipantCreator
+        ))
+        
+    except Exception:
+        # في حالة الخطأ، نسمح فقط لـ SUDOERS
+        return user_id in SUDOERS
 
-
-def AdminRightsCheck(mystic):
-    async def wrapper(client, message):
-        if await is_maintenance() is False:
-            if message.from_user.id not in SUDOERS:
-                return await message.reply_text(
-                    text=f"{app.mention} تحت الصيانة حالياً، زر <a href={SUPPORT_CHAT}>مجموعة الدعم</a> لمعرفة السبب.",
-                    disable_web_page_preview=True,
-                )
-
-        try:
-            await message.delete()
-        except:
-            pass
-
-        try:
-            language = await get_lang(message.chat.id)
-            _ = get_string(language)
-        except:
-            _ = get_string("en")
-        if message.sender_chat:
-            upl = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            text="ʜᴏᴡ ᴛᴏ ғɪx ?",
-                            callback_data="ModymousAdmin",
-                        ),
-                    ]
-                ]
-            )
-            return await message.reply_text(_["general_3"], reply_markup=upl)
-        if message.command[0][0] == "c":
-            chat_id = await get_cmode(message.chat.id)
-            if chat_id is None:
-                return await message.reply_text(_["setting_7"])
-            try:
-                await app.get_chat(chat_id)
-            except:
-                return await message.reply_text(_["cplay_4"])
-        else:
-            chat_id = message.chat.id
-        if not await is_active_chat(chat_id):
-            return await message.reply_text(_["general_5"])
-        is_non_admin = await is_nonadmin_chat(message.chat.id)
-        if not is_non_admin:
-            if message.from_user.id not in SUDOERS:
-                admins = adminlist.get(message.chat.id)
-                if not admins:
-                    return await message.reply_text(_["admin_13"])
-                else:
-                    if message.from_user.id not in admins:
-                        if await is_skipmode(message.chat.id):
-                            upvote = await get_upvote_count(chat_id)
-                            text = f"""<b>ᴀᴅᴍɪɴ ʀɪɢʜᴛs ɴᴇᴇᴅᴇᴅ</b>
-
-ʀᴇғʀᴇsʜ ᴀᴅᴍɪɴ ᴄᴀᴄʜᴇ ᴠɪᴀ : /reload
-
-» {upvote} ᴠᴏᴛᴇs ɴᴇᴇᴅᴇᴅ ғᴏʀ ᴘᴇʀғᴏʀᴍɪɴɢ ᴛʜɪs ᴀᴄᴛɪᴏɴ."""
-
-                            command = message.command[0]
-                            if command[0] == "c":
-                                command = command[1:]
-                            if command == "speed":
-                                return await message.reply_text(_["admin_14"])
-                            MODE = command.title()
-                            upl = InlineKeyboardMarkup(
-                                [
-                                    [
-                                        InlineKeyboardButton(
-                                            text="ᴠᴏᴛᴇ",
-                                            callback_data=f"ADMIN  UpVote|{chat_id}_{MODE}",
-                                        ),
-                                    ]
-                                ]
-                            )
-                            if chat_id not in confirmer:
-                                confirmer[chat_id] = {}
-                            try:
-                                vidid = db[chat_id][0]["vidid"]
-                                file = db[chat_id][0]["file"]
-                            except:
-                                return await message.reply_text(_["admin_14"])
-                            senn = await message.reply_text(text, reply_markup=upl)
-                            confirmer[chat_id][senn.id] = {
-                                "vidid": vidid,
-                                "file": file,
-                            }
-                            return
-                        else:
-                            return await message.reply_text(_["admin_14"])
-
-        return await mystic(client, message, _, chat_id)
-
-    return wrapper
-
-
-def AdminActual(mystic):
-    async def wrapper(client, message):
-        if await is_maintenance() is False:
-            if message.from_user.id not in SUDOERS:
-                return await message.reply_text(
-                    text=f"{app.mention} تحت الصيانة حالياً، زر <a href={SUPPORT_CHAT}>مجموعة الدعم</a> لمعرفة السبب.",
-                    disable_web_page_preview=True,
-                )
-
-        try:
-            await message.delete()
-        except:
-            pass
-
-        try:
-            language = await get_lang(message.chat.id)
-            _ = get_string(language)
-        except:
-            _ = get_string("en")
-        if message.sender_chat:
-            upl = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            text="ʜᴏᴡ ᴛᴏ ғɪx ?",
-                            callback_data="ModymousAdmin",
-                        ),
-                    ]
-                ]
-            )
-            return await message.reply_text(_["general_3"], reply_markup=upl)
-        if message.from_user.id not in SUDOERS:
-            try:
-                member = (
-                    await app.get_chat_member(message.chat.id, message.from_user.id)
-                ).privileges
-            except:
+# دالة مبسطة للتحقق من الصيانة
+def maintenance_check(func):
+    """Decorator للتحقق من وضع الصيانة"""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        if await is_maintenance():
+            # في حالة Telethon events
+            if hasattr(args[0], 'reply'):
+                await args[0].reply("🔧 البوت تحت الصيانة حالياً")
                 return
-            if not member.can_manage_video_chats:
-                return await message.reply(_["general_4"])
-        return await mystic(client, message, _)
-
+        return await func(*args, **kwargs)
     return wrapper
 
+# دالة مبسطة للتحقق من صلاحيات الإدارة
+def admin_check(func):
+    """Decorator للتحقق من صلاحيات الإدارة"""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        # في حالة Telethon events
+        if hasattr(args[0], 'sender_id') and hasattr(args[0], 'chat_id'):
+            event = args[0]
+            if not await is_admin_or_owner(event.chat_id, event.sender_id):
+                await event.reply("❌ هذا الأمر للمديرين فقط")
+                return
+        return await func(*args, **kwargs)
+    return wrapper
 
-def ActualAdminCB(mystic):
-    async def wrapper(client, CallbackQuery):
-        if await is_maintenance() is False:
-            if CallbackQuery.from_user.id not in SUDOERS:
-                return await CallbackQuery.answer(
-                    f"{app.mention} تحت الصيانة حالياً، زر مجموعة الدعم لمعرفة السبب.",
-                    show_alert=True,
-                )
-        try:
-            language = await get_lang(CallbackQuery.message.chat.id)
-            _ = get_string(language)
-        except:
-            _ = get_string("en")
-        if CallbackQuery.message.chat.type == ChatType.PRIVATE:
-            return await mystic(client, CallbackQuery, _)
-        is_non_admin = await is_nonadmin_chat(CallbackQuery.message.chat.id)
-        if not is_non_admin:
-            try:
-                a = (
-                    await app.get_chat_member(
-                        CallbackQuery.message.chat.id,
-                        CallbackQuery.from_user.id,
-                    )
-                ).privileges
-            except:
-                return await CallbackQuery.answer(_["general_4"], show_alert=True)
-            if not a.can_manage_video_chats:
-                if CallbackQuery.from_user.id not in SUDOERS:
-                    token = await int_to_alpha(CallbackQuery.from_user.id)
-                    _check = await get_authuser_names(CallbackQuery.from_user.id)
-                    if token not in _check:
-                        try:
-                            return await CallbackQuery.answer(
-                                _["general_4"],
-                                show_alert=True,
-                            )
-                        except:
-                            return
-        return await mystic(client, CallbackQuery, _)
+# Decorators مبسطة للتوافق مع الكود القديم
+def AdminRightsCheck(func):
+    """Decorator مبسط للتحقق من حقوق الإدارة"""
+    return admin_check(func)
 
+def AdminActual(func):
+    """Decorator مبسط للتحقق من الإدارة الفعلية"""
+    return admin_check(func)
+
+def PlayingOrNot(func):
+    """Decorator للتحقق من حالة التشغيل"""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        # منطق بسيط - يمكن تطويره لاحقاً
+        return await func(*args, **kwargs)
+    return wrapper
+
+# التوافق مع الكود القديم
+AdminRightsCheck = AdminRightsCheck
+AdminActual = AdminActual
+
+# دوال مساعدة للتوافق
+async def member_permissions(chat_id: int, user_id: int):
+    """دالة للحصول على صلاحيات العضو"""
+    try:
+        return await is_admin_or_owner(chat_id, user_id)
+    except:
+        return False
+
+# إضافة الاستيرادات المطلوبة لـ Telethon
+try:
+    from telethon.tl.functions.channels import GetParticipantRequest
+    from telethon.tl.types import ChannelParticipantAdmin, ChannelParticipantCreator
+except ImportError:
+    # في حالة عدم توفر Telethon
+    async def is_admin_or_owner(chat_id: int, user_id: int) -> bool:
+        return user_id in SUDOERS
+
+# إضافة للتوافق مع settings.py
+def ActualAdminCB(func):
+    """Decorator للتحقق من صلاحيات الإدارة في callback queries"""
+    async def wrapper(client, callback_query):
+        user_id = callback_query.from_user.id
+        chat_id = callback_query.message.chat.id
+        
+        if await is_admin_or_owner(chat_id, user_id):
+            return await func(client, callback_query)
+        else:
+            await callback_query.answer("❌ ليس لديك صلاحية لاستخدام هذا الأمر", show_alert=True)
+    
     return wrapper

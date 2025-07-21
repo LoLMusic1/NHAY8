@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+معالج تشغيل الموسيقى للبوت مع Telethon
+"""
+
+from telethon import events, Button
+from telethon.tl.types import Message
+from ZeMusic.core.telethon_client import telethon_manager
 import asyncio
 from ZeMusic import app
 from config import OWNER_ID
@@ -5,8 +13,8 @@ import os
 import requests
 import ZeMusic.pyrogram_compatibility as pyrogram
 from ZeMusic.pyrogram_compatibility import Client, filters, emoji
-from ZeMusic.pyrogram_compatibility.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
-from ZeMusic.pyrogram_compatibility.errors import MessageNotModified
+from ZeMusic.pyrogram_compatibility import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import MessageNotModified
 import config
 
 @app.on_message(filters.regex(r"^(انا من|انا منو)$"))

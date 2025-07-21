@@ -2,8 +2,8 @@ import asyncio
 import time
 
 from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility.enums import ChatMembersFilter
-from ZeMusic.pyrogram_compatibility.types import CallbackQuery, Message
+from ZeMusic.pyrogram_compatibility import ChatMembersFilter
+from ZeMusic.pyrogram_compatibility import CallbackQuery, Message
 
 from ZeMusic import app
 from ZeMusic.core.call import Mody

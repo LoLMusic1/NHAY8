@@ -1,6 +1,6 @@
 import os
 from ZeMusic.pyrogram_compatibility import Client, filters
-from ZeMusic.pyrogram_compatibility.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from ZeMusic.pyrogram_compatibility import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from ZeMusic import app
 from config import OWNER_ID, BOT_NAME
 import config

@@ -4,8 +4,8 @@ from sys import version as pyver
 import psutil
 from ZeMusic.pyrogram_compatibility import __version__ as pyrover
 from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility.errors import MessageIdInvalid
-from ZeMusic.pyrogram_compatibility.types import InputMediaPhoto, Message
+from ZeMusic.pyrogram_compatibility import MessageIdInvalid
+from ZeMusic.pyrogram_compatibility import InputMediaPhoto, Message
 from pytgcalls.__version__ import __version__ as pytgver
 
 import config

@@ -1,6 +1,6 @@
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton
 import config
-from ZeMusic import app
+from ZeMusic.pyrogram_compatibility import app
 
 Lnk= "https://t.me/" +config.CHANNEL_LINK
 

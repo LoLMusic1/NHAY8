@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
 from ZeMusic.pyrogram_compatibility import filters, Client
-from ZeMusic.pyrogram_compatibility.types import (
+from ZeMusic.pyrogram_compatibility import (
     Message, 
     InlineKeyboardButton, 
     InlineKeyboardMarkup,

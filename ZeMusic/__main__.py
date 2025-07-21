@@ -6,14 +6,14 @@ from contextlib import suppress
 
 import config
 from ZeMusic.logging import LOGGER
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
-from ZeMusic.core.music_manager import music_manager
-from ZeMusic.core.command_handler import tdlib_command_handler
+from ZeMusic.core.music_manager import telethon_music_manager as music_manager
+from ZeMusic.core.command_handler import telethon_command_handler
 from ZeMusic.plugins.owner.owner_panel import owner_panel
 
 class ZeMusicBot:
-    """البوت الرئيسي لـ ZeMusic مع دعم TDLib"""
+    """البوت الرئيسي لـ ZeMusic مع دعم Telethon"""
     
     def __init__(self):
         self.is_running = False
@@ -22,21 +22,20 @@ class ZeMusicBot:
     async def initialize(self):
         """تهيئة النظام"""
         try:
-            LOGGER(__name__).info("🚀 بدء تهيئة ZeMusic Bot...")
+            LOGGER(__name__).info("🚀 بدء تهيئة ZeMusic Bot مع Telethon...")
             
             # تهيئة قاعدة البيانات
             LOGGER(__name__).info("📊 تهيئة قاعدة البيانات...")
             await self._ensure_database_ready()
             
-            # تهيئة البوت الرئيسي - استخدام البوت البسيط
-            LOGGER(__name__).info("🤖 تشغيل البوت الرئيسي...")
+            # تهيئة البوت الرئيسي باستخدام Telethon
+            LOGGER(__name__).info("🤖 تشغيل البوت الرئيسي مع Telethon...")
             try:
-                from ZeMusic.core.simple_bot import simple_bot
-                bot_success = await simple_bot.start()
+                bot_success = await telethon_manager.initialize_bot()
                 if not bot_success:
                     LOGGER(__name__).error("❌ فشل في تشغيل البوت الرئيسي")
                     return False
-                LOGGER(__name__).info("✅ تم تشغيل البوت البسيط بنجاح")
+                LOGGER(__name__).info("✅ تم تشغيل البوت مع Telethon بنجاح")
             except Exception as e:
                 LOGGER(__name__).error(f"❌ خطأ في تشغيل البوت: {e}")
                 return False
@@ -44,9 +43,9 @@ class ZeMusicBot:
             # تحميل الحسابات المساعدة من قاعدة البيانات
             LOGGER(__name__).info("📱 تحميل الحسابات المساعدة...")
             try:
-                # محاولة تحميل حسابات TDLib إذا كانت متاحة
-                assistants_count = tdlib_manager.get_assistants_count()
-                connected_count = tdlib_manager.get_connected_assistants_count()
+                loaded_assistants = await telethon_manager.load_assistants_from_db()
+                assistants_count = telethon_manager.get_assistants_count()
+                connected_count = telethon_manager.get_connected_assistants_count()
                 LOGGER(__name__).info(f"📊 حالة الحسابات المساعدة: {assistants_count} إجمالي، {connected_count} متصل")
             except Exception as e:
                 LOGGER(__name__).warning(f"⚠️ خطأ في تحميل الحسابات المساعدة: {e}")
@@ -62,12 +61,6 @@ class ZeMusicBot:
             # تحميل المديرين من قاعدة البيانات
             await self._load_sudoers()
             
-            # إعداد معالج الأوامر مع TDLib
-            try:
-                await self._setup_command_handler()
-            except Exception as e:
-                LOGGER(__name__).warning(f"⚠️ خطأ في إعداد معالج الأوامر: {e}")
-            
             # بدء المهام الدورية
             try:
                 await self._start_periodic_tasks()
@@ -77,7 +70,7 @@ class ZeMusicBot:
             # بدء مهمة تنظيف music_manager
             try:
                 from ZeMusic.core.music_manager import start_cleanup_task
-                start_cleanup_task()
+                asyncio.create_task(start_cleanup_task())
             except Exception as e:
                 LOGGER(__name__).warning(f"⚠️ خطأ في مهمة التنظيف: {e}")
             
@@ -117,30 +110,6 @@ class ZeMusicBot:
             LOGGER(__name__).info(f"👨‍💼 تم تحميل {len(sudoers)} مدير")
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في تحميل المديرين: {e}")
-    
-    async def _setup_command_handler(self):
-        """إعداد معالج الأوامر"""
-        try:
-            # التحقق من نوع البوت مع حماية آمنة
-            if hasattr(tdlib_manager, 'bot_client') and tdlib_manager.bot_client and hasattr(tdlib_manager.bot_client, 'add_update_handler'):
-                # البوت يستخدم TDLib
-                def message_handler(update):
-                    asyncio.create_task(tdlib_command_handler.handle_message(update))
-                
-                def callback_handler(update):
-                    if update.get('@type') == 'updateNewCallbackQuery':
-                        asyncio.create_task(tdlib_command_handler.handle_callback_query(update))
-                
-                tdlib_manager.bot_client.add_update_handler('updateNewMessage', message_handler)
-                tdlib_manager.bot_client.add_update_handler('updateNewCallbackQuery', callback_handler)
-                
-                LOGGER(__name__).info("🎛️ تم إعداد معالج الأوامر مع TDLib")
-            else:
-                # البوت يستخدم python-telegram-bot - المعالجات مسجلة مسبقاً
-                LOGGER(__name__).info("🎛️ معالجات الأوامر جاهزة مع python-telegram-bot")
-                
-        except Exception as e:
-            LOGGER(__name__).error(f"خطأ في إعداد معالج الأوامر: {e}")
     
     async def _start_periodic_tasks(self):
         """بدء المهام الدورية"""
@@ -184,18 +153,18 @@ class ZeMusicBot:
     
     def _show_startup_message(self):
         """عرض رسالة بدء التشغيل"""
-        assistants_count = tdlib_manager.get_assistants_count()
-        connected_count = tdlib_manager.get_connected_assistants_count()
+        assistants_count = telethon_manager.get_assistants_count()
+        connected_count = telethon_manager.get_connected_assistants_count()
         
         startup_message = f"""
 ╔══════════════════════════════════════╗
-║          🎵 ZeMusic Bot 🎵            ║
+║      🎵 ZeMusic Bot (Telethon) 🎵     ║
 ╠══════════════════════════════════════╣
 ║                                      ║
 ║  ✅ البوت جاهز للعمل                  ║
 ║                                      ║
 ║  📊 الحالة:                          ║
-║     🤖 البوت الرئيسي: متصل            ║
+║     🤖 البوت الرئيسي: متصل (Telethon)  ║
 ║     📱 الحسابات المساعدة: {assistants_count} ({connected_count} متصل)     ║
 ║     💾 قاعدة البيانات: جاهزة          ║
 ║                                      ║
@@ -204,6 +173,7 @@ class ZeMusicBot:
 ║     ✅ إدارة المجموعات                ║
 ║     ✅ الأوامر الإدارية               ║
 ║                                      ║
+║  🔥 Powered by Telethon v1.36.0      ║
 ║  📞 الدعم: @{config.SUPPORT_CHAT or 'YourSupport'}               ║
 ║                                      ║
 ╚══════════════════════════════════════╝
@@ -220,7 +190,7 @@ class ZeMusicBot:
                 await music_manager.cleanup_sessions()
                 
                 # تنظيف الحسابات الخاملة
-                await tdlib_manager.cleanup_idle_assistants()
+                await telethon_manager.cleanup_idle_assistants()
                 
                 # تنظيف كاش قاعدة البيانات
                 await db.clear_cache()
@@ -237,13 +207,13 @@ class ZeMusicBot:
                 await asyncio.sleep(300)  # كل 5 دقائق
                 
                 # فحص البوت الرئيسي
-                if not tdlib_manager.bot_client or not tdlib_manager.bot_client.is_connected:
+                if not telethon_manager.bot_client or not telethon_manager.bot_client.is_connected():
                     LOGGER(__name__).warning("⚠️ البوت الرئيسي غير متصل - محاولة إعادة الاتصال...")
-                    await tdlib_manager.initialize_bot()
+                    await telethon_manager.initialize_bot()
                 
                 # فحص الحسابات المساعدة
-                connected_count = tdlib_manager.get_connected_assistants_count()
-                total_count = tdlib_manager.get_assistants_count()
+                connected_count = telethon_manager.get_connected_assistants_count()
+                total_count = telethon_manager.get_assistants_count()
                 
                 if total_count > 0 and connected_count < total_count * 0.5:  # أقل من 50% متصل
                     LOGGER(__name__).warning(f"⚠️ عدد الحسابات المتصلة منخفض: {connected_count}/{total_count}")
@@ -258,8 +228,8 @@ class ZeMusicBot:
                 await asyncio.sleep(3600)  # كل ساعة
                 
                 stats = await db.get_stats()
-                assistants_count = tdlib_manager.get_assistants_count()
-                connected_count = tdlib_manager.get_connected_assistants_count()
+                assistants_count = telethon_manager.get_assistants_count()
+                connected_count = telethon_manager.get_connected_assistants_count()
                 active_sessions = len(music_manager.active_sessions)
                 
                 LOGGER(__name__).info(
@@ -302,8 +272,8 @@ class ZeMusicBot:
                 await music_manager.stop_music(chat_id)
             
             # إيقاف جميع العملاء
-            LOGGER(__name__).info("📱 إيقاف العملاء...")
-            await tdlib_manager.stop_all()
+            LOGGER(__name__).info("📱 إيقاف عملاء Telethon...")
+            await telethon_manager.stop_all()
             
             LOGGER(__name__).info("✅ تم إيقاف البوت بنجاح")
             

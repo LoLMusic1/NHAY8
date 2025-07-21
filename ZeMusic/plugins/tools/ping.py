@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility.types import Message
+from ZeMusic.pyrogram_compatibility import Message
 
 from ZeMusic import app
 from ZeMusic.core.call import Mody

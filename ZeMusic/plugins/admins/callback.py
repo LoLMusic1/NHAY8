@@ -5,7 +5,7 @@
 import asyncio
 
 from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, InlineKeyboardMarkup
 
 from ZeMusic import YouTube, app
 from ZeMusic.core.call import Mody

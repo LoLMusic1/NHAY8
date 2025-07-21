@@ -1,13 +1,8 @@
 import asyncio
 
-from ZeMusic.pyrogram_compatibility.enums import ChatMemberStatus
-from ZeMusic.pyrogram_compatibility.errors import (
-    ChatAdminRequired,
-    InviteRequestSent,
-    UserAlreadyParticipant,
-    UserNotParticipant,
-)
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import ChatMemberStatus
+from ZeMusic.pyrogram_compatibility import errors
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, InlineKeyboardMarkup
 
 from ZeMusic import YouTube, app
 from ZeMusic.misc import SUDOERS
@@ -106,7 +101,7 @@ def PlayWrapper(command):
             try:
                 try:
                     get = await app.get_chat_member(chat_id, userbot.id)
-                except ChatAdminRequired:
+                except errors.ChatAdminRequired:
                     return await message.reply_text(_["call_1"])
                 if (
                     get.status == ChatMemberStatus.BANNED
@@ -117,7 +112,7 @@ def PlayWrapper(command):
                             app.mention, userbot.id, userbot.name, userbot.username
                         )
                     )
-            except UserNotParticipant:
+            except errors.UserNotParticipant:
                 if chat_id in links:
                     invitelink = links[chat_id]
                 else:
@@ -130,7 +125,7 @@ def PlayWrapper(command):
                     else:
                         try:
                             invitelink = await app.export_chat_invite_link(chat_id)
-                        except ChatAdminRequired:
+                        except errors.ChatAdminRequired:
                             return await message.reply_text(_["call_1"])
                         except Exception as e:
                             return await message.reply_text(
@@ -145,7 +140,7 @@ def PlayWrapper(command):
                 try:
                     await asyncio.sleep(1)
                     await userbot.join_chat(invitelink)
-                except InviteRequestSent:
+                except errors.InviteRequestSent:
                     try:
                         await app.approve_chat_join_request(chat_id, userbot.id)
                     except Exception as e:
@@ -154,7 +149,7 @@ def PlayWrapper(command):
                         )
                     await asyncio.sleep(3)
                     await myu.edit(_["call_5"].format(app.mention))
-                except UserAlreadyParticipant:
+                except errors.UserAlreadyParticipant:
                     pass
                 except Exception as e:
                     return await message.reply_text(

@@ -26,10 +26,21 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from pathlib import Path
 
-from ZeMusic.pyrogram_compatibility.enums import MessageEntityType
-from ZeMusic.pyrogram_compatibility.types import Message
-from youtubesearchpython.__future__ import VideosSearch
-from yt_dlp import YoutubeDL
+from ZeMusic.pyrogram_compatibility import MessageEntityType, Message
+try:
+    from youtubesearchpython.__future__ import VideosSearch
+except ImportError:
+    try:
+        from youtube_search_python import VideosSearch
+    except ImportError:
+        try:
+            from youtube_search import YoutubeSearch as VideosSearch
+        except ImportError:
+            VideosSearch = None
+try:
+    from yt_dlp import YoutubeDL
+except ImportError:
+    YoutubeDL = None
 
 import config
 from ZeMusic import app
@@ -1012,10 +1023,14 @@ async def periodic_cleanup():
         except Exception as e:
             logger.error(f"❌ خطأ في التنظيف الدوري: {str(e)}")
 
-# بدء مهمة التنظيف
+# بدء مهمة التنظيف (فقط إذا كان هناك event loop قيد التشغيل)
 try:
+    loop = asyncio.get_running_loop()
     asyncio.create_task(periodic_cleanup())
     logger.info("🚀 تم تشغيل نظام YouTube المحسن مع التنظيف التلقائي")
+except RuntimeError:
+    # لا يوجد event loop قيد التشغيل - سيتم بدء التنظيف لاحقاً
+    logger.info("⏸️ سيتم تشغيل التنظيف التلقائي عند بدء البوت")
 except Exception as e:
     logger.error(f"❌ خطأ في بدء النظام: {str(e)}")
 

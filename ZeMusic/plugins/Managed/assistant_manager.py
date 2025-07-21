@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 
 from ZeMusic.pyrogram_compatibility import filters, Client
-from ZeMusic.pyrogram_compatibility.types import (
+from ZeMusic.pyrogram_compatibility import (
     Message, 
     InlineKeyboardButton, 
     InlineKeyboardMarkup,
@@ -27,7 +27,7 @@ from ZeMusic.pyrogram_compatibility.types import (
 from ZeMusic import app
 from ZeMusic.core.call import Mody
 from ZeMusic.utils.database import group_assistant, get_assistant, set_assistant
-from ZeMusic.core.tdlib_client import tdlib_manager
+from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.utils.decorators.admins import AdminRightsCheck
 
 # كاش لتتبع الحسابات المساعدة
@@ -90,8 +90,8 @@ async def get_chat_assistant_status(chat_id: int) -> Optional[AssistantStatus]:
 async def find_available_assistant() -> Optional[int]:
     """البحث عن حساب مساعد متاح"""
     try:
-        # الحصول على قائمة الحسابات المساعدة من TDLib manager
-        available_assistants = tdlib_manager.get_available_assistants()
+        # الحصول على قائمة الحسابات المساعدة من Telethon manager
+        available_assistants = telethon_manager.get_available_assistants()
         
         if available_assistants:
             return available_assistants[0].assistant_id
@@ -117,14 +117,14 @@ async def join_assistant_to_chat(chat_id: int, requested_by: int) -> Tuple[bool,
             return False, "لا_توجد_حسابات_متاحة", None
         
         # محاولة الانضمام
-        assistant = tdlib_manager.get_assistant(assistant_id)
+        assistant = telethon_manager.get_assistant(assistant_id)
         
         if not assistant:
             return False, "فشل_في_الحصول_على_الحساب", None
         
         # الانضمام للمجموعة
         try:
-            # محاكاة عملية الانضمام (يمكن تخصيصها حسب TDLib)
+            # محاكاة عملية الانضمام (يمكن تخصيصها حسب Telethon)
             join_result = await assistant.join_chat(chat_id)
             
             if join_result:

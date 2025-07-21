@@ -8,7 +8,7 @@ from config import START_IMG_URL, BOT_NAME
 from ZeMusic.pyrogram_compatibility import filters
 import random
 from ZeMusic.pyrogram_compatibility import Client
-from ZeMusic.pyrogram_compatibility.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from strings.filters import command
 from ZeMusic import (Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app)
 from ZeMusic import app
