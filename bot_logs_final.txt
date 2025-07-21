@@ -30,3 +30,4 @@ nohup: ignoring input
 [21-Jul-25 21:06:43 - INFO] - __main__ - 👨‍💼 تم تحميل 0 مدير
 [21-Jul-25 21:06:43 - INFO] - __main__ - ⏰ تم بدء المهام الدورية
 [21-Jul-25 21:06:43 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
+[21-Jul-25 21:36:54 - ERROR] - __main__ - خطأ في مهمة التنظيف: 'TelethonMusicManager' object has no attribute 'cleanup_sessions'
