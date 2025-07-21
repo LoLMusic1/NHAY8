@@ -318,7 +318,14 @@ class TelethonCommandHandler:
                 except:
                     pass
                 
-                user_mention = f"[{update.sender.first_name}](tg://user?id={update.sender_id})"
+                # الحصول على اسم المستخدم بشكل آمن
+                user_name = "المستخدم"
+                if hasattr(update, 'sender') and update.sender:
+                    user_name = getattr(update.sender, 'first_name', 'المستخدم')
+                elif hasattr(update, 'effective_user') and update.effective_user:
+                    user_name = getattr(update.effective_user, 'first_name', 'المستخدم')
+                
+                user_mention = f"[{user_name}](tg://user?id={getattr(update, 'sender_id', 0)})"
                 
                 # استخدام النص الافتراضي إذا لم تتوفر الترجمة
                 try:

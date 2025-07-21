@@ -679,16 +679,21 @@ class HyperSpeedDownloader:
         if not yt_dlp:
             return None
             
+        best_cookie = None
         try:
             # إنشاء مجلد مؤقت
+            from pathlib import Path
             temp_dir = Path("downloads/temp")
             temp_dir.mkdir(parents=True, exist_ok=True)
             
             # إعداد yt-dlp
-            from ZeMusic.core.cookies_manager import cookies_manager
-            
-            # الحصول على أفضل cookie متاح
-            best_cookie = await cookies_manager.get_best_cookie()
+            try:
+                from ZeMusic.core.cookies_manager import cookies_manager
+                # الحصول على أفضل cookie متاح
+                best_cookie = await cookies_manager.get_next_cookie()
+            except Exception as e:
+                LOGGER(__name__).warning(f"تعذر الحصول على cookies: {e}")
+                best_cookie = None
             
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best[ext=m4a]/bestaudio/best',
