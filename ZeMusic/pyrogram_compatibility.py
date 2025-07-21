@@ -90,6 +90,32 @@ class types:
 # متغير emoji للتوافق
 emoji = "🎵"
 
+# إضافة enums للتوافق
+class ChatMemberStatus:
+    ADMINISTRATOR = "administrator"
+    BANNED = "banned"
+    LEFT = "left"
+    MEMBER = "member"
+    OWNER = "creator"
+    RESTRICTED = "restricted"
+
+class enums:
+    ChatMemberStatus = ChatMemberStatus
+
+# إضافة errors للتوافق
+class errors:
+    class ChatAdminRequired(Exception):
+        pass
+    
+    class InviteRequestSent(Exception):
+        pass
+        
+    class UserAlreadyParticipant(Exception):
+        pass
+        
+    class UserNotParticipant(Exception):
+        pass
+
 # دالة decorator للتوافق
 def on_message(filters_obj):
     """محاكاة @app.on_message decorator"""
@@ -126,3 +152,12 @@ Message = types.Message
 CallbackQuery = types.CallbackQuery
 User = types.User
 Chat = types.Chat
+
+# تصدير enums و types للتوافق
+enums = enums
+
+# إضافة CompatibilityClient للتوافق مع call.py
+class CompatibilityClient:
+    """عميل توافق مع Telethon"""
+    def __init__(self, *args, **kwargs):
+        pass

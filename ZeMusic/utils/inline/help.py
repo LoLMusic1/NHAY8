@@ -1,6 +1,6 @@
 from typing import Union
 
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, InlineKeyboardMarkup
 
 from ZeMusic.pyrogram_compatibility import app
 

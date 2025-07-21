@@ -1,4 +1,4 @@
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton
 import config
 from ZeMusic.pyrogram_compatibility import app
 

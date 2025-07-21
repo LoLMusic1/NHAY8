@@ -1,6 +1,6 @@
 from typing import Union
 
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton
 
 
 def setting_markup(_):
