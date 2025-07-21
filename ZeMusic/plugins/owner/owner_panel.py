@@ -21,9 +21,17 @@ class OwnerPanel:
             result = await self.show_main_panel(user_id)
             
             if result['success']:
-                keyboard = result.get('keyboard')
-                if keyboard:
-                    await event.reply(result['message'], buttons=keyboard)
+                keyboard_data = result.get('keyboard')
+                if keyboard_data:
+                    # تحويل إلى أزرار Telethon
+                    from telethon import Button
+                    buttons = []
+                    for row in keyboard_data:
+                        button_row = []
+                        for btn in row:
+                            button_row.append(Button.inline(btn['text'], data=btn['callback_data']))
+                        buttons.append(button_row)
+                    await event.reply(result['message'], buttons=buttons)
                 else:
                     await event.reply(result['message'])
             else:
