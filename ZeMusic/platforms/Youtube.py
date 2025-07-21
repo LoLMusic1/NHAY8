@@ -26,8 +26,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from pathlib import Path
 
-from ZeMusic.pyrogram_compatibility.enums import MessageEntityType
-from ZeMusic.pyrogram_compatibility.types import Message
+from ZeMusic.pyrogram_compatibility import MessageEntityType, Message
 try:
     from youtubesearchpython.__future__ import VideosSearch
 except ImportError:

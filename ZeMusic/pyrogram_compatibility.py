@@ -99,8 +99,25 @@ class ChatMemberStatus:
     OWNER = "creator"
     RESTRICTED = "restricted"
 
+class MessageEntityType:
+    URL = "url"
+    TEXT_LINK = "text_link" 
+    MENTION = "mention"
+    HASHTAG = "hashtag"
+    CASHTAG = "cashtag"
+    BOT_COMMAND = "bot_command"
+    EMAIL = "email"
+    PHONE_NUMBER = "phone_number"
+    BOLD = "bold"
+    ITALIC = "italic"
+    UNDERLINE = "underline"
+    STRIKETHROUGH = "strikethrough"
+    CODE = "code"
+    PRE = "pre"
+
 class enums:
     ChatMemberStatus = ChatMemberStatus
+    MessageEntityType = MessageEntityType
 
 # إضافة errors للتوافق
 class errors:
@@ -155,6 +172,7 @@ Chat = types.Chat
 
 # تصدير enums و types للتوافق
 enums = enums
+MessageEntityType = MessageEntityType
 
 # إضافة CompatibilityClient للتوافق مع call.py
 class CompatibilityClient:
