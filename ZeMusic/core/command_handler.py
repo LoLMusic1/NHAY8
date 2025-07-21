@@ -467,8 +467,43 @@ class TelethonCommandHandler:
     async def _handle_normal_message(self, update):
         """معالج الرسائل العادية"""
         try:
-            # يمكن إضافة معالجة للرسائل غير الأوامر هنا
-            pass
+            # معالجة إضافة الحسابات المساعدة
+            if hasattr(update, 'message') and update.message and hasattr(update.message, 'text'):
+                user_id = getattr(update, 'sender_id', 0)
+                message_text = update.message.text.strip()
+                
+                # التحقق من أن هذا session string
+                if (user_id == config.OWNER_ID and 
+                    len(message_text) > 200 and  # session strings طويلة
+                    '1BVtsOHU' in message_text):  # علامة session string
+                    
+                    try:
+                        from ZeMusic.plugins.owner.owner_panel import owner_panel
+                        
+                        # معالجة session string
+                        result = await owner_panel.process_add_assistant_input(user_id, message_text)
+                        
+                        if result and result.get('success'):
+                            keyboard_data = result.get('keyboard', [])
+                            if keyboard_data:
+                                # تحويل إلى أزرار Telethon
+                                from telethon import Button
+                                buttons = []
+                                for row in keyboard_data:
+                                    button_row = []
+                                    for btn in row:
+                                        button_row.append(Button.inline(btn['text'], data=btn['callback_data']))
+                                    buttons.append(button_row)
+                                await update.reply(result['message'], buttons=buttons)
+                            else:
+                                await update.reply(result['message'])
+                        else:
+                            await update.reply(result.get('message', '❌ حدث خطأ في المعالجة'))
+                            
+                    except Exception as e:
+                        LOGGER(__name__).error(f"خطأ في معالجة session string: {e}")
+                        await update.reply("❌ حدث خطأ في معالجة session string")
+                        
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج الرسائل العادية: {e}")
     

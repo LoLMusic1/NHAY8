@@ -822,10 +822,10 @@ async def smart_download_handler(event):
             await status_msg.edit("❌ **المكتبات المطلوبة غير متوفرة**\n\n🔧 **يحتاج تثبيت:** yt-dlp, youtube-search")
             return
         
-        # المحاولة الأولى: التحميل المباشر
+        # النظام المبسط: بحث مباشر وتحميل
         await status_msg.edit("🔍 **جاري البحث عن الأغنية...**")
         
-        # بحث بسيط أولاً لاستخراج video_id
+        # البحث عن الفيديو
         video_info = None
         try:
             from youtubesearchpython import VideosSearch
@@ -848,222 +848,77 @@ async def smart_download_handler(event):
                         'link': f"https://youtube.com{video.get('url_suffix', '')}"
                     }
             except Exception:
-                video_info = None
+                await status_msg.edit("❌ **لم يتم العثور على نتائج للبحث**\n\n💡 **جرب:**\n• كلمات مختلفة\n• اسم الفنان\n• جزء من كلمات الأغنية")
+                return
         
-        # محاولة التحميل المباشر إذا تم العثور على الفيديو
-        result = None
-        if video_info:
-            video_url = video_info.get('link', '')
-            video_id = ""
-            if "watch?v=" in video_url:
-                video_id = video_url.split("watch?v=")[1].split("&")[0]
-            elif "youtu.be/" in video_url:
-                video_id = video_url.split("youtu.be/")[1].split("?")[0]
-            
-            if video_id:
-                await status_msg.edit("🔄 **جاري تحميل الملف الصوتي...**")
+        if not video_info:
+            await status_msg.edit("❌ **لم يتم العثور على نتائج للبحث**\n\n💡 **جرب:**\n• كلمات مختلفة\n• اسم الفنان\n• جزء من كلمات الأغنية")
+            return
+        
+        # استخراج video_id
+        video_url = video_info.get('link', '')
+        video_id = ""
+        if "watch?v=" in video_url:
+            video_id = video_url.split("watch?v=")[1].split("&")[0]
+        elif "youtu.be/" in video_url:
+            video_id = video_url.split("youtu.be/")[1].split("?")[0]
+        
+        if not video_id:
+            await status_msg.edit("❌ **خطأ في استخراج معرف الفيديو**")
+            return
+        
+        # محاولة التحميل
+        await status_msg.edit("🔄 **جاري تحميل الملف الصوتي...**")
+        
+        download_result = await downloader.direct_ytdlp_download(video_id, video_info.get('title', 'Unknown'))
+        
+        if download_result and download_result.get('success'):
+            # التحميل نجح - إرسال الملف
+            audio_file = download_result.get('file_path')
+            if audio_file and Path(audio_file).exists():
+                await status_msg.edit("📤 **جاري إرسال الملف...**")
                 
-                download_result = await downloader.direct_ytdlp_download(video_id, video_info.get('title', 'Unknown'))
-                
-                if download_result and download_result.get('success'):
-                    # إرسال الملف الصوتي
-                    audio_file = download_result.get('file_path')
-                    if audio_file and Path(audio_file).exists():
-                        await status_msg.edit("📤 **جاري إرسال الملف...**")
-                        
-                        caption = f"""🎵 **{download_result.get('title', 'Unknown')[:60]}**
+                from pathlib import Path
+                caption = f"""🎵 **{download_result.get('title', 'Unknown')[:60]}**
 🎤 {download_result.get('uploader', 'Unknown')[:40]}
 ⏱️ {video_info.get('duration', 'Unknown')}
 
 📥 تم التحميل بنجاح"""
-                        
-                        await event.respond(
-                            caption,
-                            file=audio_file,
-                            attributes=[
-                                DocumentAttributeAudio(
-                                    duration=download_result.get('duration', 0),
-                                    title=download_result.get('title', 'Unknown')[:60],
-                                    performer=download_result.get('uploader', 'Unknown')[:40]
-                                )
-                            ]
+                
+                await event.respond(
+                    caption,
+                    file=audio_file,
+                    attributes=[
+                        DocumentAttributeAudio(
+                            duration=download_result.get('duration', 0),
+                            title=download_result.get('title', 'Unknown')[:60],
+                            performer=download_result.get('uploader', 'Unknown')[:40]
                         )
-                        await status_msg.delete()
-                        
-                        # حذف الملف المؤقت
-                        try:
-                            Path(audio_file).unlink()
-                        except:
-                            pass
-                        return
-        
-        # إذا فشل التحميل المباشر، جرب النظام الخارق
-        result = await downloader.hyper_download(query)
-        
-        if not result:
-            # معالج بديل بسيط - عرض المعلومات فقط
-            try:
+                    ]
+                )
+                await status_msg.delete()
                 
-                # بحث بسيط باستخدام youtube_search فقط
+                # حذف الملف المؤقت
                 try:
-                    from youtubesearchpython import VideosSearch
-                    search = VideosSearch(query, limit=1)
-                    search_results = search.result()
-                except Exception as e:
-                    # استخدام youtube_search البديل
-                    try:
-                        from youtube_search import YoutubeSearch
-                        search = YoutubeSearch(query, max_results=1)
-                        results = search.to_dict()
-                        if results:
-                            video = results[0]
-                            search_results = {
-                                'result': [{
-                                    'title': video.get('title', ''),
-                                    'channel': {'name': video.get('channel', '')},
-                                    'duration': video.get('duration', ''),
-                                    'viewCount': {'short': video.get('views', '')},
-                                    'link': f"https://youtube.com{video.get('url_suffix', '')}"
-                                }]
-                            }
-                        else:
-                            search_results = None
-                    except Exception:
-                        search_results = None
-                
-                if search_results and search_results.get('result'):
-                    video = search_results['result'][0]
-                    video_url = video.get('link', '')
-                    
-                    # استخراج video_id من الرابط
-                    video_id = ""
-                    if "watch?v=" in video_url:
-                        video_id = video_url.split("watch?v=")[1].split("&")[0]
-                    elif "youtu.be/" in video_url:
-                        video_id = video_url.split("youtu.be/")[1].split("?")[0]
-                    
-                    if video_id:
-                        # محاولة التحميل المباشر
-                        await status_msg.edit("🔄 **جاري تحميل الملف الصوتي...**")
-                        
-                        try:
-                            # استخدام yt-dlp للتحميل
-                            download_result = await downloader.direct_ytdlp_download(video_id, video.get('title', 'Unknown'))
-                            
-                            if download_result and download_result.get('success'):
-                                # إرسال الملف الصوتي
-                                audio_file = download_result.get('file_path')
-                                if audio_file and Path(audio_file).exists():
-                                    await status_msg.edit("📤 **جاري إرسال الملف...**")
-                                    
-                                    caption = f"""🎵 **{video.get('title', 'Unknown')[:60]}**
-🎤 {video.get('channel', {}).get('name', 'Unknown')[:40]}
-⏱️ {video.get('duration', 'Unknown')}
-
-📥 تم التحميل بنجاح"""
-                                    
-                                    await event.respond(
-                                        caption,
-                                        file=audio_file,
-                                        attributes=[
-                                            DocumentAttributeAudio(
-                                                duration=0,
-                                                title=video.get('title', 'Unknown')[:60],
-                                                performer=video.get('channel', {}).get('name', 'Unknown')[:40]
-                                            )
-                                        ]
-                                    )
-                                    await status_msg.delete()
-                                    
-                                    # حذف الملف المؤقت
-                                    try:
-                                        Path(audio_file).unlink()
-                                    except:
-                                        pass
-                                    return
-                        except Exception as e:
-                            LOGGER(__name__).error(f"فشل التحميل المباشر: {e}")
-                    
-                    # إذا فشل التحميل، عرض المعلومات فقط
-                    result_text = f"""🎵 **تم العثور على:**
-
-📝 **العنوان:** {video.get('title', 'غير معروف')}
-🎤 **القناة:** {video.get('channel', {}).get('name', 'غير معروف')}
-⏱️ **المدة:** {video.get('duration', 'غير معروف')}
-👁️ **المشاهدات:** {video.get('viewCount', {}).get('short', 'غير معروف')}
-
-🔗 **الرابط:** {video.get('link', '')}
-
-⚠️ **ملاحظة:** التحميل غير متاح حالياً
-🔧 **للمطور:** يحتاج إضافة cookies صالحة لـ YouTube"""
-                    
-                    await status_msg.edit(result_text)
-                    return
-                else:
-                    await status_msg.edit("❌ **لم يتم العثور على نتائج للبحث**\n\n💡 **جرب:**\n• كلمات مختلفة\n• اسم الفنان\n• جزء من كلمات الأغنية")
-                    return
-                    
-            except Exception as e:
-                await status_msg.edit("❌ **فشل في العثور على النتائج، جرب استعلاماً آخر**")
-                LOGGER(__name__).error(f"خطأ في البحث البديل: {e}")
+                    Path(audio_file).unlink()
+                except:
+                    pass
                 return
         
-        # إذا لم يتم العثور على أي نتيجة من التحميل
-        if not result:
-            await status_msg.edit("❌ **لم يتم العثور على النتيجة أو فشل التحميل**\n\n💡 **جرب:**\n• كلمات أخرى\n• اسم الفنان\n• جزء من كلمات الأغنية")
-            return
+        # التحميل فشل - عرض معلومات الفيديو فقط
+        result_text = f"""🎵 **تم العثور على:**
+
+📝 **العنوان:** {video_info.get('title', 'غير معروف')}
+🎤 **القناة:** {video_info.get('channel', {}).get('name', 'غير معروف')}
+⏱️ **المدة:** {video_info.get('duration', 'غير معروف')}
+👁️ **المشاهدات:** {video_info.get('viewCount', {}).get('short', 'غير معروف')}
+
+🔗 **الرابط:** {video_info.get('link', '')}
+
+⚠️ **ملاحظة:** التحميل غير متاح حالياً
+🔧 **للمطور:** تحقق من ملفات cookies"""
         
-        # تحديث الرسالة للتحميل الناجح
-        source_emoji = {
-            'cache': '⚡ من التخزين السريع',
-            'youtube_api': '🔍 YouTube API',
-            'invidious': '🌐 Invidious',
-            'ytdlp_cookies': '🍪 تحميل مع كوكيز',
-            'ytdlp_no_cookies': '📥 تحميل مباشر',
-            'youtube_search': '🔎 بحث يوتيوب'
-        }
-        
-        source_text = source_emoji.get(result['source'], result['source'])
-        await status_msg.edit(f"🎵 **تم العثور على:** {result['title']}\n📡 **المصدر:** {source_text}\n⬆️ **جاري الرفع...**")
-        
-        # إعداد الملف للإرسال
-        if result.get('cached') and result.get('file_id'):
-            # إرسال من الكاش باستخدام Telethon
-            caption = f"🎵 **{result['title']}**\n🎤 **{result['artist']}**\n📡 **{source_text}**"
-            if lnk:
-                caption += f"\n\n📢 [قناة البوت]({lnk})"
-            
-            await event.reply(file=result['file_id'], message=caption)
-        else:
-            # تحميل الصورة المصغرة
-            thumb_path = None
-            if 'thumb' in result and result['thumb']:
-                thumb_path = await download_thumbnail(result['thumb'], result['title'])
-            
-            # إرسال الملف الجديد باستخدام Telethon
-            caption = f"🎵 **{result['title']}**\n🎤 **{result['artist']}**\n📡 **{source_text}**"
-            if lnk:
-                caption += f"\n\n📢 [قناة البوت]({lnk})"
-            
-            await event.reply(
-                file=result['audio_path'],
-                caption=caption,
-                attributes=[
-                    {'_': 'DocumentAttributeAudio',
-                     'duration': result.get('duration', 0),
-                     'title': result['title'],
-                     'performer': result['artist']}
-                ]
-            )
-            
-            # حذف الملفات المؤقتة
-            await remove_temp_files(result.get('audio_path'), thumb_path)
-        
-        # حذف رسالة المعالجة
-        try:
-            await status_msg.delete()
-        except:
-            pass
+        await status_msg.edit(result_text)
         
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في المعالج: {e}")
