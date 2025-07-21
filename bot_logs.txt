@@ -33,3 +33,8 @@ nohup: ignoring input
 [21-Jul-25 20:45:08 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
 [21-Jul-25 20:45:39 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: No module named 'youtubesearchpython'
 [21-Jul-25 20:45:42 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /start: No module named 'youtubesearchpython'
+[21-Jul-25 20:45:48 - ERROR] - ZeMusic.plugins.play.download - ❌ خطأ في تهيئة نظام التحميل: name 'hyper_downloader' is not defined
+[21-Jul-25 20:45:48 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon
+[21-Jul-25 20:45:48 - INFO] - ZeMusic.plugins.play.download - 🚀 تم تهيئة نظام التحميل الخارق مع Telethon
+[21-Jul-25 20:46:02 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /owner: 'OwnerPanel' object has no attribute 'handle_owner_command'
+[21-Jul-25 20:46:08 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج /owner: 'OwnerPanel' object has no attribute 'handle_owner_command'
