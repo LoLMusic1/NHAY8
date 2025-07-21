@@ -4,8 +4,8 @@ import requests
 import ZeMusic.pyrogram_compatibility as pyrogram
 from ZeMusic.pyrogram_compatibility import Client, filters, emoji
 from strings.filters import command
-from ZeMusic.pyrogram_compatibility.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
-from ZeMusic.pyrogram_compatibility.errors import MessageNotModified
+from ZeMusic.pyrogram_compatibility import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import MessageNotModified
 from ZeMusic import app
 from config import OWNER_ID, LOGGER_ID, START_IMG_URL
 import config

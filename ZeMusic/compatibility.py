@@ -47,6 +47,30 @@ class CompatibilityClient:
             LOGGER(__name__).error(f"❌ خطأ في تشغيل عميل التوافق: {e}")
             raise
     
+    def on_message(self, filters_obj):
+        """محاكاة @app.on_message decorator"""
+        def decorator(func):
+            return func
+        return decorator
+    
+    def on_callback_query(self, filters_obj=None):
+        """محاكاة @app.on_callback_query decorator"""
+        def decorator(func):
+            return func
+        return decorator
+    
+    def on_inline_query(self):
+        """محاكاة @app.on_inline_query decorator"""
+        def decorator(func):
+            return func
+        return decorator
+    
+    def on_edited_message(self, filters_obj=None):
+        """محاكاة @app.on_edited_message decorator"""
+        def decorator(func):
+            return func
+        return decorator
+    
     async def stop(self):
         """إيقاف العميل"""
         LOGGER(__name__).info("🛑 إيقاف عميل التوافق")
@@ -129,6 +153,16 @@ class TDLibFilters:
         self.video = TDLibFilter("video")
         self.audio = TDLibFilter("audio")
         self.document = TDLibFilter("document")
+        self.me = TDLibFilter("me")
+        self.bot = TDLibFilter("bot")
+    
+    def regex(self, pattern):
+        """محاكاة filters.regex"""
+        return RegexFilter(pattern)
+    
+    def user(self, users):
+        """محاكاة filters.user"""
+        return UserFilter(users)
     
     def command(self, commands, prefixes=""):
         """محاكاة filters.command"""
@@ -140,6 +174,18 @@ class CommandFilter(TDLibFilter):
         super().__init__("command")
         self.commands = commands if isinstance(commands, list) else [commands]
         self.prefixes = prefixes
+
+class RegexFilter(TDLibFilter):
+    """فلتر التعبيرات النمطية"""
+    def __init__(self, pattern):
+        super().__init__("regex")
+        self.pattern = pattern
+
+class UserFilter(TDLibFilter):
+    """فلتر المستخدمين"""
+    def __init__(self, users):
+        super().__init__("user")
+        self.users = users if isinstance(users, list) else [users]
 
     # محاكاة أنواع الرسائل والردود
     class MessageType:

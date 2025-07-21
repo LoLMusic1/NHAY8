@@ -2,7 +2,7 @@ import asyncio
 from ZeMusic import app 
 import random
 from ZeMusic.pyrogram_compatibility import Client, filters
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, InlineKeyboardMarkup
 from config import BOT_NAME
 
 italy = [

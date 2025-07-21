@@ -289,10 +289,10 @@ class OwnerPanel:
             is_connected = False
             active_calls = 0
             
-            for tdlib_assistant in telethon_manager.assistants:
-                if tdlib_assistant.assistant_id == assistant['assistant_id']:
-                    is_connected = tdlib_assistant.is_connected
-                    active_calls = tdlib_assistant.get_active_calls_count()
+            for telethon_assistant in telethon_manager.assistants:
+                if telethon_assistant.assistant_id == assistant['assistant_id']:
+                    is_connected = telethon_assistant.is_connected
+                    active_calls = telethon_assistant.get_active_calls_count()
                     break
             
             status_emoji = "🟢" if is_connected else "🔴"

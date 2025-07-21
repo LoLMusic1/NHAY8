@@ -351,7 +351,7 @@ class BasicCommandHandler:
                 f"👨‍💼 **المديرين:** `{stats['sudoers']}`\n\n"
                 f"📈 **الحالة:** `نشط وجاهز`\n"
                 f"💾 **قاعدة البيانات:** `SQLite محسّن`\n"
-                f"🔧 **النسخة:** `2.0.0 TDLib Edition`"
+                f"🔧 **النسخة:** `2.0.0 Telethon Edition`"
             )
             
             await update.message.reply_text(stats_message, parse_mode='Markdown')

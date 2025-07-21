@@ -3,7 +3,7 @@
 #
 #
 from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardMarkup, Message
+from ZeMusic.pyrogram_compatibility import InlineKeyboardMarkup, Message
 
 import config
 from ZeMusic import YouTube, app

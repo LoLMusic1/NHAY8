@@ -109,3 +109,17 @@ except ImportError:
     # في حالة عدم توفر Telethon
     async def is_admin_or_owner(chat_id: int, user_id: int) -> bool:
         return user_id in SUDOERS
+
+# إضافة للتوافق مع settings.py
+def ActualAdminCB(func):
+    """Decorator للتحقق من صلاحيات الإدارة في callback queries"""
+    async def wrapper(client, callback_query):
+        user_id = callback_query.from_user.id
+        chat_id = callback_query.message.chat.id
+        
+        if await is_admin_or_owner(chat_id, user_id):
+            return await func(client, callback_query)
+        else:
+            await callback_query.answer("❌ ليس لديك صلاحية لاستخدام هذا الأمر", show_alert=True)
+    
+    return wrapper

@@ -548,17 +548,41 @@ class DatabaseManager:
                 
                 if set_clause:
                     values.append(user_id)
-                    query = f"UPDATE users SET {', '.join(set_clause)}, last_seen = CURRENT_TIMESTAMP WHERE user_id = ?"
+                    query = f"UPDATE users SET {', '.join(set_clause)} WHERE user_id = ?"
                     cursor.execute(query, values)
-                    
-                    if cursor.rowcount == 0:
-                        # إنشاء المستخدم إذا لم يكن موجوداً
-                        cursor.execute('INSERT INTO users (user_id) VALUES (?)', (user_id,))
-                        cursor.execute(query, values)
-                    
                     conn.commit()
         
         await asyncio.get_event_loop().run_in_executor(None, _update)
+    
+    async def get_served_users(self) -> List[int]:
+        """الحصول على جميع المستخدمين المخدومين"""
+        def _get():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT user_id FROM users')
+                return [row['user_id'] for row in cursor.fetchall()]
+        
+        return await asyncio.get_event_loop().run_in_executor(None, _get)
+    
+    async def get_served_chats(self) -> List[int]:
+        """الحصول على جميع المحادثات المخدومة"""
+        def _get():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT chat_id FROM chats')
+                return [row['chat_id'] for row in cursor.fetchall()]
+        
+        return await asyncio.get_event_loop().run_in_executor(None, _get)
+    
+    async def get_banned_users(self) -> List[int]:
+        """الحصول على جميع المستخدمين المحظورين"""
+        def _get():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT user_id FROM users WHERE is_banned = 1')
+                return [row['user_id'] for row in cursor.fetchall()]
+        
+        return await asyncio.get_event_loop().run_in_executor(None, _get)
 
     async def add_auth_user(self, chat_id: int, user_id: int):
         """إضافة مستخدم للمصرح لهم في المجموعة"""

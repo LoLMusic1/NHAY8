@@ -86,6 +86,31 @@ class types:
         def __init__(self, **kwargs):
             self.file_id = kwargs.get('file_id')
             self.duration = kwargs.get('duration', 0)
+    
+    class ChatPrivileges:
+        def __init__(self, **kwargs):
+            self.can_manage_chat = kwargs.get('can_manage_chat', False)
+            self.can_delete_messages = kwargs.get('can_delete_messages', False)
+            self.can_manage_video_chats = kwargs.get('can_manage_video_chats', False)
+            self.can_restrict_members = kwargs.get('can_restrict_members', False)
+    
+    class ChatMember:
+        def __init__(self, **kwargs):
+            self.user = kwargs.get('user')
+            self.status = kwargs.get('status')
+            self.permissions = kwargs.get('permissions')
+    
+    class ReplyKeyboardRemove:
+        def __init__(self, selective=False):
+            self.selective = selective
+    
+    class InlineQueryResultPhoto:
+        def __init__(self, **kwargs):
+            self.id = kwargs.get('id')
+            self.photo_url = kwargs.get('photo_url')
+            self.thumbnail_url = kwargs.get('thumbnail_url')
+            self.title = kwargs.get('title', '')
+            self.description = kwargs.get('description', '')
 
 # متغير emoji للتوافق
 emoji = "🎵"
@@ -115,9 +140,45 @@ class MessageEntityType:
     CODE = "code"
     PRE = "pre"
 
+class ChatType:
+    PRIVATE = "private"
+    GROUP = "group"
+    SUPERGROUP = "supergroup"
+    CHANNEL = "channel"
+    BOT = "bot"
+
+class ChatMembersFilter:
+    ALL = "all"
+    BANNED = "banned"
+    RESTRICTED = "restricted"
+    ADMINISTRATORS = "administrators"
+    BOTS = "bots"
+
+class ChatAction:
+    TYPING = "typing"
+    UPLOAD_PHOTO = "upload_photo"
+    RECORD_VIDEO = "record_video"
+    UPLOAD_VIDEO = "upload_video"
+    RECORD_VOICE = "record_voice"
+    UPLOAD_VOICE = "upload_voice"
+    UPLOAD_DOCUMENT = "upload_document"
+    CHOOSE_STICKER = "choose_sticker"
+    FIND_LOCATION = "find_location"
+    RECORD_VIDEO_NOTE = "record_video_note"
+    UPLOAD_VIDEO_NOTE = "upload_video_note"
+
+class ParseMode:
+    DEFAULT = None
+    MARKDOWN = "Markdown"
+    HTML = "HTML"
+
 class enums:
     ChatMemberStatus = ChatMemberStatus
     MessageEntityType = MessageEntityType
+    ChatType = ChatType
+    ChatMembersFilter = ChatMembersFilter
+    ChatAction = ChatAction
+    ParseMode = ParseMode
 
 # إضافة errors للتوافق
 class errors:
@@ -131,6 +192,20 @@ class errors:
         pass
         
     class UserNotParticipant(Exception):
+        pass
+    
+    class FloodWait(Exception):
+        def __init__(self, value):
+            self.value = value
+            super().__init__(f"FloodWait: {value}")
+    
+    class MessageNotModified(Exception):
+        pass
+    
+    class MessageIdInvalid(Exception):
+        pass
+    
+    class ChatWriteForbidden(Exception):
         pass
 
 # دالة decorator للتوافق
@@ -173,9 +248,48 @@ Chat = types.Chat
 # تصدير enums و types للتوافق
 enums = enums
 MessageEntityType = MessageEntityType
+ChatType = ChatType
+ChatMembersFilter = ChatMembersFilter
+ChatAction = ChatAction
+ParseMode = ParseMode
+FloodWait = errors.FloodWait
+MessageNotModified = errors.MessageNotModified
+MessageIdInvalid = errors.MessageIdInvalid
+ChatAdminRequired = errors.ChatAdminRequired
+UserNotParticipant = errors.UserNotParticipant
+UserAlreadyParticipant = errors.UserAlreadyParticipant
+ChatWriteForbidden = errors.ChatWriteForbidden
+ChatPrivileges = types.ChatPrivileges
+ChatMember = types.ChatMember
+ReplyKeyboardRemove = types.ReplyKeyboardRemove
+InlineQueryResultPhoto = types.InlineQueryResultPhoto
 
 # إضافة CompatibilityClient للتوافق مع call.py
 class CompatibilityClient:
     """عميل توافق مع Telethon"""
     def __init__(self, *args, **kwargs):
         pass
+    
+    def on_message(self, filters_obj):
+        """محاكاة @app.on_message decorator"""
+        def decorator(func):
+            return func
+        return decorator
+    
+    def on_callback_query(self, filters_obj=None):
+        """محاكاة @app.on_callback_query decorator"""
+        def decorator(func):
+            return func
+        return decorator
+    
+    def on_inline_query(self):
+        """محاكاة @app.on_inline_query decorator"""
+        def decorator(func):
+            return func
+        return decorator
+    
+    def on_edited_message(self, filters_obj=None):
+        """محاكاة @app.on_edited_message decorator"""
+        def decorator(func):
+            return func
+        return decorator

@@ -289,4 +289,24 @@ ASSISTANT_NOT_FOUND_MESSAGE = """
 # إعدادات إضافية للإحصائيات والإذاعة
 # ============================================
 ENABLE_DATABASE_CACHE = getenv("ENABLE_DATABASE_CACHE", "True").lower() == "true"
-APPLICATION_VERSION = "2.0.0 TDLib Edition"
+APPLICATION_VERSION = "2.0.0 Telethon Edition"
+
+# قائمة المستخدمين المحظورين - سيتم تحويلها لفلتر
+BANNED_USERS = []
+
+# إنشاء فلتر للمستخدمين المحظورين
+def create_banned_filter():
+    """إنشاء فلتر للمستخدمين المحظورين"""
+    from ZeMusic.compatibility import TDLibFilter
+    return TDLibFilter("banned_users")
+
+# تصدير فلتر المحظورين
+try:
+    from ZeMusic.compatibility import TDLibFilter
+    BANNED_USERS = TDLibFilter("banned_users")
+except ImportError:
+    # في حالة عدم توفر المودول بعد
+    BANNED_USERS = []
+
+# النسخة الخاصة بالبوت
+BOT_VERSION = "2.0.0"

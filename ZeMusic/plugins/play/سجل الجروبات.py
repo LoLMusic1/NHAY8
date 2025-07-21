@@ -5,7 +5,7 @@
 # All rights reserved. © Alisha © Alexa © Yukki
 
 from ZeMusic.pyrogram_compatibility import Client, filters
-from ZeMusic.pyrogram_compatibility.types import Message
+from ZeMusic.pyrogram_compatibility import Message
 from ZeMusic import app
 from ZeMusic.utils.database import get_served_chats
 from config import LOGGER_ID

@@ -5,8 +5,8 @@ import os
 import requests
 import ZeMusic.pyrogram_compatibility as pyrogram
 from ZeMusic.pyrogram_compatibility import Client, filters, emoji
-from ZeMusic.pyrogram_compatibility.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
-from ZeMusic.pyrogram_compatibility.errors import MessageNotModified
+from ZeMusic.pyrogram_compatibility import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
+from ZeMusic.pyrogram_compatibility import MessageNotModified
 import config
 
 @app.on_message(filters.regex(r"^(انا من|انا منو)$"))

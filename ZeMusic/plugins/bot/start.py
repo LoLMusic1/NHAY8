@@ -1,8 +1,8 @@
 import time
 
 from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility.enums import ChatType
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from ZeMusic.pyrogram_compatibility import ChatType
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from youtubesearchpython.__future__ import VideosSearch
 
 import config

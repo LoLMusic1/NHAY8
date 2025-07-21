@@ -2,7 +2,7 @@ from config import OWNER_ID
 import asyncio
 from ZeMusic.pyrogram_compatibility import Client, filters
 from ZeMusic.utils.database import get_assistant
-from ZeMusic.pyrogram_compatibility.types import Message
+from ZeMusic.pyrogram_compatibility import Message
 from ZeMusic import (Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app)
 from ZeMusic.core.call import Mody
 

@@ -1,8 +1,8 @@
 import asyncio
 
 from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility.errors import FloodWait
-from ZeMusic.pyrogram_compatibility.types import Message
+from ZeMusic.pyrogram_compatibility import FloodWait
+from ZeMusic.pyrogram_compatibility import Message
 
 from ZeMusic import app
 from ZeMusic.misc import SUDOERS

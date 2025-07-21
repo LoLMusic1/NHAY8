@@ -510,3 +510,30 @@ async def add_banned_user(user_id: int):
 async def remove_banned_user(user_id: int):
     """إزالة الحظر المحلي"""
     await db.unban_user(user_id)
+
+async def get_banned_count() -> int:
+    """الحصول على عدد المحظورين"""
+    return len(await db.get_banned_users())
+
+async def get_active_chats() -> list:
+    """الحصول على المحادثات النشطة"""
+    # نظام مبسط - إرجاع قائمة فارغة حتى يتم تطوير النظام
+    return []
+
+async def add_active_chat(chat_id: int):
+    """إضافة محادثة نشطة"""
+    # نظام مبسط - لا حاجة لتطبيق
+    pass
+
+async def remove_active_chat(chat_id: int):
+    """إزالة محادثة نشطة"""
+    # نظام مبسط - لا حاجة لتطبيق
+    pass
+
+async def get_served_users() -> list:
+    """الحصول على جميع المستخدمين المخدومين"""
+    return await db.get_served_users()
+
+async def get_served_chats() -> list:
+    """الحصول على جميع المحادثات المخدومة"""
+    return await db.get_served_chats()

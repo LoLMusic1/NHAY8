@@ -1,6 +1,6 @@
 from pykeyboard import InlineKeyboard
 from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility.types import InlineKeyboardButton, Message
+from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, Message
 
 from ZeMusic import app
 from ZeMusic.utils.database import get_lang, set_lang
