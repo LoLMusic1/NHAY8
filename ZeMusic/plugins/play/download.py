@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🚀 نظام التحميل الذكي الخارق - موحد لجميع أنواع المحادثات
+🚀 نظام التحميل الذكي الخارق - موحد لجميع أنواع المحادثات مع Telethon
 =====================================================
 
 يدمج بين:
@@ -9,6 +9,7 @@
 - بحث فائق السرعة في قاعدة البيانات
 - تحميل متوازي لا محدود
 - تبديل خاطف بين طرق التحميل
+- دعم كامل لـ Telethon
 """
 
 import os
@@ -23,17 +24,26 @@ from typing import Dict, Optional, List
 from itertools import cycle
 import aiohttp
 import aiofiles
-import yt_dlp
-from youtube_search import YoutubeSearch
 
-from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from ZeMusic.pyrogram_compatibility.errors import FloodWait, RPCError, MessageIdInvalid
+# استيراد المكتبات مع معالجة الأخطاء
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
+    
+try:
+    from youtube_search import YoutubeSearch
+except ImportError:
+    YoutubeSearch = None
+
+# استيراد Telethon بدلاً من pyrogram
+from telethon import events
+from telethon.types import Message
 
 import config
-from ZeMusic import app, LOGGER
+from ZeMusic.core.telethon_client import telethon_manager
+from ZeMusic.logging import LOGGER
 from ZeMusic.platforms.Youtube import cookies
-from ZeMusic.plugins.play.filters import command
 from ZeMusic.utils.database import is_search_enabled, is_search_enabled1
 
 # --- إعدادات النظام الذكي ---
@@ -156,7 +166,7 @@ def init_database():
 init_database()
 
 class HyperSpeedDownloader:
-    """مدير التحميل فائق السرعة"""
+    """مدير التحميل فائق السرعة مع Telethon"""
     
     def __init__(self):
         self.session_pool = []
@@ -197,7 +207,7 @@ class HyperSpeedDownloader:
             # مجموعة معالجات Thread عملاقة
             self.executor_pool = concurrent.futures.ThreadPoolExecutor(max_workers=100)
             
-            LOGGER(__name__).info("🚀 تم تهيئة نظام التحميل الخارق")
+            LOGGER(__name__).info("🚀 تم تهيئة نظام التحميل الخارق مع Telethon")
             
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في تهيئة النظام: {e}")
@@ -384,6 +394,9 @@ class HyperSpeedDownloader:
     
     async def youtube_search_simple(self, query: str) -> Optional[Dict]:
         """البحث عبر youtube_search"""
+        if not YoutubeSearch:
+            return None
+            
         try:
             results = YoutubeSearch(query, max_results=1).to_dict()
             if not results:
@@ -406,6 +419,9 @@ class HyperSpeedDownloader:
     
     async def download_with_ytdlp(self, video_info: Dict) -> Optional[Dict]:
         """تحميل عبر yt-dlp مع تدوير الكوكيز"""
+        if not yt_dlp:
+            return None
+            
         video_id = video_info.get("video_id")
         if not video_id:
             return None
@@ -468,8 +484,8 @@ class HyperSpeedDownloader:
         return None
     
     async def cache_to_channel(self, audio_info: Dict, search_query: str) -> Optional[str]:
-        """حفظ الملف في قناة التخزين وقاعدة البيانات"""
-        if not SMART_CACHE_CHANNEL:
+        """حفظ الملف في قناة التخزين وقاعدة البيانات باستخدام Telethon"""
+        if not SMART_CACHE_CHANNEL or not telethon_manager.bot_client:
             return None
         
         try:
@@ -486,14 +502,18 @@ class HyperSpeedDownloader:
 🔗 {audio_info["source"]}
 🔍 {search_query}"""
             
-            # رفع الملف للقناة
-            message = await app.send_audio(
-                chat_id=SMART_CACHE_CHANNEL,
-                audio=audio_path,
-                title=title,
-                performer=artist,
-                duration=duration,
-                caption=caption
+            # رفع الملف للقناة باستخدام Telethon
+            message = await telethon_manager.bot_client.send_file(
+                entity=SMART_CACHE_CHANNEL,
+                file=audio_path,
+                caption=caption,
+                attributes=[
+                    # إضافة معلومات الصوت
+                    {'_': 'DocumentAttributeAudio',
+                     'duration': duration,
+                     'title': title,
+                     'performer': artist}
+                ]
             )
             
             # حفظ في قاعدة البيانات
@@ -505,13 +525,17 @@ class HyperSpeedDownloader:
             conn = sqlite3.connect(DB_FILE)
             cursor = conn.cursor()
             
+            # الحصول على file_id من Telethon
+            file_id = message.document.id if message.document else None
+            file_unique_id = getattr(message.document, 'access_hash', None)
+            
             cursor.execute('''
                 INSERT OR REPLACE INTO channel_index 
                 (message_id, file_id, file_unique_id, search_hash, title_normalized, artist_normalized, 
                  keywords_vector, original_title, original_artist, duration, file_size)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                message.id, message.audio.file_id, message.audio.file_unique_id,
+                message.id, str(file_id), str(file_unique_id),
                 search_hash, normalized_title, normalized_artist, keywords,
                 title, artist, duration, file_size
             ))
@@ -520,7 +544,7 @@ class HyperSpeedDownloader:
             conn.close()
             
             LOGGER(__name__).info(f"✅ تم حفظ {title} في التخزين الذكي")
-            return message.audio.file_id
+            return str(file_id)
             
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في حفظ التخزين: {e}")
@@ -616,39 +640,57 @@ async def download_thumbnail(url: str, title: str) -> Optional[str]:
     
     return None
 
-# --- المعالج الموحد لجميع أنواع المحادثات ---
-@app.on_message(
-    command(["song", "/song", "بحث", config.BOT_NAME + " ابحث", "يوت"]) & 
-    (filters.private | filters.group | filters.channel)
-)
-async def smart_download_handler(client, message: Message):
-    """المعالج الموحد للتحميل الذكي"""
+# --- المعالج الموحد لجميع أنواع المحادثات مع Telethon ---
+async def smart_download_handler(event):
+    """المعالج الموحد للتحميل الذكي مع Telethon"""
     
     # التحقق من تفعيل الخدمة
     try:
-        if message.chat.type == "private":
+        chat_id = event.chat_id
+        if chat_id > 0:  # محادثة خاصة
             if not await is_search_enabled1():
-                return await message.reply_text("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
-        else:
-            if not await is_search_enabled():
-                return await message.reply_text("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
+                await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
+                return
+        else:  # مجموعة أو قناة
+            if not await is_search_enabled(chat_id):
+                await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
+                return
     except:
         pass
     
     # استخراج الاستعلام
-    query = " ".join(message.command[1:])
+    message_text = event.message.text or ""
+    
+    # إزالة الأمر والحصول على الاستعلام
+    for cmd in ["song", "/song", "بحث", "يوت"]:
+        if message_text.lower().startswith(cmd.lower()):
+            query = message_text[len(cmd):].strip()
+            break
+    else:
+        # إذا كان النص يحتوي على الكلمة في أي مكان
+        if any(word in message_text.lower() for word in ["بحث", "song", "يوت"]):
+            query = message_text.strip()
+        else:
+            return
+    
     if not query:
-        return await message.reply_text("📝 **الاستخدام:** `بحث اسم الأغنية`")
+        await event.reply("📝 **الاستخدام:** `بحث اسم الأغنية`")
+        return
     
     # رسالة المعالجة
-    status_msg = await message.reply_text("⚡ **جاري المعالجة بالنظام الذكي...**")
+    status_msg = await event.reply("⚡ **جاري المعالجة بالنظام الذكي...**")
     
     try:
+        # التحقق من توفر المكتبات المطلوبة
+        if not yt_dlp and not YoutubeSearch:
+            await status_msg.edit("❌ **المكتبات المطلوبة غير متوفرة**\n\n🔧 **يحتاج تثبيت:** yt-dlp, youtube-search")
+            return
+        
         # التحميل بالنظام الخارق
         result = await downloader.hyper_download(query)
         
         if not result:
-            await status_msg.edit_text("❌ **فشل في العثور على النتائج، جرب استعلاماً آخر**")
+            await status_msg.edit("❌ **فشل في العثور على النتائج، جرب استعلاماً آخر**")
             return
         
         # تحديث الرسالة
@@ -662,35 +704,36 @@ async def smart_download_handler(client, message: Message):
         }
         
         source_text = source_emoji.get(result['source'], result['source'])
-        await status_msg.edit_text(f"🎵 **تم العثور على:** {result['title']}\n📡 **المصدر:** {source_text}\n⬆️ **جاري الرفع...**")
+        await status_msg.edit(f"🎵 **تم العثور على:** {result['title']}\n📡 **المصدر:** {source_text}\n⬆️ **جاري الرفع...**")
         
         # إعداد الملف للإرسال
         if result.get('cached') and result.get('file_id'):
-            # إرسال من الكاش
-            await message.reply_audio(
-                audio=result['file_id'],
-                caption=f"🎵 **{result['title']}**\n🎤 **{result['artist']}**\n📡 **{source_text}**",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("📢 قناة البوت", url=lnk)
-                ]]) if lnk else None
-            )
+            # إرسال من الكاش باستخدام Telethon
+            caption = f"🎵 **{result['title']}**\n🎤 **{result['artist']}**\n📡 **{source_text}**"
+            if lnk:
+                caption += f"\n\n📢 [قناة البوت]({lnk})"
+            
+            await event.reply(file=result['file_id'], message=caption)
         else:
             # تحميل الصورة المصغرة
             thumb_path = None
             if 'thumb' in result and result['thumb']:
                 thumb_path = await download_thumbnail(result['thumb'], result['title'])
             
-            # إرسال الملف الجديد
-            await message.reply_audio(
-                audio=result['audio_path'],
-                title=result['title'],
-                performer=result['artist'],
-                duration=result.get('duration', 0),
-                thumb=thumb_path,
-                caption=f"🎵 **{result['title']}**\n🎤 **{result['artist']}**\n📡 **{source_text}**",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("📢 قناة البوت", url=lnk)
-                ]]) if lnk else None
+            # إرسال الملف الجديد باستخدام Telethon
+            caption = f"🎵 **{result['title']}**\n🎤 **{result['artist']}**\n📡 **{source_text}**"
+            if lnk:
+                caption += f"\n\n📢 [قناة البوت]({lnk})"
+            
+            await event.reply(
+                file=result['audio_path'],
+                caption=caption,
+                attributes=[
+                    {'_': 'DocumentAttributeAudio',
+                     'duration': result.get('duration', 0),
+                     'title': result['title'],
+                     'performer': result['artist']}
+                ]
             )
             
             # حذف الملفات المؤقتة
@@ -705,14 +748,16 @@ async def smart_download_handler(client, message: Message):
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في المعالج: {e}")
         try:
-            await status_msg.edit_text(f"❌ **خطأ في المعالجة:** {str(e)}")
+            await status_msg.edit(f"❌ **خطأ في المعالجة:** {str(e)}")
         except:
             pass
 
-# --- إحصائيات وأوامر المطور ---
-@app.on_message(command(["cache_stats"]) & filters.user(config.OWNER_ID))
-async def cache_stats_handler(client, message: Message):
+# --- أوامر المطور مع Telethon ---
+async def cache_stats_handler(event):
     """عرض إحصائيات التخزين الذكي"""
+    if event.sender_id != config.OWNER_ID:
+        return
+    
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -741,29 +786,31 @@ async def cache_stats_handler(client, message: Message):
         for i, (title, count) in enumerate(top_songs, 1):
             stats_text += f"{i}. {title[:30]}... ({count})\n"
         
-        await message.reply_text(stats_text)
+        await event.reply(stats_text)
         
     except Exception as e:
-        await message.reply_text(f"❌ خطأ: {e}")
+        await event.reply(f"❌ خطأ: {e}")
 
-@app.on_message(command(["test_cache_channel"]) & filters.user(config.OWNER_ID))
-async def test_cache_channel_handler(client, message: Message):
+async def test_cache_channel_handler(event):
     """اختبار قناة التخزين الذكي"""
+    if event.sender_id != config.OWNER_ID:
+        return
+    
     if not SMART_CACHE_CHANNEL:
-        await message.reply_text("❌ **قناة التخزين غير مُعدة**\n\n📝 أضف `CACHE_CHANNEL_USERNAME` في ملف .env")
+        await event.reply("❌ **قناة التخزين غير مُعدة**\n\n📝 أضف `CACHE_CHANNEL_USERNAME` في ملف .env")
         return
     
     try:
         # اختبار إرسال رسالة للقناة
-        test_msg = await app.send_message(
-            chat_id=SMART_CACHE_CHANNEL,
-            text="🧪 **اختبار قناة التخزين الذكي**\n\n✅ البوت يعمل بشكل صحيح في هذه القناة!"
+        test_msg = await telethon_manager.bot_client.send_message(
+            entity=SMART_CACHE_CHANNEL,
+            message="🧪 **اختبار قناة التخزين الذكي**\n\n✅ البوت يعمل بشكل صحيح في هذه القناة!"
         )
         
-        await message.reply_text(f"""✅ **اختبار قناة التخزين نجح!**
+        await event.reply(f"""✅ **اختبار قناة التخزين نجح!**
 
 📺 **القناة:** `{SMART_CACHE_CHANNEL}`
-📨 **رسالة الاختبار:** [اضغط هنا](https://t.me/c/{str(SMART_CACHE_CHANNEL).replace('-100', '')}/{test_msg.id})
+📨 **رسالة الاختبار:** تم إرسالها بنجاح
 
 🎵 الآن يمكن حفظ الأغاني في قناة التخزين تلقائياً!""")
         
@@ -775,7 +822,7 @@ async def test_cache_channel_handler(client, message: Message):
             pass
             
     except Exception as e:
-        await message.reply_text(f"""❌ **فشل اختبار قناة التخزين!**
+        await event.reply(f"""❌ **فشل اختبار قناة التخزين!**
 
 📺 **القناة:** `{SMART_CACHE_CHANNEL}`
 🚫 **الخطأ:** `{str(e)}`
@@ -785,9 +832,11 @@ async def test_cache_channel_handler(client, message: Message):
 - تفعيل إرسال الرسائل
 - صحة يوزر/ID القناة""")
 
-@app.on_message(command(["clear_cache"]) & filters.user(config.OWNER_ID))
-async def clear_cache_handler(client, message: Message):
+async def clear_cache_handler(event):
     """مسح كاش التخزين الذكي"""
+    if event.sender_id != config.OWNER_ID:
+        return
+    
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -801,7 +850,7 @@ async def clear_cache_handler(client, message: Message):
         conn.commit()
         conn.close()
         
-        await message.reply_text(f"""🧹 **تم مسح كاش التخزين!**
+        await event.reply(f"""🧹 **تم مسح كاش التخزين!**
 
 📊 **المحذوف:** {total_before} ملف
 💽 **قاعدة البيانات:** تم تنظيفها
@@ -810,11 +859,13 @@ async def clear_cache_handler(client, message: Message):
 ⚡ سيتم إعادة بناء الكاش تلقائياً مع الاستخدام""")
         
     except Exception as e:
-        await message.reply_text(f"❌ خطأ في مسح الكاش: {e}")
+        await event.reply(f"❌ خطأ في مسح الكاش: {e}")
 
-@app.on_message(command(["cache_help"]) & filters.user(config.OWNER_ID))
-async def cache_help_handler(client, message: Message):
+async def cache_help_handler(event):
     """مساعدة أوامر التخزين الذكي"""
+    if event.sender_id != config.OWNER_ID:
+        return
+    
     help_text = """🤖 **أوامر التخزين الذكي**
 
 📊 `/cache_stats` - إحصائيات التخزين
@@ -835,8 +886,9 @@ async def cache_help_handler(client, message: Message):
 - تخزين تلقائي للأغاني المحملة
 - بحث فوري في الكاش (0.001s)
 - إحصائيات تفصيلية
-- تنظيف وإدارة سهلة"""
+- تنظيف وإدارة سهلة
+- دعم كامل لـ Telethon"""
 
-    await message.reply_text(help_text)
+    await event.reply(help_text)
 
-LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق")
+LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon")

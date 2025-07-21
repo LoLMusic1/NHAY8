@@ -288,7 +288,49 @@ class TelethonClientManager:
                 except Exception as e:
                     self.logger.error(f"خطأ في معالج الcallbacks: {e}")
             
-            self.logger.info("🎛️ تم إعداد معالجات أحداث Telethon")
+            # معالج البحث والتحميل
+            @self.bot_client.on(events.NewMessage(pattern=r'(?i)(song|/song|بحث|يوت)'))
+            async def download_handler(event):
+                try:
+                    from ZeMusic.plugins.play.download import smart_download_handler
+                    await smart_download_handler(event)
+                except Exception as e:
+                    self.logger.error(f"خطأ في معالج التحميل: {e}")
+            
+            # معالجات أوامر المطور للتخزين الذكي
+            @self.bot_client.on(events.NewMessage(pattern=r'/cache_stats'))
+            async def cache_stats_handler_event(event):
+                try:
+                    from ZeMusic.plugins.play.download import cache_stats_handler
+                    await cache_stats_handler(event)
+                except Exception as e:
+                    self.logger.error(f"خطأ في معالج cache_stats: {e}")
+            
+            @self.bot_client.on(events.NewMessage(pattern=r'/test_cache_channel'))
+            async def test_cache_channel_handler_event(event):
+                try:
+                    from ZeMusic.plugins.play.download import test_cache_channel_handler
+                    await test_cache_channel_handler(event)
+                except Exception as e:
+                    self.logger.error(f"خطأ في معالج test_cache_channel: {e}")
+            
+            @self.bot_client.on(events.NewMessage(pattern=r'/clear_cache'))
+            async def clear_cache_handler_event(event):
+                try:
+                    from ZeMusic.plugins.play.download import clear_cache_handler
+                    await clear_cache_handler(event)
+                except Exception as e:
+                    self.logger.error(f"خطأ في معالج clear_cache: {e}")
+            
+            @self.bot_client.on(events.NewMessage(pattern=r'/cache_help'))
+            async def cache_help_handler_event(event):
+                try:
+                    from ZeMusic.plugins.play.download import cache_help_handler
+                    await cache_help_handler(event)
+                except Exception as e:
+                    self.logger.error(f"خطأ في معالج cache_help: {e}")
+            
+            self.logger.info("🎛️ تم إعداد معالجات أحداث Telethon مع وظائف التحميل")
             
         except Exception as e:
             self.logger.error(f"❌ خطأ في إعداد المعالجات: {e}")

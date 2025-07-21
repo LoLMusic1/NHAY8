@@ -326,144 +326,20 @@ class SimpleHandlers:
                 )
                 return
             
-            # التحقق من وجود كلمة "بحث"
-            if not message_text.startswith('بحث'):
-                # رد على الرسائل العادية في الخاص
-                if update.message.chat.type == 'private':
-                    await update.message.reply_text(
-                        "👋 **مرحباً في ZeMusic Bot!**\n\n"
-                        "🎵 **للبحث عن موسيقى:** `بحث اسم الأغنية`\n"
-                        "⚙️ **لوحة التحكم:** /owner\n"
-                        "❓ **المساعدة:** /help",
-                        parse_mode='Markdown'
-                    )
-                return
-            
-            # استخراج اسم الأغنية
-            search_query = message_text.replace('بحث', '').strip()
-            
-            if not search_query:
+            # رد على الرسائل العادية في الخاص
+            if update.message.chat.type == 'private':
                 await update.message.reply_text(
-                    "❌ **يرجى كتابة اسم الأغنية**\n\n"
-                    "**مثال:** `بحث عليكي عيون`",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            # رسالة انتظار
-            waiting_msg = await update.message.reply_text(
-                f"🔍 **جاري البحث عن:** `{search_query}`\n\n"
-                "⏳ **انتظر قليلاً...**",
-                parse_mode='Markdown'
-            )
-            
-            try:
-                # محاولة البحث
-                await self._search_and_play(update, search_query, waiting_msg)
-                
-            except Exception as search_error:
-                LOGGER(__name__).error(f"خطأ في البحث: {search_error}")
-                await waiting_msg.edit_text(
-                    f"❌ **فشل البحث عن:** `{search_query}`\n\n"
-                    f"🔧 **السبب:** لم يتم إضافة حسابات مساعدة بعد\n"
-                    f"⚙️ **الحل:** استخدم /owner لإضافة حساب مساعد",
+                    "👋 **مرحباً في ZeMusic Bot!**\n\n"
+                    "🎵 **للبحث عن موسيقى:** `بحث اسم الأغنية`\n"
+                    "⚙️ **لوحة التحكم:** /owner\n"
+                    "❓ **المساعدة:** /help",
                     parse_mode='Markdown'
                 )
                 
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج البحث: {e}")
     
-    async def _search_and_play(self, update: Update, query: str, waiting_msg):
-        """البحث وتشغيل الأغنية"""
-        try:
-            # التحقق من وجود حسابات مساعدة
-            from ZeMusic.core.tdlib_client import telethon_manager
-            
-            if telethon_manager.get_assistants_count() == 0:
-                await waiting_msg.edit_text(
-                    f"❌ **لا يمكن تشغيل الموسيقى**\n\n"
-                    f"🔍 **تم العثور على:** `{query}`\n"
-                    f"📱 **المشكلة:** لا توجد حسابات مساعدة\n\n"
-                    f"⚙️ **الحل:**\n"
-                    f"1️⃣ استخدم /owner\n"
-                    f"2️⃣ اختر 'إدارة الحسابات المساعدة'\n"
-                    f"3️⃣ أضف حساب مساعد بـ Session String",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            # محاولة البحث في يوتيوب
-            try:
-                import yt_dlp
-                
-                ydl_opts = {
-                    'format': 'bestaudio/best',
-                    'quiet': True,
-                    'no_warnings': True,
-                    'extract_flat': False,
-                }
-                
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    search_results = ydl.extract_info(
-                        f"ytsearch1:{query}",
-                        download=False
-                    )
-                
-                if search_results and 'entries' in search_results and search_results['entries']:
-                    video = search_results['entries'][0]
-                    title = video.get('title', 'غير معروف')
-                    duration = video.get('duration', 0)
-                    url = video.get('webpage_url', '')
-                    
-                    duration_str = f"{duration//60}:{duration%60:02d}" if duration else "غير معروف"
-                    
-                    # إنشاء أزرار التشغيل
-                    keyboard = [
-                        [
-                            InlineKeyboardButton("▶️ تشغيل", callback_data=f"play_{video.get('id', '')}"),
-                            InlineKeyboardButton("⏸️ إيقاف مؤقت", callback_data="pause")
-                        ],
-                        [
-                            InlineKeyboardButton("⏹️ إيقاف", callback_data="stop"),
-                            InlineKeyboardButton("🔗 رابط", url=url)
-                        ]
-                    ]
-                    
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-                    
-                    await waiting_msg.edit_text(
-                        f"🎵 **تم العثور على:**\n\n"
-                        f"📝 **العنوان:** `{title}`\n"
-                        f"⏱️ **المدة:** `{duration_str}`\n"
-                        f"🔍 **البحث:** `{query}`\n\n"
-                        f"⚠️ **ملاحظة:** تحتاج حساب مساعد متصل للتشغيل",
-                        reply_markup=reply_markup,
-                        parse_mode='Markdown'
-                    )
-                else:
-                    await waiting_msg.edit_text(
-                        f"❌ **لم يتم العثور على نتائج**\n\n"
-                        f"🔍 **البحث:** `{query}`\n"
-                        f"💡 **اقتراح:** جرب كلمات أخرى",
-                        parse_mode='Markdown'
-                    )
-                    
-            except ImportError:
-                await waiting_msg.edit_text(
-                    f"❌ **مكتبة البحث غير متاحة**\n\n"
-                    f"🔧 **يحتاج تثبيت:** yt-dlp\n"
-                    f"💡 **للمطور:** قم بتثبيت المكتبات المطلوبة",
-                    parse_mode='Markdown'
-                )
-                
-        except Exception as e:
-            LOGGER(__name__).error(f"خطأ في البحث والتشغيل: {e}")
-            await waiting_msg.edit_text(
-                f"❌ **حدث خطأ في البحث**\n\n"
-                f"🔍 **البحث:** `{query}`\n"
-                f"🔧 **الخطأ:** {str(e)[:100]}...",
-                parse_mode='Markdown'
-            )
+
     
     async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """معالج الضغط على الأزرار"""

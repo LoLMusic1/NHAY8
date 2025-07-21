@@ -2048,3 +2048,14 @@ KeyError: 'verification_code'
 [21-Jul-25 08:37:06 - INFO] - ZeMusic.plugins.owner.assistants_handler - تم تحميل إعدادات المغادرة التلقائية - مفعل: False
 [21-Jul-25 08:37:06 - INFO] - ZeMusic - ✅ تم تحميل معالج أوامر Telethon بنجاح
 [21-Jul-25 08:37:06 - INFO] - ZeMusic - 🎵 ZeMusic جاهز للانطلاق مع Telethon!
+[21-Jul-25 09:03:59 - INFO] - ZeMusic - 🔥 تهيئة ZeMusic مع Telethon
+[21-Jul-25 09:03:59 - INFO] - ZeMusic - 🚀 Powered by Telethon v1.36.0
+[21-Jul-25 09:03:59 - INFO] - telethon.crypto.aes - cryptg detected, it will be used for encryption
+[21-Jul-25 09:04:00 - INFO] - ZeMusic - ✅ تم تحميل مدير Telethon بنجاح
+[21-Jul-25 09:04:00 - INFO] - ZeMusic.core.database - ✅ تم إنشاء قاعدة البيانات SQLite بنجاح
+[21-Jul-25 09:04:00 - INFO] - ZeMusic.core.database - ✅ نظام قاعدة البيانات TDLib جاهز للاستخدام
+[21-Jul-25 09:04:00 - INFO] - ZeMusic - ✅ تم تحميل قاعدة البيانات بنجاح
+[21-Jul-25 09:04:00 - INFO] - ZeMusic.plugins.owner.force_subscribe_handler - تم تحميل إعدادات الاشتراك الإجباري - مفعل: False
+[21-Jul-25 09:04:00 - INFO] - ZeMusic.plugins.owner.assistants_handler - تم تحميل إعدادات المغادرة التلقائية - مفعل: False
+[21-Jul-25 09:04:00 - INFO] - ZeMusic - ✅ تم تحميل معالج أوامر Telethon بنجاح
+[21-Jul-25 09:04:00 - INFO] - ZeMusic - 🎵 ZeMusic جاهز للانطلاق مع Telethon!
