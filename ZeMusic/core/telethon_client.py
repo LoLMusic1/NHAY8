@@ -229,7 +229,7 @@ class TelethonClientManager:
                     'error': f'فشل في الاتصال: {str(connect_error)}'
                 }
             
-            # التحقق من تفويض المستخدم
+            # التحقق من تفويض المستخدم والحصول على معلومات المستخدم
             try:
                 if not await assistant_client.is_user_authorized():
                     await assistant_client.disconnect()
@@ -246,6 +246,50 @@ class TelethonClientManager:
                         'success': False,
                         'error': 'لا يمكن الحصول على معلومات المستخدم'
                     }
+                    
+                # تحديد معرف المساعد
+                assistant_id = len(self.assistant_clients) + 1
+                
+                # إضافة العميل إلى القائمة
+                self.assistant_clients[assistant_id] = assistant_client
+                
+                # حفظ في قاعدة البيانات
+                try:
+                    from ZeMusic.core.database import db
+                    await db.add_assistant(
+                        assistant_id=assistant_id,
+                        phone=me.phone or f"+{me.id}",
+                        session_string=session_string,
+                        user_id=me.id,
+                        username=me.username or ""
+                    )
+                    self.logger.info(f"✅ تم حفظ الحساب المساعد في قاعدة البيانات: {assistant_id}")
+                except Exception as db_error:
+                    self.logger.error(f"❌ خطأ في حفظ المساعد في قاعدة البيانات: {db_error}")
+                    # إزالة العميل من القائمة إذا فشل الحفظ
+                    if assistant_id in self.assistant_clients:
+                        del self.assistant_clients[assistant_id]
+                    await assistant_client.disconnect()
+                    return {
+                        'success': False,
+                        'error': f'خطأ في حفظ المساعد: {str(db_error)}'
+                    }
+                
+                self.logger.info(f"✅ تم إضافة الحساب المساعد: {name} (@{me.username or me.id})")
+                
+                return {
+                    'success': True,
+                    'assistant_id': assistant_id,
+                    'connected': True,
+                    'user_info': {
+                        'id': me.id,
+                        'username': me.username,
+                        'first_name': me.first_name,
+                        'last_name': me.last_name,
+                        'phone': me.phone
+                    }
+                }
+                
             except Exception as auth_error:
                 await assistant_client.disconnect()
                 self.logger.error(f"❌ خطأ في التحقق من التفويض: {auth_error}")
@@ -253,41 +297,6 @@ class TelethonClientManager:
                     'success': False,
                     'error': f'خطأ في التحقق من الجلسة: {str(auth_error)}'
                 }
-            
-            # تحديد معرف المساعد
-            assistant_id = len(self.assistant_clients) + 1
-            
-            # إضافة العميل إلى القائمة
-            self.assistant_clients[assistant_id] = assistant_client
-            
-            # حفظ في قاعدة البيانات
-            try:
-                from ZeMusic.core.database import db
-                await db.add_assistant(
-                    assistant_id=assistant_id,
-                    phone=me.phone or f"+{me.id}",
-                    session_string=session_string,
-                    user_id=me.id,
-                    username=me.username or ""
-                )
-                self.logger.info(f"✅ تم حفظ الحساب المساعد في قاعدة البيانات: {assistant_id}")
-            except Exception as db_error:
-                self.logger.error(f"❌ خطأ في حفظ المساعد في قاعدة البيانات: {db_error}")
-            
-            self.logger.info(f"✅ تم إضافة الحساب المساعد: {name} (@{me.username or me.id})")
-            
-            return {
-                'success': True,
-                'assistant_id': assistant_id,
-                'connected': True,
-                'user_info': {
-                    'id': me.id,
-                    'username': me.username,
-                    'first_name': me.first_name,
-                    'last_name': me.last_name,
-                    'phone': me.phone
-                }
-            }
             
         except Exception as e:
             self.logger.error(f"❌ خطأ في إضافة المساعد بـ session string: {e}")
