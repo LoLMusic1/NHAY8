@@ -208,6 +208,17 @@ class TelethonCommandHandler:
                     return True
                 except Exception:
                     return True
+            
+            async def edit(self, text=None, reply_markup=None, **kwargs):
+                """محاكاة دالة edit للـ callback"""
+                try:
+                    if hasattr(self._event, 'edit_message'):
+                        return await self._event.edit_message(text, buttons=reply_markup)
+                    elif hasattr(self._event, 'message') and hasattr(self._event.message, 'edit'):
+                        return await self._event.message.edit(text, buttons=reply_markup)
+                    return True
+                except Exception:
+                    return True
         
         class MockMessage:
             def __init__(self, event):
