@@ -936,15 +936,25 @@ class EnhancedHyperSpeedDownloader:
                                 LOGGER(__name__).warning(f"فشل الطريقة البديلة {fmt}: {e}")
                             continue
                 
-                # محاولة أخيرة عبر cobalt.tools API
-                try:
-                    LOGGER(__name__).info("محاولة أخيرة عبر Cobalt API...")
-                    cobalt_result = await self.download_via_cobalt(video_id, video_info)
-                    if cobalt_result:
-                        await self.update_performance_stats('cobalt_api', True, time.time() - start_time)
-                        return cobalt_result
-                except Exception as e:
-                    LOGGER(__name__).warning(f"فشل Cobalt API: {e}")
+                # محاولة أخيرة عبر APIs متعددة
+                backup_methods = [
+                    ('cobalt', self.download_via_cobalt),
+                    ('y2mate', self.download_via_y2mate),
+                    ('savefrom', self.download_via_savefrom),
+                    ('youtube_dl', self.download_via_youtube_dl),
+                    ('generic', self.download_via_generic_extractor)
+                ]
+                
+                for method_name, method_func in backup_methods:
+                    try:
+                        LOGGER(__name__).info(f"محاولة أخيرة عبر {method_name}...")
+                        result = await method_func(video_id, video_info)
+                        if result:
+                            await self.update_performance_stats(f'{method_name}_api', True, time.time() - start_time)
+                            return result
+                    except Exception as e:
+                        LOGGER(__name__).warning(f"فشل {method_name}: {e}")
+                        continue
                 
                 await self.update_performance_stats('ytdlp_all_methods', False, time.time() - start_time)
             
@@ -999,6 +1009,330 @@ class EnhancedHyperSpeedDownloader:
         
         except Exception as e:
             LOGGER(__name__).warning(f"خطأ في Cobalt API: {e}")
+        
+        return None
+    
+    async def download_via_y2mate(self, video_id: str, video_info: Dict) -> Optional[Dict]:
+        """تحميل عبر Y2mate API"""
+        try:
+            session = await self.get_session()
+            
+            # الحصول على رابط التحميل
+            api_url = "https://www.y2mate.com/mates/analyzeV2/ajax"
+            data = {
+                'k_query': f'https://youtu.be/{video_id}',
+                'k_page': 'home',
+                'hl': 'en',
+                'q_auto': '0'
+            }
+            
+            async with session.post(api_url, data=data, timeout=20) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('status') == 'ok':
+                        links = result.get('links', {}).get('mp3', {})
+                        if links:
+                            # اختيار أفضل جودة متاحة
+                            for quality in ['128', '192', '320', '64']:
+                                if quality in links:
+                                    download_data = {
+                                        'vid': video_id,
+                                        'k': links[quality]['k']
+                                    }
+                                    
+                                    convert_url = "https://www.y2mate.com/mates/convertV2/index"
+                                    async with session.post(convert_url, data=download_data, timeout=30) as convert_resp:
+                                        if convert_resp.status == 200:
+                                            convert_result = await convert_resp.json()
+                                            if convert_result.get('status') == 'ok':
+                                                download_url = convert_result.get('dlink')
+                                                if download_url:
+                                                    # تحميل الملف
+                                                    audio_path = f"downloads/{video_id}_y2mate.mp3"
+                                                    async with session.get(download_url, timeout=60) as download_resp:
+                                                        if download_resp.status == 200:
+                                                            async with aiofiles.open(audio_path, 'wb') as f:
+                                                                async for chunk in download_resp.content.iter_chunked(8192):
+                                                                    await f.write(chunk)
+                                                            
+                                                            if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
+                                                                return {
+                                                                    "audio_path": audio_path,
+                                                                    "title": video_info.get("title", "Unknown")[:80],
+                                                                    "artist": video_info.get("artist", "Unknown"),
+                                                                    "duration": video_info.get("duration", 0),
+                                                                    "file_size": os.path.getsize(audio_path),
+                                                                    "video_id": video_id,
+                                                                    "source": "y2mate_api",
+                                                                    "quality": f"mp3_{quality}kbps"
+                                                                }
+                                                    break
+        except Exception as e:
+            LOGGER(__name__).warning(f"خطأ في Y2mate: {e}")
+        return None
+    
+    async def download_via_savefrom(self, video_id: str, video_info: Dict) -> Optional[Dict]:
+        """تحميل عبر Savefrom.net API"""
+        try:
+            session = await self.get_session()
+            
+            api_url = "https://worker.sf-tools.com/savefrom"
+            data = {
+                'url': f'https://youtu.be/{video_id}'
+            }
+            
+            headers = {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
+            async with session.post(api_url, json=data, headers=headers, timeout=25) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('status') == 'success':
+                        formats = result.get('data', [])
+                        for fmt in formats:
+                            if 'audio' in fmt.get('type', '').lower() or 'mp3' in fmt.get('ext', '').lower():
+                                download_url = fmt.get('url')
+                                if download_url:
+                                    audio_path = f"downloads/{video_id}_savefrom.mp3"
+                                    async with session.get(download_url, timeout=60) as download_resp:
+                                        if download_resp.status == 200:
+                                            async with aiofiles.open(audio_path, 'wb') as f:
+                                                async for chunk in download_resp.content.iter_chunked(8192):
+                                                    await f.write(chunk)
+                                            
+                                            if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
+                                                return {
+                                                    "audio_path": audio_path,
+                                                    "title": video_info.get("title", "Unknown")[:80],
+                                                    "artist": video_info.get("artist", "Unknown"),
+                                                    "duration": video_info.get("duration", 0),
+                                                    "file_size": os.path.getsize(audio_path),
+                                                    "video_id": video_id,
+                                                    "source": "savefrom_api",
+                                                    "quality": "mp3"
+                                                }
+                                            break
+        except Exception as e:
+            LOGGER(__name__).warning(f"خطأ في Savefrom: {e}")
+        return None
+    
+    async def download_via_generic_extractor(self, video_id: str, video_info: Dict) -> Optional[Dict]:
+        """تحميل عبر Generic extractor مع User-Agent متنوع"""
+        try:
+            # تجربة user agents مختلفة
+            user_agents = [
+                'Mozilla/5.0 (Android 12; Mobile; rv:68.0) Gecko/68.0 Firefox/88.0',
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15',
+                'Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0'
+            ]
+            
+            for ua in user_agents:
+                try:
+                    opts = {
+                        'format': 'worstaudio[ext=m4a]/worstaudio/worst',
+                        'extractaudio': True,
+                        'audioformat': 'mp3',
+                        'audioquality': '128',
+                        'outtmpl': f'downloads/{video_id}_generic.%(ext)s',
+                        'quiet': True,
+                        'no_warnings': True,
+                        'timeout': 20,
+                        'retries': 0,
+                        'user_agent': ua,
+                        'referer': 'https://www.google.com/',
+                        'http_headers': {
+                            'User-Agent': ua,
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                            'Accept-Language': 'en-us,en;q=0.5',
+                            'Accept-Encoding': 'gzip,deflate',
+                            'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+                            'Keep-Alive': '300',
+                            'Connection': 'keep-alive',
+                        },
+                        'geo_bypass': True,
+                        'geo_bypass_country': 'US',
+                    }
+                    
+                    # تجربة URLs مختلفة
+                    urls = [
+                        f"https://youtu.be/{video_id}",
+                        f"https://youtube.com/watch?v={video_id}",
+                        f"https://m.youtube.com/watch?v={video_id}",
+                        f"https://www.youtube.com/v/{video_id}"
+                    ]
+                    
+                    for url in urls:
+                        try:
+                            loop = asyncio.get_running_loop()
+                            info = await asyncio.wait_for(
+                                loop.run_in_executor(
+                                    self.executor_pool,
+                                    lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)
+                                ),
+                                timeout=25
+                            )
+                            
+                            if info:
+                                possible_paths = [
+                                    f"downloads/{video_id}_generic.mp3",
+                                    f"downloads/{video_id}_generic.m4a",
+                                    f"downloads/{video_id}_generic.webm"
+                                ]
+                                
+                                for audio_path in possible_paths:
+                                    if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
+                                        return {
+                                            "audio_path": audio_path,
+                                            "title": info.get("title", video_info.get("title", "Unknown"))[:80],
+                                            "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                                            "duration": int(info.get("duration", video_info.get("duration", 0))),
+                                            "file_size": os.path.getsize(audio_path),
+                                            "video_id": video_id,
+                                            "source": f"generic_{ua.split()[0]}",
+                                            "quality": "low"
+                                        }
+                        except:
+                            continue
+                except:
+                    continue
+        except Exception as e:
+            LOGGER(__name__).warning(f"خطأ في Generic extractor: {e}")
+        return None
+    
+    async def download_via_youtube_dl(self, video_id: str, video_info: Dict) -> Optional[Dict]:
+        """تحميل عبر youtube-dl القديم (أكثر استقراراً أحياناً)"""
+        try:
+            import youtube_dl
+            
+            ydl_opts = {
+                'format': 'bestaudio[ext=m4a]/bestaudio/best',
+                'outtmpl': f'downloads/{video_id}_ytdl.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '128',
+                }],
+                'quiet': True,
+                'no_warnings': True,
+                'ignoreerrors': True,
+                'extractaudio': True,
+                'audioformat': 'mp3',
+                'timeout': 30,
+                'retries': 1,
+                'user_agent': 'Mozilla/5.0 (Android 12; Mobile; rv:68.0) Gecko/68.0 Firefox/88.0',
+                'referer': 'https://www.google.com/',
+            }
+            
+            urls = [
+                f"https://youtu.be/{video_id}",
+                f"https://youtube.com/watch?v={video_id}",
+                f"https://m.youtube.com/watch?v={video_id}"
+            ]
+            
+            for url in urls:
+                try:
+                    loop = asyncio.get_running_loop()
+                    await asyncio.wait_for(
+                        loop.run_in_executor(
+                            self.executor_pool,
+                            lambda: youtube_dl.YoutubeDL(ydl_opts).download([url])
+                        ),
+                        timeout=40
+                    )
+                    
+                    # البحث عن الملف المحمل
+                    possible_paths = [
+                        f"downloads/{video_id}_ytdl.mp3",
+                        f"downloads/{video_id}_ytdl.m4a",
+                        f"downloads/{video_id}_ytdl.webm"
+                    ]
+                    
+                    for audio_path in possible_paths:
+                        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
+                            return {
+                                "audio_path": audio_path,
+                                "title": video_info.get("title", "Unknown")[:80],
+                                "artist": video_info.get("artist", "Unknown"),
+                                "duration": video_info.get("duration", 0),
+                                "file_size": os.path.getsize(audio_path),
+                                "video_id": video_id,
+                                "source": "youtube_dl",
+                                "quality": "mp3_128kbps"
+                            }
+                except Exception as e:
+                    if "Sign in to confirm" not in str(e):
+                        LOGGER(__name__).warning(f"youtube-dl فشل مع {url}: {e}")
+                    continue
+                    
+        except ImportError:
+            LOGGER(__name__).warning("youtube-dl غير متوفر")
+        except Exception as e:
+            LOGGER(__name__).warning(f"خطأ في youtube-dl: {e}")
+        return None
+    
+    async def search_local_files(self, query: str) -> Optional[Dict]:
+        """البحث في الملفات المحلية المحفوظة في مجلد downloads"""
+        try:
+            normalized_query = self.normalize_text(query).lower()
+            downloads_dir = Path("downloads")
+            
+            if not downloads_dir.exists():
+                return None
+            
+            # البحث في جميع ملفات الصوت
+            audio_files = []
+            for ext in ['.mp3', '.m4a', '.webm', '.ogg', '.wav']:
+                audio_files.extend(downloads_dir.glob(f"*{ext}"))
+            
+            best_match = None
+            best_score = 0
+            
+            for audio_file in audio_files:
+                # استخراج معلومات من اسم الملف
+                filename = audio_file.stem.lower()
+                
+                # حساب التطابق
+                score = 0
+                query_words = normalized_query.split()
+                
+                for word in query_words:
+                    if len(word) > 2 and word in filename:
+                        score += len(word) * 2
+                
+                # إضافي: تطابق جزئي
+                if any(word in filename for word in query_words if len(word) > 2):
+                    score += 10
+                
+                if score > best_score and score > 15:  # حد أدنى للتطابق
+                    best_score = score
+                    best_match = audio_file
+            
+            if best_match and best_match.exists():
+                file_size = best_match.stat().st_size
+                if file_size > 1024:  # أكبر من 1KB
+                    
+                    # محاولة استخراج معلومات إضافية من اسم الملف
+                    parts = best_match.stem.split('_')
+                    title = parts[0] if parts else "Unknown"
+                    artist = "Local File"
+                    
+                    return {
+                        "audio_path": str(best_match),
+                        "title": title[:80],
+                        "artist": artist,
+                        "duration": 0,  # غير معروف للملفات المحلية
+                        "file_size": file_size,
+                        "video_id": best_match.stem,
+                        "source": "local_files",
+                        "quality": "unknown",
+                        "download_time": 0
+                    }
+        
+        except Exception as e:
+            LOGGER(__name__).warning(f"خطأ في البحث المحلي: {e}")
         
         return None
     
@@ -1111,6 +1445,13 @@ class EnhancedHyperSpeedDownloader:
                 search_time = time.time() - start_time
                 LOGGER(__name__).info(f"⚡ كاش فوري: {query} ({search_time:.3f}s)")
                 return cached_result
+            
+            # خطوة 1.5: البحث في الملفات المحلية المحفوظة
+            local_result = await self.search_local_files(query)
+            if local_result:
+                search_time = time.time() - start_time
+                LOGGER(__name__).info(f"📁 ملف محلي: {query} ({search_time:.3f}s)")
+                return local_result
             
             # خطوة 2: البحث عن معلومات الفيديو بالتوازي المحسن
             search_tasks = []

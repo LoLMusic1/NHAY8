@@ -28,6 +28,45 @@ from ZeMusic.plugins.play.download_enhanced import (
     format_duration
 )
 
+async def create_fallback_audio(query: str) -> Optional[Dict]:
+    """إنشاء ملف صوتي وهمي للاختبار في حالة الفشل التام"""
+    try:
+        import os
+        import subprocess
+        from datetime import datetime
+        
+        # إنشاء ملف صوتي قصير (5 ثوان صمت) باستخدام ffmpeg
+        fallback_id = f"fallback_{int(datetime.now().timestamp())}"
+        audio_path = f"downloads/{fallback_id}.mp3"
+        
+        # إنشاء ملف صمت 5 ثوان
+        cmd = [
+            'ffmpeg', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', 
+            '-t', '5', '-c:a', 'libmp3lame', '-b:a', '128k', 
+            audio_path, '-y'
+        ]
+        
+        # محاولة تشغيل ffmpeg
+        result = subprocess.run(cmd, capture_output=True, timeout=10)
+        
+        if result.returncode == 0 and os.path.exists(audio_path):
+            return {
+                "audio_path": audio_path,
+                "title": f"تنبيه: {query[:30]}...",
+                "artist": "البوت",
+                "duration": 5,
+                "file_size": os.path.getsize(audio_path),
+                "video_id": fallback_id,
+                "source": "fallback_silence",
+                "quality": "test",
+                "download_time": 0
+            }
+    
+    except Exception as e:
+        LOGGER(__name__).warning(f"فشل إنشاء ملف احتياطي: {e}")
+    
+    return None
+
 async def enhanced_smart_download_handler(event):
     """المعالج المطور للتحميل الذكي مع Telethon"""
     
@@ -130,8 +169,14 @@ async def enhanced_smart_download_handler(event):
         result = await downloader.hyper_download(query, quality)
         
         if not result:
-            await status_msg.edit("❌ **فشل في العثور على النتائج**\n\n💡 جرب:\n• كلمات مختلفة\n• اسم الفنان\n• عنوان أوضح")
-            return
+            # محاولة أخيرة: إنشاء ملف تنبيه
+            fallback_result = await create_fallback_audio(query)
+            if fallback_result:
+                await status_msg.edit("⚠️ **تم إنشاء ملف تنبيه**\n\n🔊 لم يتم العثور على الملف الصوتي، تم إنشاء ملف تنبيه بدلاً منه")
+                result = fallback_result
+            else:
+                await status_msg.edit("❌ **فشل في العثور على النتائج**\n\n💡 جرب:\n• كلمات مختلفة\n• اسم الفنان\n• عنوان أوضح\n\n🔧 **تفاصيل تقنية:**\n• جميع خوادم التحميل معطلة حالياً\n• يرجى المحاولة لاحقاً")
+                return
         
         # تحديث الرسالة مع معلومات مفصلة
         source_emojis = {
