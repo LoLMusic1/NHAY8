@@ -18,10 +18,7 @@ async def register_all_handlers(bot_client):
         bot_client.add_event_handler(search_command_handler, events.NewMessage)
         LOGGER(__name__).info("✅ تم تسجيل معالج البحث المخصص")
         
-        # تسجيل معالج التحميل المحسن (احتياطي)
-        from ZeMusic.plugins.play.enhanced_handler import enhanced_smart_download_handler
-        bot_client.add_event_handler(enhanced_smart_download_handler, events.NewMessage)
-        LOGGER(__name__).info("✅ تم تسجيل معالج التحميل المحسن")
+        # تم حذف معالج التحميل المحسن - النظام الجديد download.py يدير كل شيء
         
         # تسجيل معالج cookies callbacks
         bot_client.add_event_handler(handle_cookies_callbacks, events.CallbackQuery)

@@ -578,13 +578,7 @@ class TelethonClientManager:
                 except Exception as e:
                     self.logger.error(f"خطأ في معالج cache_stats: {e}")
             
-            @self.bot_client.on(events.NewMessage(pattern=r'/test_cache_channel'))
-            async def test_cache_channel_handler_event(event):
-                try:
-                    from ZeMusic.plugins.play.download import test_cache_channel_handler
-                    await test_cache_channel_handler(event)
-                except Exception as e:
-                    self.logger.error(f"خطأ في معالج test_cache_channel: {e}")
+                    # تم حذف معالج test_cache_channel - لم يعد مطلوباً مع النظام الجديد
             
             @self.bot_client.on(events.NewMessage(pattern=r'/clear_cache'))
             async def clear_cache_handler_event(event):
@@ -594,13 +588,7 @@ class TelethonClientManager:
                 except Exception as e:
                     self.logger.error(f"خطأ في معالج clear_cache: {e}")
             
-            @self.bot_client.on(events.NewMessage(pattern=r'/cache_help'))
-            async def cache_help_handler_event(event):
-                try:
-                    from ZeMusic.plugins.play.download import cache_help_handler
-                    await cache_help_handler(event)
-                except Exception as e:
-                    self.logger.error(f"خطأ في معالج cache_help: {e}")
+            # تم حذف معالج cache_help - لم يعد مطلوباً
             
             # معالج أمر /start
             @self.bot_client.on(events.NewMessage(pattern=r'/start'))
