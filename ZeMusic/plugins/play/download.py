@@ -838,46 +838,16 @@ async def download_thumbnail(url: str, title: str) -> Optional[str]:
     return None
 
 # --- المعالج الموحد لجميع أنواع المحادثات مع Telethon ---
+# استيراد المعالج المطور
+from ZeMusic.plugins.play.enhanced_handler import enhanced_smart_download_handler
+
 async def smart_download_handler(event):
-    """المعالج الموحد للتحميل الذكي مع Telethon"""
-    
-    # التحقق من أن هذه رسالة وليس callback
-    if not hasattr(event, 'message') or not event.message or not event.message.text:
-        return
-    
-    # تجنب معالجة الرسائل القديمة
-    if hasattr(event.message, 'date'):
-        from datetime import datetime, timezone
-        try:
-            now = datetime.now(timezone.utc)
-            message_date = event.message.date
-            if hasattr(message_date, 'replace'):
-                if message_date.tzinfo is None:
-                    message_date = message_date.replace(tzinfo=timezone.utc)
-            
-            if (now - message_date).total_seconds() > 30:
-                return
-        except Exception:
-            pass
-    
-    text = event.message.text.lower().strip()
-    
-    # فلترة أوامر البحث
-    is_search_command = False
-    search_commands = ["بحث ", "/song ", "song ", "يوت "]
-    for cmd in search_commands:
-        if text.startswith(cmd):
-            is_search_command = True
-            break
-    
-    if " بحث " in text or text == "بحث":
-        is_search_command = True
-    
-    # التوقف هنا إذا لم يكن أمر بحث
-    if not is_search_command:
-        return
-    
-    # التحقق من تفعيل الخدمة
+    """المعالج الموحد للتحميل الذكي - يستدعي النظام المطور"""
+    return await enhanced_smart_download_handler(event)
+
+# المعالج القديم تم استبداله بالنظام المطور
+async def old_smart_download_handler_backup(event):
+    """النسخة القديمة للمرجع فقط - لا تستخدم"""
     try:
         chat_id = event.chat_id
         if chat_id > 0:  # محادثة خاصة
@@ -1070,8 +1040,20 @@ async def smart_download_handler(event):
             pass
 
 # --- أوامر المطور مع Telethon ---
+# --- أوامر محسنة للإحصائيات ---
+from ZeMusic.plugins.play.enhanced_handler import enhanced_cache_stats_handler, enhanced_cache_clear_handler
+
 async def cache_stats_handler(event):
-    """عرض إحصائيات التخزين الذكي"""
+    """عرض إحصائيات التخزين الذكي المطور"""
+    return await enhanced_cache_stats_handler(event)
+
+async def cache_clear_handler(event):
+    """مسح التخزين الذكي المطور"""
+    return await enhanced_cache_clear_handler(event)
+
+# النسخة القديمة للمرجع
+async def old_cache_stats_handler_backup(event):
+    """عرض إحصائيات التخزين الذكي - النسخة القديمة"""
     if event.sender_id != config.OWNER_ID:
         return
     
