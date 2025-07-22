@@ -999,7 +999,8 @@ class OwnerPanel:
                 
                 # إضافة الحساب للنظام
                 from ZeMusic.core.telethon_client import telethon_manager
-                success = await telethon_manager.add_assistant(session_string, auto_name)
+                result = await telethon_manager.add_assistant_with_session(session_string, auto_name)
+                success = result.get('success', False)
                 
                 if success:
                     # تحديث الإحصائيات

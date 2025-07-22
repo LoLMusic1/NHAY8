@@ -187,6 +187,20 @@ class TelethonClientManager:
             # إضافة العميل إلى القائمة
             self.assistant_clients[assistant_id] = assistant_client
             
+            # حفظ في قاعدة البيانات
+            try:
+                from ZeMusic.core.database import db
+                await db.add_assistant(
+                    assistant_id=assistant_id,
+                    phone=me.phone or f"+{me.id}",
+                    session_string=session_string,
+                    user_id=me.id,
+                    username=me.username or ""
+                )
+                self.logger.info(f"✅ تم حفظ الحساب المساعد في قاعدة البيانات: {assistant_id}")
+            except Exception as db_error:
+                self.logger.error(f"❌ خطأ في حفظ المساعد في قاعدة البيانات: {db_error}")
+            
             self.logger.info(f"✅ تم إضافة الحساب المساعد: {name} (@{me.username or me.id})")
             
             return {
