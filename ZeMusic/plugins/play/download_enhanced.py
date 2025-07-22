@@ -914,26 +914,26 @@ class EnhancedHyperSpeedDownloader:
                                     f"downloads/{video_id}_alt.webm"
                                 ]
                                 
-                                                                 for audio_path in possible_paths:
-                                     if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
-                                         file_size = os.path.getsize(audio_path)
-                                         
-                                         # تحويل إلى MP3 إذا لم يكن كذلك
-                                         final_audio_path = await self.convert_to_mp3(audio_path, video_id)
-                                         if final_audio_path:
-                                             await self.update_performance_stats('ytdlp_alternative', True, time.time() - start_time)
-                                             
-                                             return {
-                                                 "audio_path": final_audio_path,
-                                                 "title": info.get("title", video_info.get("title", ""))[:80],
-                                                 "artist": info.get("uploader", video_info.get("artist", "Unknown")),
-                                                 "duration": int(info.get("duration", video_info.get("duration", 0))),
-                                                 "file_size": os.path.getsize(final_audio_path),
-                                                 "video_id": video_id,
-                                                 "source": f"ytdlp_alternative_{fmt.split('/')[0]}",
-                                                 "quality": "mp3_128k",
-                                                 "download_time": time.time() - start_time
-                                             }
+                                for audio_path in possible_paths:
+                                    if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
+                                        file_size = os.path.getsize(audio_path)
+                                        
+                                        # تحويل إلى MP3 إذا لم يكن كذلك
+                                        final_audio_path = await self.convert_to_mp3(audio_path, video_id)
+                                        if final_audio_path:
+                                            await self.update_performance_stats('ytdlp_alternative', True, time.time() - start_time)
+                                            
+                                            return {
+                                                "audio_path": final_audio_path,
+                                                "title": info.get("title", video_info.get("title", ""))[:80],
+                                                "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                                                "duration": int(info.get("duration", video_info.get("duration", 0))),
+                                                "file_size": os.path.getsize(final_audio_path),
+                                                "video_id": video_id,
+                                                "source": f"ytdlp_alternative_{fmt.split('/')[0]}",
+                                                "quality": "mp3_128k",
+                                                "download_time": time.time() - start_time
+                                            }
                         
                         except Exception as e:
                             if "Sign in to confirm" not in str(e):
@@ -1189,21 +1189,21 @@ class EnhancedHyperSpeedDownloader:
                                     f"downloads/{video_id}_generic.webm"
                                 ]
                                 
-                                                                     for audio_path in possible_paths:
-                                         if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
-                                             # تحويل إلى MP3
-                                             final_audio_path = await self.convert_to_mp3(audio_path, video_id)
-                                             if final_audio_path:
-                                                 return {
-                                                     "audio_path": final_audio_path,
-                                                     "title": info.get("title", video_info.get("title", "Unknown"))[:80],
-                                                     "artist": info.get("uploader", video_info.get("artist", "Unknown")),
-                                                     "duration": int(info.get("duration", video_info.get("duration", 0))),
-                                                     "file_size": os.path.getsize(final_audio_path),
-                                                     "video_id": video_id,
-                                                     "source": f"generic_{ua.split()[0]}",
-                                                     "quality": "mp3_128k"
-                                                 }
+                                for audio_path in possible_paths:
+                                    if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
+                                        # تحويل إلى MP3
+                                        final_audio_path = await self.convert_to_mp3(audio_path, video_id)
+                                        if final_audio_path:
+                                            return {
+                                                "audio_path": final_audio_path,
+                                                "title": info.get("title", video_info.get("title", "Unknown"))[:80],
+                                                "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                                                "duration": int(info.get("duration", video_info.get("duration", 0))),
+                                                "file_size": os.path.getsize(final_audio_path),
+                                                "video_id": video_id,
+                                                "source": f"generic_{ua.split()[0]}",
+                                                "quality": "mp3_128k"
+                                            }
                         except:
                             continue
                 except:
@@ -1260,21 +1260,21 @@ class EnhancedHyperSpeedDownloader:
                         f"downloads/{video_id}_ytdl.webm"
                     ]
                     
-                                         for audio_path in possible_paths:
-                         if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
-                             # تحويل إلى MP3
-                             final_audio_path = await self.convert_to_mp3(audio_path, video_id)
-                             if final_audio_path:
-                                 return {
-                                     "audio_path": final_audio_path,
-                                     "title": video_info.get("title", "Unknown")[:80],
-                                     "artist": video_info.get("artist", "Unknown"),
-                                     "duration": video_info.get("duration", 0),
-                                     "file_size": os.path.getsize(final_audio_path),
-                                     "video_id": video_id,
-                                     "source": "youtube_dl",
-                                     "quality": "mp3_128kbps"
-                                 }
+                    for audio_path in possible_paths:
+                        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
+                            # تحويل إلى MP3
+                            final_audio_path = await self.convert_to_mp3(audio_path, video_id)
+                            if final_audio_path:
+                                return {
+                                    "audio_path": final_audio_path,
+                                    "title": video_info.get("title", "Unknown")[:80],
+                                    "artist": video_info.get("artist", "Unknown"),
+                                    "duration": video_info.get("duration", 0),
+                                    "file_size": os.path.getsize(final_audio_path),
+                                    "video_id": video_id,
+                                    "source": "youtube_dl",
+                                    "quality": "mp3_128kbps"
+                                }
                 except Exception as e:
                     if "Sign in to confirm" not in str(e):
                         LOGGER(__name__).warning(f"youtube-dl فشل مع {url}: {e}")
