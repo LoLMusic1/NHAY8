@@ -872,6 +872,42 @@ async def download_thumbnail(url: str, title: str) -> Optional[str]:
 async def smart_download_handler(event):
     """المعالج الموحد للتحميل الذكي مع Telethon"""
     
+    # التحقق من أن هذه رسالة وليس callback
+    if not hasattr(event, 'message') or not event.message or not event.message.text:
+        return
+    
+    # تجنب معالجة الرسائل القديمة
+    if hasattr(event.message, 'date'):
+        from datetime import datetime, timezone
+        try:
+            now = datetime.now(timezone.utc)
+            message_date = event.message.date
+            if hasattr(message_date, 'replace'):
+                if message_date.tzinfo is None:
+                    message_date = message_date.replace(tzinfo=timezone.utc)
+            
+            if (now - message_date).total_seconds() > 30:
+                return
+        except Exception:
+            pass
+    
+    text = event.message.text.lower().strip()
+    
+    # فلترة أوامر البحث
+    is_search_command = False
+    search_commands = ["بحث ", "/song ", "song ", "يوت "]
+    for cmd in search_commands:
+        if text.startswith(cmd):
+            is_search_command = True
+            break
+    
+    if " بحث " in text or text == "بحث":
+        is_search_command = True
+    
+    # التوقف هنا إذا لم يكن أمر بحث
+    if not is_search_command:
+        return
+    
     # التحقق من تفعيل الخدمة
     try:
         chat_id = event.chat_id
@@ -1214,49 +1250,6 @@ try:
 except Exception as e:
     LOGGER(__name__).error(f"❌ خطأ في تهيئة نظام التحميل: {e}")
 
-# دالة معالج البحث - يتم تسجيلها في handlers_registry.py
-async def handle_search_messages(event):
-    """معالج رسائل البحث"""
-    # التحقق من أن هذه رسالة وليس callback
-    if not hasattr(event, 'message') or not event.message or not event.message.text:
-        return
-    
-    # تجنب معالجة الرسائل القديمة
-    if hasattr(event.message, 'date'):
-        import time
-        from datetime import datetime, timezone
-        try:
-            # التأكد من التوقيت مع timezone
-            now = datetime.now(timezone.utc)
-            message_date = event.message.date
-            if hasattr(message_date, 'replace'):
-                # إذا كان naive datetime، إضافة UTC
-                if message_date.tzinfo is None:
-                    message_date = message_date.replace(tzinfo=timezone.utc)
-            
-            if (now - message_date).total_seconds() > 30:
-                return
-        except Exception:
-            # تجاهل فحص التوقيت في حالة الخطأ
-            pass
-    
-    text = event.message.text.lower().strip()
-    
-    # التحقق من أمر البحث بدقة أكبر
-    is_search_command = False
-    
-    # التحقق من أوامر البحث
-    search_commands = ["بحث ", "/song ", "song ", "يوت "]
-    for cmd in search_commands:
-        if text.startswith(cmd):
-            is_search_command = True
-            break
-    
-    # أو إذا كان يحتوي على كلمة بحث منفصلة
-    if " بحث " in text or text == "بحث":
-        is_search_command = True
-    
-    if is_search_command:
-        await smart_download_handler(event)
+# تم دمج معالج البحث في smart_download_handler لتجنب التكرار
 
 LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon")

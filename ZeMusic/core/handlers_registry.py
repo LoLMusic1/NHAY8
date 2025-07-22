@@ -13,10 +13,10 @@ async def register_all_handlers(bot_client):
         bot_client.add_event_handler(handle_owner_callbacks, events.CallbackQuery)
         LOGGER(__name__).info("✅ تم تسجيل معالج callbacks المطور")
         
-        # تسجيل معالج البحث
-        from ZeMusic.plugins.play.download import handle_search_messages
-        bot_client.add_event_handler(handle_search_messages, events.NewMessage)
-        LOGGER(__name__).info("✅ تم تسجيل معالج البحث")
+        # تسجيل معالج البحث المباشر (بدون تكرار)
+        from ZeMusic.plugins.play.download import smart_download_handler
+        bot_client.add_event_handler(smart_download_handler, events.NewMessage)
+        LOGGER(__name__).info("✅ تم تسجيل معالج البحث المباشر")
         
         # تسجيل معالج cookies callbacks
         bot_client.add_event_handler(handle_cookies_callbacks, events.CallbackQuery)
