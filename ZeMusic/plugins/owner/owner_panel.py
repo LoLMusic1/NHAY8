@@ -1497,6 +1497,88 @@ class OwnerPanel:
                 'message': f"❌ فشل في إيقاف البوت: {str(e)}"
             }
     
+    async def handle_settings_callback(self, user_id: int, data: str) -> Dict:
+        """معالج أزرار الإعدادات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        setting_type = data.replace("settings_", "")
+        
+        messages = {
+            'assistants': "📱 **إعدادات الحسابات المساعدة**\n\n🚧 هذه الميزة قيد التطوير...",
+            'music': "🎵 **إعدادات الموسيقى**\n\n🚧 هذه الميزة قيد التطوير...",
+            'security': "🛡️ **إعدادات الأمان**\n\n🚧 هذه الميزة قيد التطوير...",
+            'general': "🌐 **إعدادات عامة**\n\n🚧 هذه الميزة قيد التطوير..."
+        }
+        
+        return {
+            'success': True,
+            'message': messages.get(setting_type, "⚠️ إعداد غير معروف"),
+            'keyboard': [[{'text': '🔙 العودة للإعدادات', 'callback_data': 'owner_settings'}]]
+        }
+    
+    async def handle_maintenance_callback(self, user_id: int, data: str) -> Dict:
+        """معالج أزرار الصيانة"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        maintenance_type = data.replace("maintenance_", "")
+        
+        messages = {
+            'cleanup': "🧹 **تنظيف النظام**\n\n🚧 هذه الميزة قيد التطوير...",
+            'update': "🔄 **تحديث النظام**\n\n🚧 هذه الميزة قيد التطوير...",
+            'check': "🔍 **فحص النظام**\n\n🚧 هذه الميزة قيد التطوير...",
+            'optimize': "⚡ **تحسين الأداء**\n\n🚧 هذه الميزة قيد التطوير..."
+        }
+        
+        return {
+            'success': True,
+            'message': messages.get(maintenance_type, "⚠️ عملية صيانة غير معروفة"),
+            'keyboard': [[{'text': '🔙 العودة للصيانة', 'callback_data': 'owner_maintenance'}]]
+        }
+    
+    async def handle_logs_callback(self, user_id: int, data: str) -> Dict:
+        """معالج أزرار السجلات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        log_type = data.replace("logs_", "")
+        
+        messages = {
+            'full': "📄 **السجل الكامل**\n\n🚧 هذه الميزة قيد التطوير...",
+            'errors': "⚠️ **الأخطاء فقط**\n\n🚧 هذه الميزة قيد التطوير...",
+            'stats': "📊 **إحصائيات السجل**\n\n🚧 هذه الميزة قيد التطوير...",
+            'clear': "🗑️ **مسح السجلات**\n\n🚧 هذه الميزة قيد التطوير..."
+        }
+        
+        return {
+            'success': True,
+            'message': messages.get(log_type, "⚠️ نوع سجل غير معروف"),
+            'keyboard': [[{'text': '🔙 العودة للسجلات', 'callback_data': 'owner_logs'}]]
+        }
+    
+    async def handle_database_callback(self, user_id: int, data: str) -> Dict:
+        """معالج أزرار قاعدة البيانات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        db_type = data.replace("db_", "")
+        
+        messages = {
+            'backup': "💾 **نسخة احتياطية**\n\n🚧 هذه الميزة قيد التطوير...",
+            'restore': "📤 **استيراد نسخة**\n\n🚧 هذه الميزة قيد التطوير...",
+            'cleanup': "🧹 **تنظيف البيانات**\n\n🚧 هذه الميزة قيد التطوير...",
+            'optimize': "🔧 **تحسين قاعدة البيانات**\n\n🚧 هذه الميزة قيد التطوير...",
+            'detailed_stats': "📊 **إحصائيات مفصلة**\n\n🚧 هذه الميزة قيد التطوير...",
+            'integrity_check': "🔍 **فحص سلامة البيانات**\n\n🚧 هذه الميزة قيد التطوير..."
+        }
+        
+        return {
+            'success': True,
+            'message': messages.get(db_type, "⚠️ عملية قاعدة بيانات غير معروفة"),
+            'keyboard': [[{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}]]
+        }
+
     async def _restart_process(self):
         """عملية إعادة التشغيل"""
         import os
@@ -1598,9 +1680,29 @@ async def handle_owner_callbacks(event):
         elif data == "confirm_shutdown":
             result = await owner_panel.execute_shutdown(user_id)
         
+        # معالجة أزرار الإعدادات
+        elif data.startswith("settings_"):
+            result = await owner_panel.handle_settings_callback(user_id, data)
+            
+        # معالجة أزرار الصيانة
+        elif data.startswith("maintenance_"):
+            result = await owner_panel.handle_maintenance_callback(user_id, data)
+            
+        # معالجة أزرار السجلات
+        elif data.startswith("logs_"):
+            result = await owner_panel.handle_logs_callback(user_id, data)
+            
+        # معالجة أزرار قاعدة البيانات
+        elif data.startswith("db_"):
+            result = await owner_panel.handle_database_callback(user_id, data)
+        
         else:
-            await event.answer("⚠️ خيار غير معروف")
-            return
+            # رسالة واضحة للأزرار غير المُنفذة
+            result = {
+                'success': True,
+                'message': f"🚧 **{data}**\n\nهذه الميزة قيد التطوير...\n📅 سيتم إضافتها في التحديثات القادمة",
+                'keyboard': [[{'text': '🔙 العودة للوحة الرئيسية', 'callback_data': 'owner_main'}]]
+            }
         
         if result and result.get('success'):
             keyboard_data = result.get('keyboard')
