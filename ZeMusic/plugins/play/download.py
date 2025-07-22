@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-🚀 نظام التحميل الذكي الخارق - النسخة المتطورة V2
+🚀 نظام التحميل الذكي الخارق - النسخة المتطورة V4
 =====================================================
 تم التطوير ليدعم:
+- البحث في الكاش بدقة عالية
+- إرسال الملفات الصوتية مباشرة في جميع الحالات
 - 5000 مجموعة و70,000 مستخدم في الخاص
 - تحميل متوازي فائق السرعة
 - إدارة ذكية للموارد
-- قاعدة بيانات غير متزامنة
-- نظام مراقبة وتتبع متقدم
 """
 
 import os
@@ -22,7 +22,7 @@ from typing import Dict, Optional, List, Tuple
 from itertools import cycle
 import aiohttp
 import aiofiles
-from telethon.tl.types import DocumentAttributeAudio
+from telethon.tl.types import DocumentAttributeAudio, InputDocument
 from pathlib import Path
 import uvloop
 import psutil
@@ -30,6 +30,7 @@ import random
 import string
 from contextlib import asynccontextmanager
 import orjson
+import rapidfuzz
 
 # تطبيق UVLoop لتحسين أداء asyncio
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -57,16 +58,18 @@ import config
 from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.logging import LOGGER
 from ZeMusic.utils.database import is_search_enabled, is_search_enabled1
-from ZeMusic.utils.monitoring import PerformanceMonitor
+# from ZeMusic.utils.monitoring import PerformanceMonitor
+
+class PerformanceMonitor:
+    """مراقب أداء مبسط"""
+    def log_error(self, error_type):
+        pass
 
 # --- إعدادات النظام الذكي ---
 REQUEST_TIMEOUT = 8
 DOWNLOAD_TIMEOUT = 90
 MAX_SESSIONS = min(100, (psutil.cpu_count() * 4))  # ديناميكي حسب المعالج
 MAX_WORKERS = min(200, (psutil.cpu_count() * 10))  # ديناميكي حسب المعالج
-
-# قناة التخزين الذكي (يوزر أو ID)
-SMART_CACHE_CHANNEL = config.CACHE_CHANNEL_ID
 
 # إعدادات العرض
 channel = getattr(config, 'STORE_LINK', '')
@@ -139,51 +142,42 @@ def get_ytdlp_opts(cookies_file=None) -> Dict:
 os.makedirs("downloads", exist_ok=True)
 
 # --- قاعدة البيانات للفهرسة الذكية ---
-DB_FILE = "smart_cache.db"
+DB_FILE = "downloads/smart_cache.db"
 
 async def init_database():
     """تهيئة قاعدة البيانات بشكل غير متزامن"""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    # تحسين هيكل الجدول
+    # تحسين هيكل الجدول للبحث الدقيق
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS channel_index (
+        CREATE TABLE IF NOT EXISTS audio_cache (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            message_id INTEGER UNIQUE,
-            file_id TEXT UNIQUE,
-            file_unique_id TEXT,
+            file_id TEXT NOT NULL,
+            file_unique_id TEXT NOT NULL UNIQUE,
             
-            search_hash TEXT UNIQUE,
-            title_normalized TEXT,
-            artist_normalized TEXT,
-            keywords_vector TEXT,
-            
-            original_title TEXT,
-            original_artist TEXT,
+            search_hash TEXT NOT NULL,
+            title TEXT NOT NULL,
+            artist TEXT,
             duration INTEGER,
-            file_size INTEGER,
+            
+            original_query TEXT,
+            normalized_query TEXT,
             
             access_count INTEGER DEFAULT 0,
             last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            popularity_rank REAL DEFAULT 0,
-            
-            phonetic_hash TEXT,
-            partial_matches TEXT,
-            
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
-    # تحسين الفهارس
+    # فهارس متقدمة للبحث السريع
     indexes = [
-        "CREATE INDEX IF NOT EXISTS idx_search_hash ON channel_index(search_hash)",
-        "CREATE INDEX IF NOT EXISTS idx_title_norm ON channel_index(title_normalized)",
-        "CREATE INDEX IF NOT EXISTS idx_artist_norm ON channel_index(artist_normalized)",
-        "CREATE INDEX IF NOT EXISTS idx_popularity ON channel_index(popularity_rank DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_message_id ON channel_index(message_id)",
-        "CREATE INDEX IF NOT EXISTS idx_file_id ON channel_index(file_id)",
-        "CREATE INDEX IF NOT EXISTS idx_keywords ON channel_index(keywords_vector)"
+        "CREATE INDEX IF NOT EXISTS idx_search_hash ON audio_cache(search_hash)",
+        "CREATE INDEX IF NOT EXISTS idx_title ON audio_cache(title)",
+        "CREATE INDEX IF NOT EXISTS idx_artist ON audio_cache(artist)",
+        "CREATE INDEX IF NOT EXISTS idx_normalized_query ON audio_cache(normalized_query)",
+        "CREATE INDEX IF NOT EXISTS idx_access_count ON audio_cache(access_count DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_file_id ON audio_cache(file_id)"
     ]
     
     for index_sql in indexes:
@@ -193,7 +187,8 @@ async def init_database():
     conn.close()
 
 # تهيئة قاعدة البيانات عند بدء الوحدة
-asyncio.run(init_database())
+# سيتم تهيئتها عند أول استخدام
+# asyncio.run(init_database())
 
 # ================================================================
 #                 نظام إدارة الاتصالات المتقدم
@@ -279,26 +274,18 @@ class ConnectionManager:
 #                 نظام التحميل الذكي الخارق
 # ================================================================
 class HyperSpeedDownloader:
-    """نسخة متطورة من نظام التحميل مع إدارة متقدمة للموارد"""
+    """نسخة متطورة من نظام التحميل مع البحث الدقيق في الكاش"""
     
     def __init__(self):
         self.conn_manager = ConnectionManager()
-        self.method_performance = {
-            'cache': {'weight': 1000, 'active': True, 'avg_time': 0.001},
-            'youtube_api': {'weight': 100, 'active': True, 'avg_time': 1.5},
-            'invidious': {'weight': 90, 'active': True, 'avg_time': 2.5},
-            'ytdlp_cookies': {'weight': 85, 'active': True, 'avg_time': 4.0},
-            'ytdlp_no_cookies': {'weight': 70, 'active': True, 'avg_time': 6.0},
-            'youtube_search': {'weight': 60, 'active': True, 'avg_time': 3.5}
-        }
         self.monitor = PerformanceMonitor()
         self.active_tasks = set()
+        self.last_health_check = time.time()
         self.cache_hits = 0
         self.cache_misses = 0
-        self.last_health_check = time.time()
         
         # تسجيل بدء التشغيل
-        LOGGER(__name__).info("🚀 بدء تشغيل نظام التحميل المتطور V2")
+        LOGGER(__name__).info("🚀 بدء تشغيل نظام التحميل المتطور V4 - بحث دقيق في الكاش")
     
     async def health_check(self):
         """فحص صحة النظام بشكل دوري"""
@@ -307,12 +294,12 @@ class HyperSpeedDownloader:
             
             # تسجيل إحصائيات الأداء
             stats = {
-                'cache_hits': self.cache_hits,
-                'cache_misses': self.cache_misses,
-                'cache_hit_rate': self.cache_hits / max(1, self.cache_hits + self.cache_misses) * 100,
                 'active_tasks': len(self.active_tasks),
                 'memory_usage': psutil.virtual_memory().percent,
                 'cpu_usage': psutil.cpu_percent(),
+                'cache_hits': self.cache_hits,
+                'cache_misses': self.cache_misses,
+                'cache_hit_rate': self.cache_hits / max(1, self.cache_hits + self.cache_misses) * 100
             }
             
             LOGGER(__name__).info(
@@ -348,26 +335,27 @@ class HyperSpeedDownloader:
         
         return text
     
-    def create_search_hash(self, title: str, artist: str = "") -> str:
+    def create_search_hash(self, query: str) -> str:
         """إنشاء هاش للبحث السريع باستخدام خوارزمية أسرع"""
-        normalized_title = self.normalize_text(title)
-        normalized_artist = self.normalize_text(artist)
-        combined = f"{normalized_title}_{normalized_artist}".encode()
-        return hashlib.md5(combined, usedforsecurity=False).hexdigest()[:12]
+        normalized_query = self.normalize_text(query)
+        return hashlib.md5(normalized_query.encode(), usedforsecurity=False).hexdigest()[:12]
     
-    async def lightning_search_cache(self, query: str) -> Optional[Dict]:
-        """بحث خاطف في الكاش مع تحسينات الأداء"""
+    async def precise_cache_search(self, query: str) -> Optional[Dict]:
+        """بحث دقيق في الكاش مع تطابق ذكي"""
         try:
+            # تهيئة قاعدة البيانات إذا لم تكن مهيأة
+            await init_database()
+            
             normalized_query = self.normalize_text(query)
-            search_hash = self.create_search_hash(normalized_query)
+            search_hash = self.create_search_hash(query)
             
             async with self.conn_manager.db_connection() as conn:
                 cursor = conn.cursor()
                 
-                # بحث مباشر بالهاش
+                # البحث المباشر بالهاش
                 cursor.execute(
-                    "SELECT message_id, file_id, original_title, original_artist, duration "
-                    "FROM channel_index WHERE search_hash = ? LIMIT 1",
+                    "SELECT file_id, file_unique_id, title, artist, duration "
+                    "FROM audio_cache WHERE search_hash = ? LIMIT 1",
                     (search_hash,)
                 )
                 result = cursor.fetchone()
@@ -375,7 +363,7 @@ class HyperSpeedDownloader:
                 if result:
                     # تحديث إحصائيات الاستخدام
                     cursor.execute(
-                        "UPDATE channel_index SET access_count = access_count + 1, "
+                        "UPDATE audio_cache SET access_count = access_count + 1, "
                         "last_accessed = CURRENT_TIMESTAMP WHERE search_hash = ?",
                         (search_hash,)
                     )
@@ -383,46 +371,124 @@ class HyperSpeedDownloader:
                     
                     self.cache_hits += 1
                     return {
-                        'message_id': result[0],
-                        'file_id': result[1],
-                        'title': result[2],
-                        'artist': result[3],
-                        'duration': result[4],
-                        'source': 'cache',
-                        'cached': True
+                        'file_id': result['file_id'],
+                        'file_unique_id': result['file_unique_id'],
+                        'title': result['title'],
+                        'artist': result['artist'],
+                        'duration': result['duration'],
+                        'source': 'cache_exact_match'
                     }
                 
-                # بحث تقريبي باستخدام فهرس الكلمات
-                keywords = normalized_query.split()
-                keyword_conditions = " OR ".join(["keywords_vector LIKE ?" for _ in keywords])
-                params = [f"%{kw}%" for kw in keywords]
-                
+                # البحث باستخدام تطابق تقريبي متقدم
                 cursor.execute(
-                    f"SELECT message_id, file_id, original_title, original_artist, duration "
-                    f"FROM channel_index WHERE {keyword_conditions} "
-                    f"ORDER BY popularity_rank DESC LIMIT 1",
-                    params
+                    "SELECT file_id, file_unique_id, title, artist, duration, normalized_query "
+                    "FROM audio_cache"
                 )
-                result = cursor.fetchone()
+                all_entries = cursor.fetchall()
                 
-                if result:
+                if not all_entries:
+                    self.cache_misses += 1
+                    return None
+                
+                # البحث باستخدام خوارزمية RapidFuzz للتطابق الضبابي
+                best_match = None
+                best_score = 0
+                
+                for entry in all_entries:
+                    score = rapidfuzz.fuzz.ratio(
+                        normalized_query, 
+                        entry['normalized_query']
+                    )
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_match = entry
+                
+                # تطابق جيد إذا كانت النسبة فوق 85%
+                if best_match and best_score > 85:
+                    # تحديث إحصائيات الاستخدام
+                    cursor.execute(
+                        "UPDATE audio_cache SET access_count = access_count + 1, "
+                        "last_accessed = CURRENT_TIMESTAMP WHERE file_unique_id = ?",
+                        (best_match['file_unique_id'],)
+                    )
+                    conn.commit()
+                    
                     self.cache_hits += 1
                     return {
-                        'message_id': result[0],
-                        'file_id': result[1],
-                        'title': result[2],
-                        'artist': result[3],
-                        'duration': result[4],
-                        'source': 'cache_fuzzy',
-                        'cached': True
+                        'file_id': best_match['file_id'],
+                        'file_unique_id': best_match['file_unique_id'],
+                        'title': best_match['title'],
+                        'artist': best_match['artist'],
+                        'duration': best_match['duration'],
+                        'source': f'cache_fuzzy_match_{best_score}'
                     }
+                
+                # تطابق جزئي باستخدام الكلمات الرئيسية
+                query_keywords = set(normalized_query.split())
+                
+                for entry in all_entries:
+                    entry_keywords = set(entry['normalized_query'].split())
+                    common_keywords = query_keywords & entry_keywords
+                    
+                    if len(common_keywords) / len(query_keywords) > 0.7:
+                        # تحديث إحصائيات الاستخدام
+                        cursor.execute(
+                            "UPDATE audio_cache SET access_count = access_count + 1, "
+                            "last_accessed = CURRENT_TIMESTAMP WHERE file_unique_id = ?",
+                            (entry['file_unique_id'],)
+                        )
+                        conn.commit()
+                        
+                        self.cache_hits += 1
+                        return {
+                            'file_id': entry['file_id'],
+                            'file_unique_id': entry['file_unique_id'],
+                            'title': entry['title'],
+                            'artist': entry['artist'],
+                            'duration': entry['duration'],
+                            'source': f'cache_keyword_match'
+                        }
             
             self.cache_misses += 1
+            return None
+            
         except Exception as e:
-            LOGGER(__name__).error(f"خطأ في البحث السريع: {e}")
+            LOGGER(__name__).error(f"خطأ في البحث الدقيق في الكاش: {e}")
             self.monitor.log_error('cache_search')
-        
-        return None
+            return None
+    
+    async def add_to_cache(self, file_id: str, file_unique_id: str, 
+                          title: str, artist: str, duration: int, 
+                          query: str) -> bool:
+        """إضافة ملف جديد إلى الكاش"""
+        try:
+            # تهيئة قاعدة البيانات إذا لم تكن مهيأة
+            await init_database()
+            
+            normalized_query = self.normalize_text(query)
+            search_hash = self.create_search_hash(query)
+            
+            async with self.conn_manager.db_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute(
+                    "INSERT OR REPLACE INTO audio_cache "
+                    "(file_id, file_unique_id, search_hash, title, artist, duration, "
+                    "original_query, normalized_query) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (file_id, file_unique_id, search_hash, title, artist, duration, 
+                     query, normalized_query)
+                )
+                
+                conn.commit()
+                LOGGER(__name__).info(f"✅ تم إضافة {title} إلى الكاش")
+                return True
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إضافة إلى الكاش: {e}")
+            self.monitor.log_error('cache_add')
+            return False
     
     async def youtube_api_search(self, query: str) -> Optional[Dict]:
         """البحث عبر YouTube Data API مع تحسينات الأداء"""
@@ -466,11 +532,6 @@ class HyperSpeedDownloader:
                         item = items[0]
                         video_id = item["id"]["videoId"]
                         snippet = item["snippet"]
-                        
-                        self.method_performance['youtube_api']['avg_time'] = (
-                            self.method_performance['youtube_api']['avg_time'] * 0.7 + 
-                            (time.time() - start_time) * 0.3
-                        )
                         
                         return {
                             "video_id": video_id,
@@ -526,11 +587,6 @@ class HyperSpeedDownloader:
                         if not video:
                             continue
                         
-                        self.method_performance['invidious']['avg_time'] = (
-                            self.method_performance['invidious']['avg_time'] * 0.7 + 
-                            (time.time() - start_time) * 0.3
-                        )
-                        
                         return {
                             "video_id": video.get("videoId"),
                             "title": video.get("title", "")[:60],
@@ -585,11 +641,6 @@ class HyperSpeedDownloader:
             else:
                 duration = int(duration)
             
-            self.method_performance['youtube_search']['avg_time'] = (
-                self.method_performance['youtube_search']['avg_time'] * 0.7 + 
-                (time.time() - start_time) * 0.3
-            )
-            
             return {
                 "video_id": video_id,
                 "title": result.get("title", "Unknown Title")[:60],
@@ -641,17 +692,12 @@ class HyperSpeedDownloader:
                         if os.path.exists(audio_path):
                             # تقرير نجاح وتحديث الأداء
                             await report_cookie_success(cookies_file)
-                            self.method_performance['ytdlp_cookies']['avg_time'] = (
-                                self.method_performance['ytdlp_cookies']['avg_time'] * 0.7 + 
-                                (time.time() - start_time) * 0.3
-                            )
                             
                             return {
                                 "audio_path": audio_path,
                                 "title": info.get("title", video_info.get("title", ""))[:60],
                                 "artist": info.get("uploader", video_info.get("artist", "Unknown")),
                                 "duration": int(info.get("duration", 0)),
-                                "file_size": os.path.getsize(audio_path),
                                 "source": f"ytdlp_cookies_{Path(cookies_file).name}"
                             }
                 
@@ -684,7 +730,6 @@ class HyperSpeedDownloader:
                                     "title": info.get("title", video_info.get("title", ""))[:60],
                                     "artist": info.get("uploader", video_info.get("artist", "Unknown")),
                                     "duration": int(info.get("duration", 0)),
-                                    "file_size": os.path.getsize(audio_path),
                                     "source": f"ytdlp_cookies_{cookies_file}"
                                 }
                     
@@ -704,16 +749,11 @@ class HyperSpeedDownloader:
             if info:
                 audio_path = f"downloads/{video_id}.mp3"
                 if os.path.exists(audio_path):
-                    self.method_performance['ytdlp_no_cookies']['avg_time'] = (
-                        self.method_performance['ytdlp_no_cookies']['avg_time'] * 0.7 + 
-                        (time.time() - start_time) * 0.3
-                    )
                     return {
                         "audio_path": audio_path,
                         "title": info.get("title", video_info.get("title", ""))[:60],
                         "artist": info.get("uploader", video_info.get("artist", "Unknown")),
                         "duration": int(info.get("duration", 0)),
-                        "file_size": os.path.getsize(audio_path),
                         "source": "ytdlp_no_cookies"
                     }
         
@@ -723,77 +763,8 @@ class HyperSpeedDownloader:
         
         return None
     
-    async def cache_to_channel(self, audio_info: Dict, search_query: str) -> Optional[str]:
-        """حفظ الملف في قناة التخزين باستخدام Telethon"""
-        if not SMART_CACHE_CHANNEL or not telethon_manager.bot_client:
-            return None
-        
-        try:
-            audio_path = audio_info["audio_path"]
-            title = audio_info["title"]
-            artist = audio_info["artist"]
-            duration = audio_info["duration"]
-            file_size = audio_info["file_size"]
-            
-            # إنشاء caption للملف
-            caption = f"""🎵 {title}
-🎤 {artist}
-⏱️ {duration}s | 📊 {file_size/1024/1024:.1f}MB
-🔗 {audio_info["source"]}
-🔍 {search_query[:50]}"""
-            
-            # رفع الملف للقناة
-            message = await telethon_manager.bot_client.send_file(
-                entity=SMART_CACHE_CHANNEL,
-                file=audio_path,
-                caption=caption,
-                attributes=[
-                    DocumentAttributeAudio(
-                        duration=duration,
-                        title=title[:60],
-                        performer=artist[:40]
-                    )
-                ],
-                supports_streaming=True
-            )
-            
-            # حفظ في قاعدة البيانات
-            search_hash = self.create_search_hash(title, artist)
-            normalized_title = self.normalize_text(title)
-            normalized_artist = self.normalize_text(artist)
-            keywords = f"{normalized_title} {normalized_artist} {self.normalize_text(search_query)}"
-            
-            async with self.conn_manager.db_connection() as conn:
-                cursor = conn.cursor()
-                
-                # الحصول على file_id من Telethon
-                file_id = message.document.id if message.document else None
-                file_unique_id = getattr(message.document, 'access_hash', None)
-                
-                cursor.execute('''
-                    INSERT OR REPLACE INTO channel_index 
-                    (message_id, file_id, file_unique_id, search_hash, title_normalized, artist_normalized, 
-                     keywords_vector, original_title, original_artist, duration, file_size)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    message.id, str(file_id), str(file_unique_id),
-                    search_hash, normalized_title, normalized_artist, keywords,
-                    title, artist, duration, file_size
-                ))
-                
-                conn.commit()
-            
-            LOGGER(__name__).info(f"✅ تم حفظ {title} في التخزين الذكي")
-            return str(file_id)
-            
-        except Exception as e:
-            LOGGER(__name__).error(f"خطأ في حفظ التخزين: {e}")
-            self.monitor.log_error('cache_save')
-        
-        return None
-    
     async def hyper_download(self, query: str) -> Optional[Dict]:
-        """النظام الخارق للتحميل مع جميع الطرق"""
+        """النظام الخارق للتحميل مع البحث في الكاش"""
         task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
         self.active_tasks.add(task_id)
         start_time = time.time()
@@ -802,13 +773,21 @@ class HyperSpeedDownloader:
             # فحص الصحة الدوري
             await self.health_check()
             
-            # خطوة 1: البحث الفوري في الكاش
-            cached_result = await self.lightning_search_cache(query)
-            if cached_result:
-                LOGGER(__name__).info(f"⚡ كاش فوري: {query} ({time.time() - start_time:.3f}s)")
-                return cached_result
+            # الخطوة 1: البحث الدقيق في الكاش أولاً
+            cache_result = await self.precise_cache_search(query)
+            if cache_result:
+                LOGGER(__name__).info(f"⚡ نتيجة من الكاش: {query} ({time.time() - start_time:.3f}s)")
+                return {
+                    'file_id': cache_result['file_id'],
+                    'file_unique_id': cache_result['file_unique_id'],
+                    'title': cache_result['title'],
+                    'artist': cache_result['artist'],
+                    'duration': cache_result['duration'],
+                    'source': cache_result['source'],
+                    'cached': True
+                }
             
-            # خطوة 2: البحث عن معلومات الفيديو بالتوازي
+            # الخطوة 2: البحث عن معلومات الفيديو بالتوازي
             search_methods = []
             
             if API_KEYS_CYCLE:
@@ -840,17 +819,13 @@ class HyperSpeedDownloader:
             if not video_info:
                 return None
             
-            # خطوة 3: تحميل الصوت
+            # الخطوة 3: تحميل الصوت
             audio_info = await self.download_with_ytdlp(video_info)
             if not audio_info:
                 # محاولة نسخة احتياطية
                 audio_info = await self.download_without_cookies(video_info)
                 if not audio_info:
                     return None
-            
-            # خطوة 4: حفظ في التخزين الذكي (في الخلفية)
-            if SMART_CACHE_CHANNEL:
-                asyncio.create_task(self.cache_to_channel(audio_info, query))
             
             LOGGER(__name__).info(f"✅ تحميل جديد: {query} ({time.time() - start_time:.3f}s)")
             
@@ -998,7 +973,6 @@ class HyperSpeedDownloader:
                             "title": info.get("title", video_info.get("title", ""))[:60],
                             "artist": info.get("uploader", video_info.get("artist", "Unknown")),
                             "duration": int(info.get("duration", 0)),
-                            "file_size": os.path.getsize(audio_path),
                             "source": "ytdlp_simple_fallback",
                             "elapsed": time.time() - start_time
                         }
@@ -1046,7 +1020,7 @@ async def download_thumbnail(url: str, title: str) -> Optional[str]:
 
 # --- المعالج الموحد لجميع أنواع المحادثات مع Telethon ---
 async def smart_download_handler(event):
-    """المعالج الذكي للتحميل مع إدارة متقدمة للموارد"""
+    """المعالج الذكي للتحميل مع البحث الدقيق في الكاش"""
     try:
         chat_id = event.chat_id
         if chat_id > 0:  # محادثة خاصة
@@ -1072,12 +1046,48 @@ async def smart_download_handler(event):
     status_msg = await event.reply("⚡ **جاري المعالجة بالنظام الذكي...**")
     
     try:
-        # التحقق من توفر المكتبات المطلوبة
-        if not yt_dlp and not YoutubeSearch:
-            await status_msg.edit("❌ **المكتبات المطلوبة غير متوفرة**\n\n🔧 **يحتاج تثبيت:** yt-dlp, youtube-search")
+        # الخطوة 1: البحث في الكاش أولاً
+        await status_msg.edit("🔍 **جاري البحث في الكاش...**")
+        cache_result = await downloader.precise_cache_search(query)
+        
+        if cache_result:
+            # تم العثور على النتيجة في الكاش - إرسال الملف مباشرة
+            await status_msg.edit("⚡ **تم العثور على النتيجة في الكاش...**")
+            
+            # إعداد التسمية التوضيحية
+            duration = cache_result.get('duration', 0)
+            duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
+            
+            caption = f"""🎵 **{cache_result.get('title', 'مقطع صوتي')}**
+🎤 **{cache_result.get('artist', 'غير معروف')}**
+⏱️ **{duration_str}** | 💾 **من الكاش**
+
+⚡ **مصدر:** {cache_result.get('source', '')}"""
+            
+            # إرسال الملف باستخدام معرف الملف من الكاش
+            await telethon_manager.bot_client.send_file(
+                event.chat_id,
+                file=InputDocument(
+                    id=int(cache_result['file_id']),
+                    access_hash=0,  # لا يلزم في معظم الحالات
+                    file_reference=b''
+                ),
+                caption=caption,
+                reply_to=event.message.id,
+                supports_streaming=True,
+                attributes=[
+                    DocumentAttributeAudio(
+                        duration=duration,
+                        title=cache_result.get('title', '')[:60],
+                        performer=cache_result.get('artist', '')[:40]
+                    )
+                ]
+            )
+            
+            await status_msg.delete()
             return
         
-        # البحث عن الفيديو
+        # الخطوة 2: البحث عن الفيديو
         await status_msg.edit("🔍 **جاري البحث عن الأغنية...**")
         video_info = None
         
@@ -1106,7 +1116,7 @@ async def smart_download_handler(event):
             await status_msg.edit("❌ **خطأ في استخراج معرف الفيديو**")
             return
         
-        # محاولة التحميل
+        # الخطوة 3: محاولة التحميل
         await status_msg.edit("🔄 **جاري تحميل الملف الصوتي...**")
         download_result = await downloader.direct_ytdlp_download(video_id, video_info.get('title', 'Unknown'))
         
@@ -1114,18 +1124,18 @@ async def smart_download_handler(event):
             # التحميل نجح - إرسال الملف
             audio_file = download_result.get('file_path')
             if audio_file and Path(audio_file).exists():
-                await status_msg.edit("📤 **جاري إرسال الملف...**")
+                await status_msg.edit("📤 **تم التحميل! جاري الإرسال...**")
                 
                 # إعداد التسمية التوضيحية
                 duration = download_result.get('duration', 0)
                 duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
                 
-                caption = f"""🎵 **{download_result.get('title', 'Unknown')[:60]}**
+                caption = f"""🎵 **{download_result.get('title', 'مقطع صوتي')}**
 🎤 **{download_result.get('uploader', 'Unknown')[:40]}**
 ⏱️ **{duration_str}** | ⚡ **{download_result.get('elapsed', 0):.1f} ثانية**"""
                 
                 # إرسال الملف
-                await event.respond(
+                msg = await event.respond(
                     caption,
                     file=audio_file,
                     attributes=[
@@ -1136,50 +1146,110 @@ async def smart_download_handler(event):
                         )
                     ]
                 )
-                await status_msg.delete()
                 
-                # حذف الملف المؤقت
+                # حفظ في الكاش
+                if msg and msg.file:
+                    await downloader.add_to_cache(
+                        file_id=str(msg.file.id),
+                        file_unique_id=msg.file.extras.get('file_unique_id', ''),
+                        title=download_result.get('title', ''),
+                        artist=download_result.get('uploader', ''),
+                        duration=duration,
+                        query=query
+                    )
+                
+                await status_msg.delete()
                 await remove_temp_files(audio_file)
                 return
         
-        # التحميل فشل - محاولة النظام الخارق
+        # الخطوة 4: محاولة النظام الخارق
         try:
             await status_msg.edit("🔄 **تفعيل النظام الخارق...**")
             result = await downloader.hyper_download(query)
             
             if result:
-                audio_file = result['audio_path']
-                if Path(audio_file).exists():
+                if result.get('cached'):
+                    # تم العثور في الكاش خلال التحميل
+                    await status_msg.edit("⚡ **تم العثور على النتيجة في الكاش...**")
+                    
                     # إعداد التسمية التوضيحية
                     duration = result.get('duration', 0)
                     duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
                     
                     caption = f"""🎵 **{result.get('title', 'مقطع صوتي')}**
 🎤 **{result.get('artist', 'غير معروف')}**
-⏱️ **{duration_str}** | 📦 **{result.get('source', '')}**
+⏱️ **{duration_str}** | 💾 **من الكاش**
 
-💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}"""
+⚡ **مصدر:** {result.get('source', '')}"""
                     
-                    # إرسال الملف
+                    # إرسال الملف باستخدام معرف الملف من الكاش
                     await telethon_manager.bot_client.send_file(
                         event.chat_id,
-                        audio_file,
+                        file=InputDocument(
+                            id=int(result['file_id']),
+                            access_hash=0,
+                            file_reference=b''
+                        ),
                         caption=caption,
                         reply_to=event.message.id,
                         supports_streaming=True,
                         attributes=[
                             DocumentAttributeAudio(
                                 duration=duration,
-                                title=result.get('title', '')[60],
+                                title=result.get('title', '')[:60],
                                 performer=result.get('artist', '')[:40]
                             )
                         ]
                     )
                     
                     await status_msg.delete()
-                    # حذف الملف المؤقت
-                    await remove_temp_files(audio_file)
                     return
+                else:
+                    # تحميل جديد - إرسال الملف
+                    audio_file = result['audio_path']
+                    if Path(audio_file).exists():
+                        await status_msg.edit("📤 **تم التحميل! جاري الإرسال...**")
+                        
+                        # إعداد التسمية التوضيحية
+                        duration = result.get('duration', 0)
+                        duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
+                        
+                        caption = f"""🎵 **{result.get('title', 'مقطع صوتي')}**
+🎤 **{result.get('artist', 'غير معروف')}**
+⏱️ **{duration_str}** | 📦 **{result.get('source', '')}**
+
+💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}"""
+                        
+                        # إرسال الملف
+                        msg = await telethon_manager.bot_client.send_file(
+                            event.chat_id,
+                            audio_file,
+                            caption=caption,
+                            reply_to=event.message.id,
+                            supports_streaming=True,
+                            attributes=[
+                                DocumentAttributeAudio(
+                                    duration=duration,
+                                    title=result.get('title', '')[:60],
+                                    performer=result.get('artist', '')[:40]
+                                )
+                            ]
+                        )
+                        
+                        # حفظ في الكاش
+                        if msg and msg.file:
+                            await downloader.add_to_cache(
+                                file_id=str(msg.file.id),
+                                file_unique_id=msg.file.extras.get('file_unique_id', ''),
+                                title=result.get('title', ''),
+                                artist=result.get('artist', ''),
+                                duration=duration,
+                                query=query
+                            )
+                        
+                        await status_msg.delete()
+                        await remove_temp_files(audio_file)
+                        return
                     
         except Exception as e:
             LOGGER(__name__).warning(f"فشل التحميل بالنظام الخارق: {e}")
@@ -1213,7 +1283,7 @@ async def smart_download_handler(event):
 
 # --- أوامر المطور مع Telethon ---
 async def cache_stats_handler(event):
-    """عرض إحصائيات التخزين الذكي"""
+    """عرض إحصائيات الكاش"""
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -1221,37 +1291,35 @@ async def cache_stats_handler(event):
         async with downloader.conn_manager.db_connection() as conn:
             cursor = conn.cursor()
             
-            cursor.execute("SELECT COUNT(*) FROM channel_index")
-            total_cached = cursor.fetchone()[0]
+            # إحصائيات الكاش
+            cursor.execute("SELECT COUNT(*) FROM audio_cache")
+            total_entries = cursor.fetchone()[0]
             
-            cursor.execute("SELECT SUM(access_count) FROM channel_index")
-            total_hits = cursor.fetchone()[0] or 0
+            cursor.execute("SELECT SUM(access_count) FROM audio_cache")
+            total_access = cursor.fetchone()[0] or 0
             
-            cursor.execute("SELECT original_title, access_count FROM channel_index ORDER BY access_count DESC LIMIT 5")
-            top_songs = cursor.fetchall()
+            cursor.execute("SELECT title, access_count FROM audio_cache ORDER BY access_count DESC LIMIT 10")
+            top_entries = cursor.fetchall()
             
             # إحصائيات النظام
             mem_usage = psutil.virtual_memory().percent
             cpu_usage = psutil.cpu_percent()
-            active_tasks = len(downloader.active_tasks)
             cache_hit_rate = downloader.cache_hits / max(1, downloader.cache_hits + downloader.cache_misses) * 100
             
-            stats_text = f"""📊 **إحصائيات التخزين الذكي المتقدمة**
+            stats_text = f"""📊 **إحصائيات الكاش المتقدمة**
 
-💾 **المحفوظ:** {total_cached} ملف
-⚡ **مرات الاستخدام:** {total_hits}
-📈 **نسبة الكاش:** {cache_hit_rate:.1f}%
-📺 **قناة التخزين:** {SMART_CACHE_CHANNEL or "غير مُعدة"}
+🗃️ **المدخلات:** {total_entries}
+🔁 **مرات الوصول:** {total_access}
+🎯 **نسبة الضربات:** {cache_hit_rate:.1f}%
 
 🧠 **إحصائيات النظام:**
 • الذاكرة: {mem_usage}%
 • المعالج: {cpu_usage}%
-• المهام النشطة: {active_tasks}
 
-🎵 **الأكثر طلباً:**"""
+🏆 **أكثر الملفات طلباً:**"""
             
-            for i, row in enumerate(top_songs, 1):
-                stats_text += f"\n{i}. {row[0][:30]}... ({row[1]})"
+            for i, row in enumerate(top_entries, 1):
+                stats_text += f"\n{i}. {row['title'][:30]}... ({row['access_count']})"
             
             await event.reply(stats_text)
             
@@ -1259,68 +1327,69 @@ async def cache_stats_handler(event):
         await event.reply(f"❌ خطأ: {e}")
 
 async def clear_cache_handler(event):
-    """مسح كاش التخزين الذكي"""
+    """مسح الكاش"""
     if event.sender_id != config.OWNER_ID:
         return
     
     try:
         async with downloader.conn_manager.db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM channel_index")
+            cursor.execute("SELECT COUNT(*) FROM audio_cache")
             total_before = cursor.fetchone()[0]
-            cursor.execute("DELETE FROM channel_index")
+            cursor.execute("DELETE FROM audio_cache")
             conn.commit()
         
         downloader.cache_hits = 0
         downloader.cache_misses = 0
         
-        await event.reply(f"""🧹 **تم مسح كاش التخزين!**
+        await event.reply(f"""🧹 **تم مسح الكاش بالكامل!**
 
-📊 **المحذوف:** {total_before} ملف
-💽 **قاعدة البيانات:** تم تنظيفها
-🔄 **الكاش:** تم إعادة تعيينه
-
-⚡ سيتم إعادة بناء الكاش تلقائياً مع الاستخدام""")
+🗑️ **المدخلات المحذوفة:** {total_before}
+🔄 **تم إعادة تعيين الإحصائيات**""")
         
     except Exception as e:
         await event.reply(f"❌ خطأ في مسح الكاش: {e}")
 
-async def system_stats_handler(event):
-    """عرض إحصائيات النظام المتقدمة"""
-    if event.sender_id != config.OWNER_ID:
+# --- معالج الأوامر الرئيسي ---
+async def search_command_handler(event):
+    """معالج أوامر البحث المباشر"""
+    
+    # التحقق من أن هذه رسالة نصية
+    if not event.message or not event.message.text:
         return
     
-    try:
-        # إحصائيات الأداء
-        mem = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        load_avg = os.getloadavg()
-        
-        stats_text = f"""📡 **إحصائيات النظام المتقدمة**
-
-🧠 **الذاكرة:**
-• الإجمالي: {mem.total // (1024**3)} GB
-• المستخدم: {mem.used // (1024**3)} GB
-• الحر: {mem.free // (1024**3)} GB
-• النسبة: {mem.percent}%
-
-💾 **التخزين:**
-• الإجمالي: {disk.total // (1024**3)} GB
-• المستخدم: {disk.used // (1024**3)} GB
-• النسبة: {disk.percent}%
-
-⚙️ **المعالج:**
-• النوى: {psutil.cpu_count()}
-• الاستخدام: {psutil.cpu_percent()}%
-• متوسط التحميل (1/5/15 د): {load_avg[0]:.2f}/{load_avg[1]:.2f}/{load_avg[2]:.2f}
-
-📶 **الشبكة:**
-• الاتصالات النشطة: {len(psutil.net_connections())}
-"""
-        await event.reply(stats_text)
-        
-    except Exception as e:
-        await event.reply(f"❌ خطأ: {e}")
+    text = event.message.text.strip()
+    LOGGER(__name__).info(f"🔍 تم استلام رسالة: {text[:50]}...")
+    
+    # قائمة أوامر البحث
+    search_commands = [
+        "بحث ",
+        "/song ",
+        "song ",
+        "يوت ",
+        "/search ",
+        "search ",
+        "اغنية ",
+        "تحميل ",
+        "/play ",
+        "play "
+    ]
+    
+    # فحص ما إذا كانت الرسالة تحتوي على أمر البحث
+    is_search_command = any(text.lower().startswith(cmd.lower()) for cmd in search_commands)
+    
+    if is_search_command:
+        await smart_download_handler(event)
+        return
+    
+    # أوامر المطور
+    if text == "/cache_stats" and event.sender_id == config.OWNER_ID:
+        await cache_stats_handler(event)
+        return
+    
+    if text == "/clear_cache" and event.sender_id == config.OWNER_ID:
+        await clear_cache_handler(event)
+        return
 
 # --- إدارة إغلاق النظام ---
 async def shutdown_system():
@@ -1333,4 +1402,4 @@ async def shutdown_system():
 import atexit
 atexit.register(lambda: asyncio.run(shutdown_system()))
 
-LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق المتطور V2")
+LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق المتطور V4 - بحث دقيق في الكاش")

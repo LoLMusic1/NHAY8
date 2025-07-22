@@ -32,7 +32,7 @@ BOT_ID = getenv("BOT_ID", "7727065450")  # معرف البوت الرقمي
 OWNER_ID = int(getenv("OWNER_ID", "7345311113"))
 
 # Support chat
-SUPPORT_CHAT = getenv("SUPPORT_CHAT", "@YourSupport")
+SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/YourSupport")
 
 # ============================================
 # إعدادات قاعدة البيانات - SQLite

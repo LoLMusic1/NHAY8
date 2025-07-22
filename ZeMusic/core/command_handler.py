@@ -195,8 +195,30 @@ class TelethonCommandHandler:
             def __init__(self, event):
                 self.data = event.data.decode('utf-8') if isinstance(event.data, bytes) else str(event.data)
                 self.message = MockMessage(event)
-                self.from_user = MockUser(getattr(event, 'sender_id', 0))
+                self.sender_id = getattr(event, 'sender_id', 0)
+                self.from_user = MockUser(self.sender_id)
                 self.id = str(getattr(event, 'query_id', 0))
+                self._event = event
+            
+            async def answer(self, text=None, show_alert=False, url=None, cache_time=0):
+                """محاكاة دالة answer للـ callback"""
+                try:
+                    if hasattr(self._event, 'answer'):
+                        return await self._event.answer(text, alert=show_alert, url=url, cache_time=cache_time)
+                    return True
+                except Exception:
+                    return True
+            
+            async def edit(self, text=None, reply_markup=None, **kwargs):
+                """محاكاة دالة edit للـ callback"""
+                try:
+                    if hasattr(self._event, 'edit_message'):
+                        return await self._event.edit_message(text, buttons=reply_markup)
+                    elif hasattr(self._event, 'message') and hasattr(self._event.message, 'edit'):
+                        return await self._event.message.edit(text, buttons=reply_markup)
+                    return True
+                except Exception:
+                    return True
         
         class MockMessage:
             def __init__(self, event):

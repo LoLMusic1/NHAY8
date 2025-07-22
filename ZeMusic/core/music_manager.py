@@ -287,10 +287,10 @@ class TelethonMusicManager:
         """البحث عن الموسيقى"""
         try:
             # استخدام نظام البحث من download.py
-            from ZeMusic.plugins.play.download import hyper_downloader
+            from ZeMusic.plugins.play.download import downloader as hyper_downloader
             
             # محاولة البحث السريع في الكاش أولاً
-            cache_result = await hyper_downloader.lightning_search_cache(query)
+            cache_result = await hyper_downloader.precise_cache_search(query)
             if cache_result:
                 return {
                     'title': cache_result.get('title', query),

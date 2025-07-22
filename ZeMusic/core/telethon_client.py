@@ -45,20 +45,42 @@ class TelethonClientManager:
         try:
             self.logger.info("🤖 تهيئة البوت الرئيسي باستخدام Telethon...")
             
-            # إنشاء عميل البوت
+            # حل أي مشاكل في قاعدة البيانات قبل البدء
+            try:
+                from ZeMusic.core.database import db
+                db.force_unlock_database()
+                self.logger.info("🔓 تم حل أقفال قاعدة البيانات قبل تشغيل البوت")
+            except Exception as db_error:
+                self.logger.warning(f"⚠️ تحذير في حل أقفال قاعدة البيانات: {db_error}")
+            
+            # إنشاء عميل البوت مع معالجة محسنة
+            session_path = f"{self.sessions_dir}/bot_session"
+            
             self.bot_client = TelegramClient(
-                session=f"{self.sessions_dir}/bot_session",
+                session=session_path,
                 api_id=self.api_id,
                 api_hash=self.api_hash,
                 device_model=config.DEVICE_MODEL,
                 system_version=config.SYSTEM_VERSION,
                 app_version=config.APPLICATION_VERSION,
                 lang_code="ar",
-                system_lang_code="ar"
+                system_lang_code="ar",
+                timeout=60,
+                connection_retries=3,
+                retry_delay=2
             )
             
-            # بدء العميل
-            await self.bot_client.start(bot_token=self.bot_token)
+            # بدء العميل مع إعادة المحاولة
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    await self.bot_client.start(bot_token=self.bot_token)
+                    break
+                except Exception as start_error:
+                    if attempt == max_retries - 1:
+                        raise start_error
+                    self.logger.warning(f"⚠️ محاولة {attempt + 1}: فشل في البدء، إعادة المحاولة...")
+                    await asyncio.sleep(2)
             
             # التحقق من نجاح الاتصال
             me = await self.bot_client.get_me()
@@ -71,7 +93,29 @@ class TelethonClientManager:
             
         except Exception as e:
             self.logger.error(f"❌ فشل في تهيئة البوت: {e}")
-            return False
+            
+            # محاولة تنظيف وإعادة المحاولة
+            try:
+                self.logger.info("🔧 محاولة تنظيف وإعادة المحاولة...")
+                if hasattr(self, 'bot_client') and self.bot_client:
+                    await self.bot_client.disconnect()
+                
+                # حذف ملف الجلسة المعطل
+                import os
+                session_files = [
+                    f"{self.sessions_dir}/bot_session.session",
+                    f"{self.sessions_dir}/bot_session.session-journal"
+                ]
+                for session_file in session_files:
+                    if os.path.exists(session_file):
+                        os.remove(session_file)
+                        
+                self.logger.info("✅ تم تنظيف ملفات الجلسة المعطلة")
+                return False
+                
+            except Exception as cleanup_error:
+                self.logger.error(f"❌ خطأ في التنظيف: {cleanup_error}")
+                return False
     
     async def add_assistant(self, phone: str, session_string: Optional[str] = None) -> Dict[str, Any]:
         """إضافة حساب مساعد جديد"""
@@ -153,8 +197,15 @@ class TelethonClientManager:
         try:
             self.logger.info(f"📱 إضافة حساب مساعد بـ session string: {name}")
             
-            # إنشاء جلسة من session string
-            session = StringSession(session_string)
+            # التحقق من صحة session string أولاً
+            try:
+                session = StringSession(session_string)
+            except Exception as session_error:
+                self.logger.error(f"❌ خطأ في session string: {session_error}")
+                return {
+                    'success': False,
+                    'error': f'Session string غير صالح: {str(session_error)}'
+                }
             
             # إنشاء عميل Telethon للحساب المساعد
             assistant_client = TelegramClient(
@@ -168,53 +219,84 @@ class TelethonClientManager:
                 system_lang_code="ar"
             )
             
-            await assistant_client.connect()
-            
-            # التحقق من تفويض المستخدم
-            if not await assistant_client.is_user_authorized():
-                await assistant_client.disconnect()
+            # محاولة الاتصال مع معالجة الأخطاء
+            try:
+                await assistant_client.connect()
+            except Exception as connect_error:
+                self.logger.error(f"❌ خطأ في الاتصال: {connect_error}")
                 return {
                     'success': False,
-                    'error': 'Session غير مصرح أو منتهي الصلاحية'
+                    'error': f'فشل في الاتصال: {str(connect_error)}'
                 }
             
-            # الحصول على معلومات المستخدم
-            me = await assistant_client.get_me()
-            
-            # تحديد معرف المساعد
-            assistant_id = len(self.assistant_clients) + 1
-            
-            # إضافة العميل إلى القائمة
-            self.assistant_clients[assistant_id] = assistant_client
-            
-            # حفظ في قاعدة البيانات
+            # التحقق من تفويض المستخدم والحصول على معلومات المستخدم
             try:
-                from ZeMusic.core.database import db
-                await db.add_assistant(
-                    assistant_id=assistant_id,
-                    phone=me.phone or f"+{me.id}",
-                    session_string=session_string,
-                    user_id=me.id,
-                    username=me.username or ""
-                )
-                self.logger.info(f"✅ تم حفظ الحساب المساعد في قاعدة البيانات: {assistant_id}")
-            except Exception as db_error:
-                self.logger.error(f"❌ خطأ في حفظ المساعد في قاعدة البيانات: {db_error}")
-            
-            self.logger.info(f"✅ تم إضافة الحساب المساعد: {name} (@{me.username or me.id})")
-            
-            return {
-                'success': True,
-                'assistant_id': assistant_id,
-                'connected': True,
-                'user_info': {
-                    'id': me.id,
-                    'username': me.username,
-                    'first_name': me.first_name,
-                    'last_name': me.last_name,
-                    'phone': me.phone
+                if not await assistant_client.is_user_authorized():
+                    await assistant_client.disconnect()
+                    return {
+                        'success': False,
+                        'error': 'Session غير مصرح أو منتهي الصلاحية'
+                    }
+                
+                # الحصول على معلومات المستخدم
+                me = await assistant_client.get_me()
+                if not me:
+                    await assistant_client.disconnect()
+                    return {
+                        'success': False,
+                        'error': 'لا يمكن الحصول على معلومات المستخدم'
+                    }
+                    
+                # تحديد معرف المساعد
+                assistant_id = len(self.assistant_clients) + 1
+                
+                # إضافة العميل إلى القائمة
+                self.assistant_clients[assistant_id] = assistant_client
+                
+                # حفظ في قاعدة البيانات
+                try:
+                    from ZeMusic.core.database import db
+                    await db.add_assistant(
+                        assistant_id=assistant_id,
+                        phone=me.phone or f"+{me.id}",
+                        session_string=session_string,
+                        user_id=me.id,
+                        username=me.username or ""
+                    )
+                    self.logger.info(f"✅ تم حفظ الحساب المساعد في قاعدة البيانات: {assistant_id}")
+                except Exception as db_error:
+                    self.logger.error(f"❌ خطأ في حفظ المساعد في قاعدة البيانات: {db_error}")
+                    # إزالة العميل من القائمة إذا فشل الحفظ
+                    if assistant_id in self.assistant_clients:
+                        del self.assistant_clients[assistant_id]
+                    await assistant_client.disconnect()
+                    return {
+                        'success': False,
+                        'error': f'خطأ في حفظ المساعد: {str(db_error)}'
+                    }
+                
+                self.logger.info(f"✅ تم إضافة الحساب المساعد: {name} (@{me.username or me.id})")
+                
+                return {
+                    'success': True,
+                    'assistant_id': assistant_id,
+                    'connected': True,
+                    'user_info': {
+                        'id': me.id,
+                        'username': me.username,
+                        'first_name': me.first_name,
+                        'last_name': me.last_name,
+                        'phone': me.phone
+                    }
                 }
-            }
+                
+            except Exception as auth_error:
+                await assistant_client.disconnect()
+                self.logger.error(f"❌ خطأ في التحقق من التفويض: {auth_error}")
+                return {
+                    'success': False,
+                    'error': f'خطأ في التحقق من الجلسة: {str(auth_error)}'
+                }
             
         except Exception as e:
             self.logger.error(f"❌ خطأ في إضافة المساعد بـ session string: {e}")
@@ -280,6 +362,98 @@ class TelethonClientManager:
             self.logger.error(f"❌ خطأ في التحقق من الكود: {e}")
             return {'success': False, 'error': str(e)}
     
+    async def add_assistant_by_session(self, session_string: str) -> Dict[str, Any]:
+        """إضافة حساب مساعد بـ session string - يستخرج المعلومات تلقائياً"""
+        try:
+            session = StringSession(session_string)
+            
+            # إنشاء عميل مؤقت للتحقق
+            temp_client = TelegramClient(
+                session=session,
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+                device_model=config.DEVICE_MODEL,
+                system_version=config.SYSTEM_VERSION,
+                app_version=config.APPLICATION_VERSION,
+                lang_code="ar",
+                system_lang_code="ar"
+            )
+            
+            await temp_client.connect()
+            
+            if not await temp_client.is_user_authorized():
+                await temp_client.disconnect()
+                return {'success': False, 'error': 'الحساب غير مُصرح - Session String غير صالح'}
+            
+            # الحصول على معلومات المستخدم
+            me = await temp_client.get_me()
+            
+            # التحقق من عدم وجود الحساب مسبقاً
+            from ZeMusic.core.database import db
+            existing_assistants = await db.get_assistants()
+            
+            for assistant in existing_assistants:
+                if assistant.get('user_id') == me.id:
+                    await temp_client.disconnect()
+                    return {
+                        'success': False, 
+                        'error': f'الحساب موجود مسبقاً: @{me.username or me.first_name}'
+                    }
+            
+            # إنشاء معرف جديد للمساعد
+            assistant_id = len(self.assistant_clients) + 1
+            if existing_assistants:
+                assistant_id = max([a.get('id', 0) for a in existing_assistants]) + 1
+            
+            # إضافة للذاكرة
+            self.assistant_clients[assistant_id] = temp_client
+            
+            # إنشاء اسم تلقائي للمساعد
+            auto_name = f"@{me.username}" if me.username else me.first_name or f"User_{me.id}"
+            
+            # حفظ في قاعدة البيانات مع جميع المعلومات المستخرجة
+            try:
+                await db.add_assistant(
+                    assistant_id=assistant_id,
+                    phone=me.phone or "",
+                    session_string=session_string,
+                    user_id=me.id,
+                    username=me.username or "",
+                    name=auto_name
+                )
+                self.logger.info(f"✅ تم حفظ الحساب المساعد في قاعدة البيانات: {assistant_id}")
+            except Exception as db_error:
+                # في حالة فشل قاعدة البيانات، نحذف من الذاكرة
+                if assistant_id in self.assistant_clients:
+                    await self.assistant_clients[assistant_id].disconnect()
+                    del self.assistant_clients[assistant_id]
+                
+                self.logger.error(f"❌ خطأ في حفظ المساعد في قاعدة البيانات: {db_error}")
+                return {'success': False, 'error': f'خطأ في حفظ البيانات: {str(db_error)}'}
+            
+            self.logger.info(f"✅ تم إضافة الحساب المساعد: {auto_name} (ID: {me.id})")
+            
+            return {
+                'success': True,
+                'assistant_id': assistant_id,
+                'connected': True,
+                'user_info': {
+                    'id': me.id,
+                    'username': me.username,
+                    'first_name': me.first_name,
+                    'last_name': me.last_name,
+                    'phone': me.phone,
+                    'auto_name': auto_name
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ خطأ في إضافة المساعد بـ session string: {e}")
+            return {
+                'success': False,
+                'error': f'خطأ تقني: {str(e)}'
+            }
+    
     async def load_assistants_from_db(self) -> int:
         """تحميل الحسابات المساعدة من قاعدة البيانات"""
         try:
@@ -290,9 +464,17 @@ class TelethonClientManager:
             for assistant in assistants:
                 try:
                     if assistant['session_string']:
-                        session = StringSession(assistant['session_string'])
+                        try:
+                            session = StringSession(assistant['session_string'])
+                        except Exception as session_error:
+                            self.logger.error(f"❌ خطأ في session string للمساعد {assistant['id']}: {session_error}")
+                            continue
                     else:
-                        session = f"{self.sessions_dir}/assistant_{assistant['phone'].replace('+', '')}"
+                        # استخدام معرف المساعد كاسم الجلسة إذا لم يكن هناك رقم هاتف
+                        phone_safe = assistant.get('phone', f"assistant_{assistant['id']}")
+                        if phone_safe and '+' in phone_safe:
+                            phone_safe = phone_safe.replace('+', '')
+                        session = f"{self.sessions_dir}/assistant_{phone_safe}"
                     
                     assistant_client = TelegramClient(
                         session=session,
@@ -308,16 +490,31 @@ class TelethonClientManager:
                     await assistant_client.connect()
                     
                     if await assistant_client.is_user_authorized():
-                        self.assistant_clients[assistant['id']] = assistant_client
-                        loaded_count += 1
-                        
-                        me = await assistant_client.get_me()
-                        self.logger.info(f"✅ تم تحميل المساعد: @{me.username or 'Unknown'} ({me.id})")
+                        # التحقق من صحة الكائن قبل الحفظ
+                        if assistant_client and hasattr(assistant_client, 'is_connected'):
+                            self.assistant_clients[assistant['id']] = assistant_client
+                            loaded_count += 1
+                            
+                            me = await assistant_client.get_me()
+                            self.logger.info(f"✅ تم تحميل المساعد: @{me.username or 'Unknown'} ({me.id})")
+                        else:
+                            self.logger.error(f"❌ كائن المساعد {assistant['id']} غير صالح")
+                            await assistant_client.disconnect()
                     else:
-                        self.logger.warning(f"⚠️ المساعد {assistant['phone']} غير مُصرح")
+                        assistant_name = assistant.get('phone') or assistant.get('name') or f"ID_{assistant['id']}"
+                        self.logger.warning(f"⚠️ المساعد {assistant_name} غير مُصرح")
+                        await assistant_client.disconnect()
                         
                 except Exception as e:
-                    self.logger.error(f"❌ خطأ في تحميل المساعد {assistant['phone']}: {e}")
+                    assistant_name = assistant.get('phone') or assistant.get('name') or f"ID_{assistant['id']}"
+                    self.logger.error(f"❌ خطأ في تحميل المساعد {assistant_name}: {e}")
+                    
+                    # تنظيف الاتصال في حالة الخطأ
+                    try:
+                        if 'assistant_client' in locals():
+                            await assistant_client.disconnect()
+                    except:
+                        pass
                     
             self.logger.info(f"📊 تم تحميل {loaded_count} من {len(assistants)} حساب مساعد")
             return loaded_count
@@ -381,13 +578,7 @@ class TelethonClientManager:
                 except Exception as e:
                     self.logger.error(f"خطأ في معالج cache_stats: {e}")
             
-            @self.bot_client.on(events.NewMessage(pattern=r'/test_cache_channel'))
-            async def test_cache_channel_handler_event(event):
-                try:
-                    from ZeMusic.plugins.play.download import test_cache_channel_handler
-                    await test_cache_channel_handler(event)
-                except Exception as e:
-                    self.logger.error(f"خطأ في معالج test_cache_channel: {e}")
+                    # تم حذف معالج test_cache_channel - لم يعد مطلوباً مع النظام الجديد
             
             @self.bot_client.on(events.NewMessage(pattern=r'/clear_cache'))
             async def clear_cache_handler_event(event):
@@ -397,13 +588,7 @@ class TelethonClientManager:
                 except Exception as e:
                     self.logger.error(f"خطأ في معالج clear_cache: {e}")
             
-            @self.bot_client.on(events.NewMessage(pattern=r'/cache_help'))
-            async def cache_help_handler_event(event):
-                try:
-                    from ZeMusic.plugins.play.download import cache_help_handler
-                    await cache_help_handler(event)
-                except Exception as e:
-                    self.logger.error(f"خطأ في معالج cache_help: {e}")
+            # تم حذف معالج cache_help - لم يعد مطلوباً
             
             # معالج أمر /start
             @self.bot_client.on(events.NewMessage(pattern=r'/start'))
@@ -436,17 +621,56 @@ class TelethonClientManager:
         """الحصول على عدد الحسابات المتصلة"""
         connected = 0
         for client in self.assistant_clients.values():
-            if client.is_connected():
-                connected += 1
+            try:
+                if client and hasattr(client, 'is_connected') and client.is_connected():
+                    connected += 1
+            except Exception as e:
+                self.logger.error(f"خطأ في فحص اتصال المساعد: {e}")
+                continue
         return connected
     
     def is_assistant_connected(self, assistant_id: int) -> bool:
         """التحقق من اتصال حساب مساعد محدد"""
         try:
             assistant_client = self.assistant_clients.get(assistant_id)
-            return assistant_client and assistant_client.is_connected()
-        except:
+            if not assistant_client:
+                return False
+            if not hasattr(assistant_client, 'is_connected'):
+                self.logger.error(f"المساعد {assistant_id} لا يحتوي على دالة is_connected")
+                return False
+            return assistant_client.is_connected()
+        except Exception as e:
+            self.logger.error(f"خطأ في فحص اتصال المساعد {assistant_id}: {e}")
             return False
+    
+    def assistant_exists(self, assistant_id: int) -> bool:
+        """التحقق من وجود حساب مساعد (متصل أو غير متصل)"""
+        return assistant_id in self.assistant_clients
+    
+    async def get_assistant_info(self, assistant_id: int) -> Optional[Dict[str, Any]]:
+        """الحصول على معلومات حساب مساعد"""
+        try:
+            if assistant_id in self.assistant_clients:
+                assistant_client = self.assistant_clients[assistant_id]
+                if not assistant_client:
+                    return {'connected': False, 'error': 'Client is None'}
+                if not hasattr(assistant_client, 'is_connected'):
+                    return {'connected': False, 'error': 'No is_connected method'}
+                if assistant_client.is_connected():
+                    me = await assistant_client.get_me()
+                    return {
+                        'id': me.id,
+                        'username': me.username,
+                        'first_name': me.first_name,
+                        'phone': me.phone,
+                        'connected': True
+                    }
+                else:
+                    return {'connected': False}
+            return None
+        except Exception as e:
+            self.logger.error(f"خطأ في الحصول على معلومات المساعد {assistant_id}: {e}")
+            return {'connected': False, 'error': str(e)}
     
     async def remove_assistant(self, assistant_id: int) -> bool:
         """حذف حساب مساعد"""
@@ -466,8 +690,37 @@ class TelethonClientManager:
     async def cleanup_idle_assistants(self):
         """تنظيف الحسابات الخاملة"""
         try:
-            # مهمة تنظيف بسيطة
-            self.logger.info("🧹 تنظيف الحسابات الخاملة")
+            self.logger.info("🧹 تنظيف الحسابات الخاملة والفاسدة...")
+            
+            corrupted_assistants = []
+            for assistant_id, client in list(self.assistant_clients.items()):
+                try:
+                    # فحص صحة الكائن
+                    if not client or not hasattr(client, 'is_connected'):
+                        corrupted_assistants.append(assistant_id)
+                        continue
+                    
+                    # فحص الاتصال
+                    if not client.is_connected():
+                        corrupted_assistants.append(assistant_id)
+                        
+                except Exception as e:
+                    self.logger.error(f"خطأ في فحص المساعد {assistant_id}: {e}")
+                    corrupted_assistants.append(assistant_id)
+            
+            # حذف الحسابات الفاسدة
+            for assistant_id in corrupted_assistants:
+                try:
+                    if assistant_id in self.assistant_clients:
+                        client = self.assistant_clients[assistant_id]
+                        if client and hasattr(client, 'disconnect'):
+                            await client.disconnect()
+                        del self.assistant_clients[assistant_id]
+                        self.logger.info(f"🗑️ تم حذف المساعد الفاسد: {assistant_id}")
+                except Exception as e:
+                    self.logger.error(f"خطأ في حذف المساعد الفاسد {assistant_id}: {e}")
+            
+            self.logger.info(f"✅ تم تنظيف {len(corrupted_assistants)} حساب فاسد")
             
         except Exception as e:
             self.logger.error(f"❌ خطأ في تنظيف المساعدين: {e}")

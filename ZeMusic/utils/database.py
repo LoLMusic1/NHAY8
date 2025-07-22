@@ -54,7 +54,7 @@ async def disable_welcome(chat_id):
 #####################################################
 async def is_search_enabled1():
     """التحقق من تفعيل البحث العام"""
-    return await db.get_temp_state("global_search_enabled", False)
+    return await db.get_temp_state("global_search_enabled", True)  # مفعل افتراضياً
 
 async def enable_search1():
     """تفعيل البحث العام"""
@@ -64,10 +64,15 @@ async def disable_search1():
     """إلغاء تفعيل البحث العام"""
     await db.set_temp_state("global_search_enabled", False)
 
-async def is_search_enabled(chat_id):
+async def is_search_enabled(chat_id=None):
     """التحقق من تفعيل البحث في المجموعة"""
-    settings = await db.get_chat_settings(chat_id)
-    return settings.search_enabled
+    if chat_id is None:
+        return True  # مفعل افتراضياً
+    try:
+        settings = await db.get_chat_settings(chat_id)
+        return settings.search_enabled if settings else True
+    except:
+        return True  # مفعل افتراضياً في حالة الخطأ
 
 async def enable_search(chat_id):
     """تفعيل البحث في المجموعة"""
