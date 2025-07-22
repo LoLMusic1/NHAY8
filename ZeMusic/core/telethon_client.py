@@ -197,8 +197,15 @@ class TelethonClientManager:
         try:
             self.logger.info(f"📱 إضافة حساب مساعد بـ session string: {name}")
             
-            # إنشاء جلسة من session string
-            session = StringSession(session_string)
+            # التحقق من صحة session string أولاً
+            try:
+                session = StringSession(session_string)
+            except Exception as session_error:
+                self.logger.error(f"❌ خطأ في session string: {session_error}")
+                return {
+                    'success': False,
+                    'error': f'Session string غير صالح: {str(session_error)}'
+                }
             
             # إنشاء عميل Telethon للحساب المساعد
             assistant_client = TelegramClient(
@@ -212,18 +219,40 @@ class TelethonClientManager:
                 system_lang_code="ar"
             )
             
-            await assistant_client.connect()
-            
-            # التحقق من تفويض المستخدم
-            if not await assistant_client.is_user_authorized():
-                await assistant_client.disconnect()
+            # محاولة الاتصال مع معالجة الأخطاء
+            try:
+                await assistant_client.connect()
+            except Exception as connect_error:
+                self.logger.error(f"❌ خطأ في الاتصال: {connect_error}")
                 return {
                     'success': False,
-                    'error': 'Session غير مصرح أو منتهي الصلاحية'
+                    'error': f'فشل في الاتصال: {str(connect_error)}'
                 }
             
-            # الحصول على معلومات المستخدم
-            me = await assistant_client.get_me()
+            # التحقق من تفويض المستخدم
+            try:
+                if not await assistant_client.is_user_authorized():
+                    await assistant_client.disconnect()
+                    return {
+                        'success': False,
+                        'error': 'Session غير مصرح أو منتهي الصلاحية'
+                    }
+                
+                # الحصول على معلومات المستخدم
+                me = await assistant_client.get_me()
+                if not me:
+                    await assistant_client.disconnect()
+                    return {
+                        'success': False,
+                        'error': 'لا يمكن الحصول على معلومات المستخدم'
+                    }
+            except Exception as auth_error:
+                await assistant_client.disconnect()
+                self.logger.error(f"❌ خطأ في التحقق من التفويض: {auth_error}")
+                return {
+                    'success': False,
+                    'error': f'خطأ في التحقق من الجلسة: {str(auth_error)}'
+                }
             
             # تحديد معرف المساعد
             assistant_id = len(self.assistant_clients) + 1
