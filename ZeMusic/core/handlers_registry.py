@@ -32,7 +32,8 @@ async def handle_cookies_callbacks(event):
         if not hasattr(event, 'data'):
             return
             
-        data = event.data.decode('utf-8')
+        # في Telethon v1.36+، event.data هو نص مباشرة
+        data = event.data if isinstance(event.data, str) else event.data.decode('utf-8')
         
         if data.startswith('cookies_'):
             # استيراد المعالجات المطلوبة

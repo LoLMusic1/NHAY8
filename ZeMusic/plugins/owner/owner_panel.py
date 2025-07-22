@@ -1698,7 +1698,8 @@ owner_panel = OwnerPanel()
 async def handle_owner_callbacks(event):
     """معالج callbacks أزرار لوحة المطور"""
     try:
-        data = event.data.decode('utf-8')
+        # في Telethon v1.36+، event.data هو نص مباشرة
+        data = event.data if isinstance(event.data, str) else event.data.decode('utf-8')
         user_id = event.sender_id
         
         # التحقق من الصلاحيات

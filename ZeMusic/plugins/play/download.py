@@ -744,6 +744,60 @@ class HyperSpeedDownloader:
                 await cookies_manager.report_failure(best_cookie, str(e))
             return None
 
+    async def download_without_cookies(self, video_info: Dict) -> Optional[Dict]:
+        """تحميل بدون كوكيز كحل أخير"""
+        if not yt_dlp:
+            return None
+            
+        video_id = video_info.get("video_id")
+        if not video_id:
+            return None
+        
+        url = f"https://youtu.be/{video_id}"
+        
+        try:
+            # إعدادات مبسطة بدون كوكيز
+            opts = {
+                'format': 'bestaudio/best',
+                'extractaudio': True,
+                'audioformat': 'mp3',
+                'outtmpl': f'downloads/{video_id}.%(ext)s',
+                'quiet': True,
+                'no_warnings': True,
+                'ignoreerrors': True,
+                # تجنب قيود YouTube
+                'extract_flat': False,
+                'writethumbnail': False,
+                'writeinfojson': False,
+                # محاولة تجاوز القيود
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'referer': 'https://www.google.com/',
+            }
+            
+            loop = asyncio.get_running_loop()
+            info = await loop.run_in_executor(
+                self.executor_pool,
+                lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)
+            )
+            
+            if info:
+                audio_path = f"downloads/{video_id}.mp3"
+                if os.path.exists(audio_path):
+                    return {
+                        "audio_path": audio_path,
+                        "title": info.get("title", video_info.get("title", ""))[:60],
+                        "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                        "duration": int(info.get("duration", 0)),
+                        "file_size": os.path.getsize(audio_path),
+                        "source": "ytdlp_no_cookies"
+                    }
+                    
+        except Exception as e:
+            LOGGER(__name__).error(f"فشل التحميل بدون كوكيز: {e}")
+            return None
+        
+        return None
+
 # إنشاء مدير التحميل العالمي
 downloader = HyperSpeedDownloader()
 
@@ -905,7 +959,44 @@ async def smart_download_handler(event):
                     pass
                 return
         
-        # التحميل فشل - عرض معلومات الفيديو فقط
+        # محاولة أخيرة بدون كوكيز
+        try:
+            LOGGER(__name__).info("محاولة التحميل بدون كوكيز...")
+            await status_msg.edit("🔄 **محاولة أخيرة...**\n\n🚫 تحميل بدون كوكيز")
+            
+            audio_result = await smart_downloader.download_without_cookies(video_info)
+            if audio_result and audio_result.get('audio_path'):
+                audio_file = audio_result['audio_path']
+                
+                if Path(audio_file).exists():
+                    await status_msg.edit("📤 **جارٍ الإرسال...**")
+                    
+                    await telethon_manager.bot_client.send_file(
+                        event.chat_id,
+                        audio_file,
+                        caption=f"""🎵 **{audio_result.get('title', 'مقطع صوتي')}**
+🎤 **{audio_result.get('artist', 'غير معروف')}**
+⏱️ **{format_duration(audio_result.get('duration', 0))}**
+📁 **{format_file_size(audio_result.get('file_size', 0))}**
+
+💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}
+⚠️ **تحميل محدود - قد يفشل أحياناً**""",
+                        reply_to=event.message.id,
+                        supports_streaming=True
+                    )
+                    
+                    await status_msg.delete()
+                    # حذف الملف المؤقت
+                    try:
+                        Path(audio_file).unlink()
+                    except:
+                        pass
+                    return
+                    
+        except Exception as e:
+            LOGGER(__name__).warning(f"فشل التحميل بدون كوكيز: {e}")
+        
+        # التحميل فشل كلياً - عرض معلومات الفيديو فقط
         result_text = f"""🎵 **تم العثور على:**
 
 📝 **العنوان:** {video_info.get('title', 'غير معروف')}
@@ -915,8 +1006,12 @@ async def smart_download_handler(event):
 
 🔗 **الرابط:** {video_info.get('link', '')}
 
-⚠️ **ملاحظة:** التحميل غير متاح حالياً
-🔧 **للمطور:** تحقق من ملفات cookies"""
+❌ **التحميل غير متاح:**
+• انتهت صلاحية ملفات الكوكيز
+• القيود الحالية لـ YouTube
+• مشكلة مؤقتة في الخدمة
+
+💡 **جرب:** تحديث ملفات الكوكيز في لوحة المطور"""
         
         await status_msg.edit(result_text)
         
