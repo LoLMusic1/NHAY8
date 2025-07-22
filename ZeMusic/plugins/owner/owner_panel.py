@@ -94,8 +94,17 @@ class OwnerPanel:
         
         try:
             assistants = await db.get_all_assistants()
-            connected_count = telethon_manager.get_connected_assistants_count()
-            active_sessions = len(music_manager.active_sessions) if hasattr(music_manager, 'active_sessions') else 0
+            connected_count = 0
+            try:
+                connected_count = telethon_manager.get_connected_assistants_count()
+            except Exception as count_error:
+                LOGGER(__name__).error(f"خطأ في عد الحسابات المتصلة: {count_error}")
+            
+            active_sessions = 0
+            try:
+                active_sessions = len(music_manager.active_sessions) if hasattr(music_manager, 'active_sessions') else 0
+            except Exception as session_error:
+                LOGGER(__name__).error(f"خطأ في عد الجلسات النشطة: {session_error}")
             
             # تحديد الحد الأقصى والأدنى
             max_assistants = getattr(config, 'MAX_ASSISTANTS', 10)

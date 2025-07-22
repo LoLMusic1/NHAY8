@@ -455,7 +455,11 @@ class TelethonClientManager:
             for assistant in assistants:
                 try:
                     if assistant['session_string']:
-                        session = StringSession(assistant['session_string'])
+                        try:
+                            session = StringSession(assistant['session_string'])
+                        except Exception as session_error:
+                            self.logger.error(f"❌ خطأ في session string للمساعد {assistant['id']}: {session_error}")
+                            continue
                     else:
                         # استخدام معرف المساعد كاسم الجلسة إذا لم يكن هناك رقم هاتف
                         phone_safe = assistant.get('phone', f"assistant_{assistant['id']}")
