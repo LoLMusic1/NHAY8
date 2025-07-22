@@ -745,7 +745,7 @@ class HyperSpeedDownloader:
             return None
 
     async def download_without_cookies(self, video_info: Dict) -> Optional[Dict]:
-        """تحميل بدون كوكيز كحل أخير"""
+        """تحميل بدون كوكيز كحل أخير مع محاولات متعددة"""
         if not yt_dlp:
             return None
             
@@ -753,49 +753,87 @@ class HyperSpeedDownloader:
         if not video_id:
             return None
         
-        url = f"https://youtu.be/{video_id}"
+        # محاولة URLs مختلفة
+        urls = [
+            f"https://youtu.be/{video_id}",
+            f"https://www.youtube.com/watch?v={video_id}",
+            f"https://m.youtube.com/watch?v={video_id}"
+        ]
         
-        try:
-            # إعدادات مبسطة بدون كوكيز
-            opts = {
-                'format': 'bestaudio/best',
-                'extractaudio': True,
-                'audioformat': 'mp3',
-                'outtmpl': f'downloads/{video_id}.%(ext)s',
-                'quiet': True,
-                'no_warnings': True,
-                'ignoreerrors': True,
-                # تجنب قيود YouTube
-                'extract_flat': False,
-                'writethumbnail': False,
-                'writeinfojson': False,
-                # محاولة تجاوز القيود
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'referer': 'https://www.google.com/',
-            }
-            
-            loop = asyncio.get_running_loop()
-            info = await loop.run_in_executor(
-                self.executor_pool,
-                lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)
-            )
-            
-            if info:
-                audio_path = f"downloads/{video_id}.mp3"
-                if os.path.exists(audio_path):
-                    return {
-                        "audio_path": audio_path,
-                        "title": info.get("title", video_info.get("title", ""))[:60],
-                        "artist": info.get("uploader", video_info.get("artist", "Unknown")),
-                        "duration": int(info.get("duration", 0)),
-                        "file_size": os.path.getsize(audio_path),
-                        "source": "ytdlp_no_cookies"
-                    }
-                    
-        except Exception as e:
-            LOGGER(__name__).error(f"فشل التحميل بدون كوكيز: {e}")
-            return None
+        # إعدادات مختلفة للمحاولة
+        formats = [
+            'worst[ext=m4a]/worst[ext=mp3]/worst',  # أقل جودة أولاً
+            'bestaudio[filesize<10M]/best[filesize<10M]',  # محدود الحجم
+            '18/worst',  # فورمات بسيط
+        ]
         
+        user_agents = [
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)',
+            'Mozilla/5.0 (Android 10; Mobile; rv:81.0)',
+            'Mozilla/5.0 (compatible; Googlebot/2.1)'
+        ]
+        
+        for url in urls:
+            for fmt in formats:
+                for ua in user_agents:
+                    try:
+                        opts = {
+                            'format': fmt,
+                            'outtmpl': f'downloads/{video_id}_%(format_id)s.%(ext)s',
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                            'extract_flat': False,
+                            'writethumbnail': False,
+                            'writeinfojson': False,
+                            'user_agent': ua,
+                            'referer': 'https://www.google.com/',
+                            # إعدادات تجاوز الحماية
+                            'extractor_args': {
+                                'youtube': {
+                                    'skip': ['dash', 'hls']
+                                }
+                            },
+                            'timeout': 30,
+                        }
+                        
+                        loop = asyncio.get_running_loop()
+                        info = await loop.run_in_executor(
+                            self.executor_pool,
+                            lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)
+                        )
+                        
+                        if info:
+                            # البحث عن أي ملف تم تحميله
+                            for ext in ['m4a', 'mp3', 'webm', 'mp4']:
+                                audio_path = f"downloads/{video_id}_{info.get('format_id', 'unknown')}.{ext}"
+                                if os.path.exists(audio_path):
+                                    return {
+                                        "audio_path": audio_path,
+                                        "title": info.get("title", video_info.get("title", ""))[:60],
+                                        "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                                        "duration": int(info.get("duration", 0)),
+                                        "file_size": os.path.getsize(audio_path),
+                                        "source": f"ytdlp_fallback_{fmt}"
+                                    }
+                        
+                        # تجربة الطريقة القديمة أيضاً
+                        audio_path = f"downloads/{video_id}.mp3"
+                        if os.path.exists(audio_path):
+                            return {
+                                "audio_path": audio_path,
+                                "title": info.get("title", video_info.get("title", ""))[:60],
+                                "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                                "duration": int(info.get("duration", 0)),
+                                "file_size": os.path.getsize(audio_path),
+                                "source": "ytdlp_fallback"
+                            }
+                            
+                    except Exception as e:
+                        # تجاهل الأخطاء والانتقال للمحاولة التالية
+                        continue
+        
+        LOGGER(__name__).warning("فشلت جميع محاولات التحميل بدون كوكيز")
         return None
 
 # إنشاء مدير التحميل العالمي
@@ -959,17 +997,16 @@ async def smart_download_handler(event):
                     pass
                 return
         
-        # محاولة أخيرة بدون كوكيز
+        # التحميل فشل - محاولة أخيرة بدون كوكيز صامتة
         try:
             LOGGER(__name__).info("محاولة التحميل بدون كوكيز...")
-            await status_msg.edit("🔄 **محاولة أخيرة...**\n\n🚫 تحميل بدون كوكيز")
-            
-            audio_result = await smart_downloader.download_without_cookies(video_info)
+            audio_result = await downloader.download_without_cookies(video_info)
             if audio_result and audio_result.get('audio_path'):
                 audio_file = audio_result['audio_path']
                 
                 if Path(audio_file).exists():
-                    await status_msg.edit("📤 **جارٍ الإرسال...**")
+                    # نجح التحميل بدون كوكيز - إرسال الملف مباشرة
+                    await status_msg.edit("📤 **تم التحميل! جاري الإرسال...**")
                     
                     await telethon_manager.bot_client.send_file(
                         event.chat_id,
@@ -980,7 +1017,7 @@ async def smart_download_handler(event):
 📁 **{format_file_size(audio_result.get('file_size', 0))}**
 
 💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}
-⚠️ **تحميل محدود - قد يفشل أحياناً**""",
+⚠️ **تحميل محدود الجودة**""",
                         reply_to=event.message.id,
                         supports_streaming=True
                     )
@@ -996,22 +1033,23 @@ async def smart_download_handler(event):
         except Exception as e:
             LOGGER(__name__).warning(f"فشل التحميل بدون كوكيز: {e}")
         
-        # التحميل فشل كلياً - عرض معلومات الفيديو فقط
-        result_text = f"""🎵 **تم العثور على:**
+        # التحميل فشل كلياً - عرض معلومات الفيديو مع رسالة تفسيرية
+        result_text = f"""🔍 **تم العثور على الأغنية:**
 
 📝 **العنوان:** {video_info.get('title', 'غير معروف')}
-🎤 **القناة:** {video_info.get('channel', {}).get('name', 'غير معروف')}
+🎤 **الفنان:** {video_info.get('channel', {}).get('name', 'غير معروف')}
 ⏱️ **المدة:** {video_info.get('duration', 'غير معروف')}
 👁️ **المشاهدات:** {video_info.get('viewCount', {}).get('short', 'غير معروف')}
 
 🔗 **الرابط:** {video_info.get('link', '')}
 
-❌ **التحميل غير متاح:**
+⚠️ **التحميل غير متاح حالياً:**
 • انتهت صلاحية ملفات الكوكيز
-• القيود الحالية لـ YouTube
+• قيود أمنية من YouTube
 • مشكلة مؤقتة في الخدمة
 
-💡 **جرب:** تحديث ملفات الكوكيز في لوحة المطور"""
+💡 **الحل:** يمكنك مشاهدة الفيديو من الرابط أعلاه
+🔧 **للمطور:** تحديث ملفات الكوكيز مطلوب"""
         
         await status_msg.edit(result_text)
         
