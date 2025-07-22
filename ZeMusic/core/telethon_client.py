@@ -280,6 +280,98 @@ class TelethonClientManager:
             self.logger.error(f"❌ خطأ في التحقق من الكود: {e}")
             return {'success': False, 'error': str(e)}
     
+    async def add_assistant_by_session(self, session_string: str) -> Dict[str, Any]:
+        """إضافة حساب مساعد بـ session string - يستخرج المعلومات تلقائياً"""
+        try:
+            session = StringSession(session_string)
+            
+            # إنشاء عميل مؤقت للتحقق
+            temp_client = TelegramClient(
+                session=session,
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+                device_model=config.DEVICE_MODEL,
+                system_version=config.SYSTEM_VERSION,
+                app_version=config.APPLICATION_VERSION,
+                lang_code="ar",
+                system_lang_code="ar"
+            )
+            
+            await temp_client.connect()
+            
+            if not await temp_client.is_user_authorized():
+                await temp_client.disconnect()
+                return {'success': False, 'error': 'الحساب غير مُصرح - Session String غير صالح'}
+            
+            # الحصول على معلومات المستخدم
+            me = await temp_client.get_me()
+            
+            # التحقق من عدم وجود الحساب مسبقاً
+            from ZeMusic.core.database import db
+            existing_assistants = await db.get_assistants()
+            
+            for assistant in existing_assistants:
+                if assistant.get('user_id') == me.id:
+                    await temp_client.disconnect()
+                    return {
+                        'success': False, 
+                        'error': f'الحساب موجود مسبقاً: @{me.username or me.first_name}'
+                    }
+            
+            # إنشاء معرف جديد للمساعد
+            assistant_id = len(self.assistant_clients) + 1
+            if existing_assistants:
+                assistant_id = max([a.get('id', 0) for a in existing_assistants]) + 1
+            
+            # إضافة للذاكرة
+            self.assistant_clients[assistant_id] = temp_client
+            
+            # إنشاء اسم تلقائي للمساعد
+            auto_name = f"@{me.username}" if me.username else me.first_name or f"User_{me.id}"
+            
+            # حفظ في قاعدة البيانات مع جميع المعلومات المستخرجة
+            try:
+                await db.add_assistant(
+                    assistant_id=assistant_id,
+                    phone=me.phone or "",
+                    session_string=session_string,
+                    user_id=me.id,
+                    username=me.username or "",
+                    name=auto_name
+                )
+                self.logger.info(f"✅ تم حفظ الحساب المساعد في قاعدة البيانات: {assistant_id}")
+            except Exception as db_error:
+                # في حالة فشل قاعدة البيانات، نحذف من الذاكرة
+                if assistant_id in self.assistant_clients:
+                    await self.assistant_clients[assistant_id].disconnect()
+                    del self.assistant_clients[assistant_id]
+                
+                self.logger.error(f"❌ خطأ في حفظ المساعد في قاعدة البيانات: {db_error}")
+                return {'success': False, 'error': f'خطأ في حفظ البيانات: {str(db_error)}'}
+            
+            self.logger.info(f"✅ تم إضافة الحساب المساعد: {auto_name} (ID: {me.id})")
+            
+            return {
+                'success': True,
+                'assistant_id': assistant_id,
+                'connected': True,
+                'user_info': {
+                    'id': me.id,
+                    'username': me.username,
+                    'first_name': me.first_name,
+                    'last_name': me.last_name,
+                    'phone': me.phone,
+                    'auto_name': auto_name
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ خطأ في إضافة المساعد بـ session string: {e}")
+            return {
+                'success': False,
+                'error': f'خطأ تقني: {str(e)}'
+            }
+    
     async def load_assistants_from_db(self) -> int:
         """تحميل الحسابات المساعدة من قاعدة البيانات"""
         try:

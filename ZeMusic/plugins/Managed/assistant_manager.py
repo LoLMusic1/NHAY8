@@ -29,6 +29,7 @@ from ZeMusic.core.call import Mody
 from ZeMusic.utils.database import group_assistant, get_assistant, set_assistant
 from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.utils.decorators.admins import AdminRightsCheck
+from telethon.tl.functions.channels import JoinChannelRequest
 
 # كاش لتتبع الحسابات المساعدة
 assistant_cache = {}
