@@ -350,23 +350,24 @@ class OwnerPanel:
             return {'success': False, 'message': "❌ غير مصرح"}
         
         try:
-            # إعادة تشغيل جميع الحسابات
-            result = await telethon_manager.restart_all_assistants()
+            # تنظيف الحسابات الفاسدة أولاً
+            await telethon_manager.cleanup_idle_assistants()
             
-            if result['success']:
-                return {
-                    'success': True,
-                    'message': f"✅ **تم إعادة تشغيل الحسابات المساعدة بنجاح!**\n\n📊 النتيجة:\n{result['message']}",
-                    'keyboard': [
-                        [{'text': '📋 قائمة الحسابات', 'callback_data': 'list_assistants'}],
-                        [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
-                    ]
-                }
-            else:
-                return {
-                    'success': False,
-                    'message': f"❌ **فشل في إعادة تشغيل الحسابات**\n\n📋 السبب:\n{result['message']}"
-                }
+            # إعادة تحميل الحسابات من قاعدة البيانات
+            loaded_count = await telethon_manager.load_assistants_from_db()
+            
+            # الحصول على الإحصائيات
+            total_count = telethon_manager.get_assistants_count()
+            connected_count = telethon_manager.get_connected_assistants_count()
+            
+            return {
+                'success': True,
+                'message': f"✅ **تم إعادة تشغيل الحسابات بنجاح!**\n\n📊 **النتيجة:**\n• تم تحميل: {loaded_count} حساب\n• متصل: {connected_count}\n• المجموع: {total_count}",
+                'keyboard': [
+                    [{'text': '📋 قائمة الحسابات', 'callback_data': 'list_assistants'}],
+                    [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                ]
+            }
                 
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في إعادة تشغيل الحسابات: {e}")
@@ -375,13 +376,50 @@ class OwnerPanel:
                 'message': f"❌ خطأ في إعادة التشغيل: {str(e)}"
             }
     
+    async def fix_inactive_assistants(self, user_id: int) -> Dict:
+        """إصلاح الحسابات غير النشطة"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            # تفعيل جميع الحسابات
+            def _fix():
+                with db._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE assistants SET is_active = 1")
+                    affected_rows = cursor.rowcount
+                    conn.commit()
+                    return affected_rows
+            
+            import asyncio
+            affected_rows = await asyncio.get_event_loop().run_in_executor(None, _fix)
+            
+            # إعادة تحميل الحسابات
+            loaded_count = await telethon_manager.load_assistants_from_db()
+            
+            return {
+                'success': True,
+                'message': f"✅ **تم إصلاح الحسابات بنجاح!**\n\n📊 **النتيجة:**\n• تم تفعيل: {affected_rows} حساب\n• تم تحميل: {loaded_count} حساب\n• متصل: {telethon_manager.get_connected_assistants_count()}",
+                'keyboard': [
+                    [{'text': '📋 عرض الحسابات', 'callback_data': 'list_assistants'}],
+                    [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                ]
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إصلاح الحسابات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في الإصلاح: {str(e)}"
+            }
+    
     async def check_assistants(self, user_id: int) -> Dict:
         """فحص حالة الحسابات المساعدة"""
         if user_id != config.OWNER_ID:
             return {'success': False, 'message': "❌ غير مصرح"}
         
         try:
-            assistants = await db.get_all_assistants()
+            assistants = await db.get_assistants()  # استخدام get_assistants للحصول على جميع الحسابات
             
             if not assistants:
                 return {
@@ -395,17 +433,26 @@ class OwnerPanel:
             check_results = []
             for assistant in assistants:
                 try:
-                    # فحص الحساب
-                    result = await telethon_manager.check_assistant(assistant['assistant_id'])
+                    assistant_id = assistant['assistant_id']
+                    # فحص الحساب باستخدام الدوال الموجودة
+                    is_connected = telethon_manager.is_assistant_connected(assistant_id)
+                    assistant_info = await telethon_manager.get_assistant_info(assistant_id)
+                    
+                    if is_connected and assistant_info and assistant_info.get('connected'):
+                        result = {'connected': True, 'info': assistant_info}
+                    else:
+                        error_msg = assistant_info.get('error', 'غير متصل') if assistant_info else 'غير موجود'
+                        result = {'connected': False, 'error': error_msg}
+                    
                     check_results.append({
-                        'id': assistant['assistant_id'],
-                        'name': assistant.get('name', f'حساب {assistant["assistant_id"]}'),
+                        'id': assistant_id,
+                        'name': assistant.get('name', f'Assistant {assistant_id}'),
                         'status': result
                     })
                 except Exception as e:
                     check_results.append({
-                        'id': assistant['assistant_id'],
-                        'name': assistant.get('name', f'حساب {assistant["assistant_id"]}'),
+                        'id': assistant.get('assistant_id', 'unknown'),
+                        'name': assistant.get('name', f'حساب غير معروف'),
                         'status': {'connected': False, 'error': str(e)}
                     })
             
@@ -1735,6 +1782,9 @@ async def handle_owner_callbacks(event):
             result = await owner_panel.handle_remove_assistant(user_id, assistant_id)
         elif data == "restart_assistants":
             result = await owner_panel.restart_assistants(user_id)
+        
+        elif data == "fix_inactive_assistants":
+            result = await owner_panel.fix_inactive_assistants(user_id)
         elif data == "check_assistants":
             result = await owner_panel.check_assistants(user_id)
         elif data == "assistant_settings":
