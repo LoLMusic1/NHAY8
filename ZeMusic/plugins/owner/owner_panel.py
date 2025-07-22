@@ -1047,22 +1047,33 @@ class OwnerPanel:
                 test_client = None
                 connection_success = False
                 
-                # المحاولة 1: الطريقة العادية
+                # المحاولة 1: التحقق من صحة session string أولاً
                 try:
-                    test_client = TelegramClient(StringSession(session_string), config.API_ID, config.API_HASH)
+                    # إنشاء StringSession للتحقق من صحة التنسيق
+                    session = StringSession(session_string)
+                    test_client = TelegramClient(session, config.API_ID, config.API_HASH)
                     await test_client.connect()
                     connection_success = True
                 except Exception as e1:
+                    error_msg = str(e1).lower()
+                    if "no item with that key" in error_msg or "invalid" in error_msg:
+                        return {
+                            'success': False,
+                            'message': f"❌ **session string تالف أو غير صالح**\n\n📝 **التفاصيل:** {str(e1)[:100]}{'...' if len(str(e1)) > 100 else ''}\n\n🔄 **الحل:**\n• احصل على session string جديد من مصدر موثوق\n• تأكد من نسخ الكود كاملاً بدون تعديل\n• استخدم نفس API_ID و API_HASH المستخدمة في إنشاء الجلسة"
+                        }
                     # المحاولة 2: مع إعدادات مختلفة
                     try:
                         if test_client:
                             await test_client.disconnect()
-                        test_client = TelegramClient(StringSession(session_string), config.API_ID, config.API_HASH)
+                        test_client = TelegramClient(session, config.API_ID, config.API_HASH)
                         test_client.session.timeout = 30
                         await test_client.connect()
                         connection_success = True
                     except Exception as e2:
-                        raise e1  # استخدم الخطأ الأول
+                        return {
+                            'success': False,
+                            'message': f"❌ **فشل في الاتصال**\n\n📝 **السبب:** {str(e1)[:100]}{'...' if len(str(e1)) > 100 else ''}\n\n🔧 **الحل:**\n• تحقق من اتصال الإنترنت\n• تأكد من صحة session string\n• أعد المحاولة بعد قليل"
+                        }
                 
                 if not connection_success or not test_client:
                     return {
