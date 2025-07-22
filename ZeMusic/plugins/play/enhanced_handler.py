@@ -162,7 +162,7 @@ async def enhanced_smart_download_handler(event):
         await status_msg.edit("⚡ **النظام الذكي المطور**\n\n🔍 بحث متقدم في جميع المصادر...")
         
         # التحميل بالنظام الخارق المطور
-        result = await downloader.hyper_download(query, quality)
+        result = await downloader.hyper_download(query)
         
         if not result:
             # محاولة أخيرة: إنشاء ملف تنبيه
@@ -352,13 +352,13 @@ async def enhanced_cache_stats_handler(event):
         cursor.execute("SELECT COUNT(*) FROM audio_cache")
         total_cached = cursor.fetchone()[0]
         
-        cursor.execute("SELECT SUM(access_count) FROM channel_index")
+        cursor.execute("SELECT SUM(access_count) FROM audio_cache")
         total_hits = cursor.fetchone()[0] or 0
         
-        cursor.execute("SELECT SUM(file_size) FROM channel_index")
-        total_size = cursor.fetchone()[0] or 0
+        # cursor.execute("SELECT SUM(file_size) FROM audio_cache")  # لا يوجد حقل file_size في الجدول الجديد
+        total_size = 0  # تعطيل حتى نضيف الحقل
         
-        cursor.execute("SELECT AVG(download_time) FROM channel_index WHERE download_time > 0")
+        # cursor.execute("SELECT AVG(download_time) FROM audio_cache WHERE download_time > 0")  # لا يوجد حقل download_time
         avg_download_time = cursor.fetchone()[0] or 0
         
         # أفضل الأغاني
