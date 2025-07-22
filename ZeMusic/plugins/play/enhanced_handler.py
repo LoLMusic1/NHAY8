@@ -187,6 +187,14 @@ async def enhanced_smart_download_handler(event):
             'invidious_invidious.io': '🌐 Invidious (IO)',
             'ytdlp_cookies': '🍪 تحميل مع كوكيز',
             'ytdlp_no_cookies': '📥 تحميل مباشر',
+            'ytdlp_alternative': '🎚️ تحميل بديل',
+            'cobalt_api': '🔗 Cobalt API',
+            'y2mate_api': '🎵 Y2mate API',
+            'savefrom_api': '📁 SaveFrom API',
+            'youtube_dl': '📼 YouTube-DL',
+            'generic': '🔧 طريقة عامة',
+            'local_files': '📁 ملف محلي',
+            'fallback_silence': '🔇 ملف تنبيه',
             'youtube_search': '🔎 بحث يوتيوب'
         }
         
