@@ -14,8 +14,8 @@ async def register_all_handlers(bot_client):
         LOGGER(__name__).info("✅ تم تسجيل معالج callbacks المطور")
         
         # تسجيل معالج البحث المخصص (الأولوية الأعلى)
-        from ZeMusic.plugins.play.search_handler import search_command_handler
-        bot_client.add_event_handler(search_command_handler, events.NewMessage)
+        from ZeMusic.plugins.play.download import search_command_handler
+bot_client.add_event_handler(search_command_handler, events.NewMessage)
         LOGGER(__name__).info("✅ تم تسجيل معالج البحث المخصص")
         
         # تسجيل معالج التحميل المحسن (احتياطي)

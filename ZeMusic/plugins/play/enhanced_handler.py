@@ -20,12 +20,8 @@ from ZeMusic.logging import LOGGER
 from ZeMusic.utils.database import is_search_enabled, is_search_enabled1
 
 # استيراد النظام المطور
-from ZeMusic.plugins.play.download_enhanced import (
-    downloader, 
-    remove_temp_files, 
-    download_thumbnail,
-    format_file_size,
-    format_duration
+from ZeMusic.plugins.play.download import (
+    downloader
 )
 
 async def create_fallback_audio(query: str) -> Optional[Dict]:
