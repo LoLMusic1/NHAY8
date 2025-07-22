@@ -546,6 +546,31 @@ class TelethonClientManager:
         except:
             return False
     
+    def assistant_exists(self, assistant_id: int) -> bool:
+        """التحقق من وجود حساب مساعد (متصل أو غير متصل)"""
+        return assistant_id in self.assistant_clients
+    
+    async def get_assistant_info(self, assistant_id: int) -> Optional[Dict[str, Any]]:
+        """الحصول على معلومات حساب مساعد"""
+        try:
+            if assistant_id in self.assistant_clients:
+                assistant_client = self.assistant_clients[assistant_id]
+                if assistant_client.is_connected():
+                    me = await assistant_client.get_me()
+                    return {
+                        'id': me.id,
+                        'username': me.username,
+                        'first_name': me.first_name,
+                        'phone': me.phone,
+                        'connected': True
+                    }
+                else:
+                    return {'connected': False}
+            return None
+        except Exception as e:
+            self.logger.error(f"خطأ في الحصول على معلومات المساعد {assistant_id}: {e}")
+            return None
+    
     async def remove_assistant(self, assistant_id: int) -> bool:
         """حذف حساب مساعد"""
         try:

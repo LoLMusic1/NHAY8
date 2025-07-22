@@ -120,8 +120,9 @@ async def list_assistants(client, message: Message):
     
     try:
         # الحصول على الحسابات من قاعدة البيانات
-        assistants = await telethon_manager.load_assistants_from_db()
-        total_assistants = telethon_manager.get_assistants_count()
+        from ZeMusic.core.database import db
+        assistants_data = await db.get_assistants()
+        total_assistants = len(assistants_data)
         connected_assistants = telethon_manager.get_connected_assistants_count()
         
         if total_assistants == 0:
@@ -139,26 +140,40 @@ async def list_assistants(client, message: Message):
             f"❌ **غير متصل:** {total_assistants - connected_assistants}\n\n"
         )
         
-        # الحصول على تفاصيل كل حساب
-        from ZeMusic.core.database import db
-        assistants_data = await db.get_assistants()
+        # استخدام البيانات المحملة مسبقاً
         
         for i, assistant in enumerate(assistants_data, 1):
-            assistant_id = assistant.get('id')
-            is_connected = telethon_manager.is_assistant_connected(assistant_id)
-            status_emoji = "🟢" if is_connected else "🔴"
-            
-            text += (
-                f"{status_emoji} **المساعد {i}**\n"
-                f"├ 🆔 **المعرف:** `{assistant_id}`\n"
-                f"├ 👤 **الاسم:** {assistant.get('name', 'غير محدد')}\n"
-                f"├ 🔗 **اليوزر:** @{assistant.get('username', 'غير محدد')}\n"
-                f"└ 📅 **مُضاف:** {assistant.get('created_at', 'غير محدد')[:10]}\n\n"
-            )
+            try:
+                assistant_id = assistant.get('id')
+                is_connected = telethon_manager.is_assistant_connected(assistant_id)
+                status_emoji = "🟢" if is_connected else "🔴"
+                
+                # معلومات آمنة مع التعامل مع القيم المفقودة
+                name = assistant.get('name') or assistant.get('username') or f"Assistant_{assistant_id}"
+                username = assistant.get('username', 'غير محدد')
+                created_at = assistant.get('created_at', 'غير محدد')
+                
+                # تنسيق التاريخ
+                if created_at != 'غير محدد' and len(str(created_at)) > 10:
+                    created_at = str(created_at)[:10]
+                
+                text += (
+                    f"{status_emoji} **المساعد {i}**\n"
+                    f"├ 🆔 **المعرف:** `{assistant_id}`\n"
+                    f"├ 👤 **الاسم:** {name}\n"
+                    f"├ 🔗 **اليوزر:** @{username}\n"
+                    f"└ 📅 **مُضاف:** {created_at}\n\n"
+                )
+                
+            except Exception as e:
+                LOGGER(__name__).error(f"خطأ في عرض بيانات المساعد {i}: {e}")
+                text += f"🔴 **المساعد {i}** - خطأ في البيانات\n\n"
         
         text += (
             "⚙️ **الأوامر المتاحة:**\n"
             "• `/اضافة_مساعد` - إضافة حساب جديد\n"
+            "• `/المساعدين` - عرض قائمة الحسابات\n"
+            "• `/فحص_مساعد [معرف]` - فحص حساب محدد\n"
             "• `/حذف_مساعد [معرف]` - حذف حساب\n"
             "• `/اعادة_تحميل_المساعدين` - إعادة تحميل الحسابات"
         )
@@ -187,9 +202,12 @@ async def remove_assistant_command(client, message: Message):
         
         assistant_id = int(message.command[1])
         
-        # التحقق من وجود المساعد
-        if not telethon_manager.is_assistant_connected(assistant_id):
-            await message.reply(f"❌ **الحساب المساعد {assistant_id} غير موجود أو غير متصل**")
+        # التحقق من وجود المساعد في قاعدة البيانات أولاً
+        from ZeMusic.core.database import db
+        assistant_data = await db.get_assistant_by_id(assistant_id)
+        
+        if not assistant_data:
+            await message.reply(f"❌ **الحساب المساعد {assistant_id} غير موجود في قاعدة البيانات**")
             return
         
         # حذف المساعد
@@ -213,6 +231,70 @@ async def remove_assistant_command(client, message: Message):
         LOGGER(__name__).error(f"خطأ في حذف المساعد: {e}")
         await message.reply(f"❌ **خطأ في الحذف:** {str(e)}")
 
+@app.on_message(filters.command(["فحص_مساعد", "check_assistant"]) & filters.private & filters.user(config.OWNER_ID))
+async def check_assistant_command(client, message: Message):
+    """فحص حساب مساعد محدد"""
+    
+    try:
+        if len(message.command) < 2:
+            await message.reply(
+                "❌ **يجب تحديد معرف الحساب المساعد**\n\n"
+                "📝 **الاستخدام:**\n"
+                "`/فحص_مساعد [معرف_المساعد]`"
+            )
+            return
+        
+        assistant_id = int(message.command[1])
+        
+        # الحصول من قاعدة البيانات
+        from ZeMusic.core.database import db
+        assistant_data = await db.get_assistant_by_id(assistant_id)
+        
+        if not assistant_data:
+            await message.reply(f"❌ **الحساب المساعد {assistant_id} غير موجود**")
+            return
+        
+        # فحص حالة الاتصال
+        is_connected = telethon_manager.is_assistant_connected(assistant_id)
+        exists_in_memory = telethon_manager.assistant_exists(assistant_id)
+        
+        # الحصول على معلومات مباشرة إذا كان متصلاً
+        live_info = await telethon_manager.get_assistant_info(assistant_id) if exists_in_memory else None
+        
+        status_emoji = "🟢" if is_connected else "🔴"
+        
+        text = (
+            f"{status_emoji} **تفاصيل الحساب المساعد {assistant_id}**\n\n"
+            f"📋 **بيانات قاعدة البيانات:**\n"
+            f"├ 👤 **الاسم:** {assistant_data.get('name', 'غير محدد')}\n"
+            f"├ 🔗 **اليوزر:** @{assistant_data.get('username', 'غير محدد')}\n"
+            f"├ 📱 **الهاتف:** {assistant_data.get('phone', 'مخفي')}\n"
+            f"├ 🆔 **معرف تيليجرام:** `{assistant_data.get('user_id', 'غير محدد')}`\n"
+            f"└ 📅 **تاريخ الإضافة:** {str(assistant_data.get('created_at', 'غير محدد'))[:10]}\n\n"
+            f"🔄 **حالة الاتصال:**\n"
+            f"├ 💾 **في الذاكرة:** {'✅ نعم' if exists_in_memory else '❌ لا'}\n"
+            f"├ 🌐 **متصل:** {'✅ متصل' if is_connected else '❌ غير متصل'}\n"
+        )
+        
+        if live_info and live_info.get('connected'):
+            text += (
+                f"└ 📡 **معلومات مباشرة:** متاحة\n\n"
+                f"🔍 **البيانات المباشرة:**\n"
+                f"├ 👤 **الاسم:** {live_info.get('first_name', 'غير محدد')}\n"
+                f"├ 🔗 **اليوزر:** @{live_info.get('username', 'غير محدد')}\n"
+                f"└ 🆔 **المعرف:** `{live_info.get('id', 'غير محدد')}`"
+            )
+        else:
+            text += "└ 📡 **معلومات مباشرة:** غير متاحة"
+        
+        await message.reply(text)
+        
+    except ValueError:
+        await message.reply("❌ **معرف المساعد يجب أن يكون رقماً**")
+    except Exception as e:
+        LOGGER(__name__).error(f"خطأ في فحص المساعد: {e}")
+        await message.reply(f"❌ **خطأ في الفحص:** {str(e)}")
+
 @app.on_message(filters.command(["اعادة_تحميل_المساعدين", "reload_assistants"]) & filters.private & filters.user(config.OWNER_ID))
 async def reload_assistants_command(client, message: Message):
     """إعادة تحميل الحسابات المساعدة"""
@@ -220,14 +302,27 @@ async def reload_assistants_command(client, message: Message):
     status_msg = await message.reply("🔄 **جاري إعادة تحميل الحسابات المساعدة...**")
     
     try:
+        # قطع اتصال الحسابات الحالية أولاً
+        current_assistants = list(telethon_manager.assistant_clients.keys())
+        for assistant_id in current_assistants:
+            try:
+                await telethon_manager.remove_assistant(assistant_id)
+            except:
+                pass
+        
         # إعادة تحميل المساعدين
         loaded_count = await telethon_manager.load_assistants_from_db()
+        
+        # الحصول على الإحصائيات المحدثة
+        total_count = telethon_manager.get_assistants_count()
+        connected_count = telethon_manager.get_connected_assistants_count()
         
         await status_msg.edit(
             f"✅ **تم إعادة تحميل الحسابات بنجاح**\n\n"
             f"📊 **تم تحميل:** {loaded_count} حساب\n"
-            f"🟢 **متصل:** {telethon_manager.get_connected_assistants_count()}\n"
-            f"📱 **المجموع:** {telethon_manager.get_assistants_count()}"
+            f"🟢 **متصل:** {connected_count}\n"
+            f"📱 **المجموع:** {total_count}\n\n"
+            f"🔄 **تم إعادة تعيين جميع الاتصالات**"
         )
         
     except Exception as e:
