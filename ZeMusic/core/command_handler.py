@@ -453,7 +453,9 @@ class TelethonCommandHandler:
     async def handle_owner_callback(self, callback):
         """معالج callbacks المالك"""
         try:
-            await owner_panel.handle_callback(callback)
+            # استدعاء معالج callbacks المطور مباشرة
+            from ZeMusic.plugins.owner.owner_panel import handle_owner_callbacks
+            await handle_owner_callbacks(callback)
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج owner callback: {e}")
     
