@@ -34,3 +34,4 @@
 [21-Jul-25 23:46:24 - INFO] - __main__ - 👨‍💼 تم تحميل 0 مدير
 [21-Jul-25 23:46:24 - INFO] - __main__ - ⏰ تم بدء المهام الدورية
 [21-Jul-25 23:46:24 - INFO] - __main__ - 🎵 تم تشغيل ZeMusic Bot بنجاح!
+[22-Jul-25 00:00:20 - ERROR] - ZeMusic.core.command_handler - خطأ في معالج owner callback: 'OwnerPanel' object has no attribute 'handle_callback'
