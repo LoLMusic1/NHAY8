@@ -343,13 +343,13 @@ async def enhanced_cache_stats_handler(event):
             return
         
         import sqlite3
-        from ZeMusic.plugins.play.download_enhanced import DB_FILE
+        from ZeMusic.plugins.play.download import DB_FILE
         
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
         # إحصائيات عامة
-        cursor.execute("SELECT COUNT(*) FROM channel_index")
+        cursor.execute("SELECT COUNT(*) FROM audio_cache")
         total_cached = cursor.fetchone()[0]
         
         cursor.execute("SELECT SUM(access_count) FROM channel_index")
@@ -418,13 +418,13 @@ async def enhanced_cache_clear_handler(event):
             return
         
         import sqlite3
-        from ZeMusic.plugins.play.download_enhanced import DB_FILE
+        from ZeMusic.plugins.play.download import DB_FILE
         
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
         # عد الملفات قبل المسح
-        cursor.execute("SELECT COUNT(*) FROM channel_index")
+        cursor.execute("SELECT COUNT(*) FROM audio_cache")
         total_before = cursor.fetchone()[0]
         
         cursor.execute("SELECT SUM(file_size) FROM channel_index")
