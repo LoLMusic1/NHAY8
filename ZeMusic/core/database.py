@@ -64,6 +64,7 @@ class DatabaseManager:
     def __init__(self, db_path: str = DATABASE_PATH):
         self.db_path = db_path
         self._lock = threading.Lock()
+        self._unlock_database()  # حل أي أقفال موجودة
         self._init_database()
         
         # كاش في الذاكرة للبيانات المتكررة
@@ -78,6 +79,41 @@ class DatabaseManager:
             }
         else:
             self.cache = {}
+    
+    def _unlock_database(self):
+        """حل أقفال قاعدة البيانات الموجودة"""
+        try:
+            import os
+            import glob
+            
+            # حذف ملفات WAL وSHM التي تسبب الأقفال
+            db_base = os.path.splitext(self.db_path)[0]
+            lock_files = [
+                f"{self.db_path}-wal",
+                f"{self.db_path}-shm", 
+                f"{db_base}.db-wal",
+                f"{db_base}.db-shm"
+            ]
+            
+            for lock_file in lock_files:
+                try:
+                    if os.path.exists(lock_file):
+                        os.remove(lock_file)
+                except:
+                    pass
+            
+            # محاولة الاتصال لفتح أي أقفال
+            try:
+                conn = sqlite3.connect(self.db_path, timeout=5.0)
+                conn.execute("BEGIN IMMEDIATE;")
+                conn.rollback()
+                conn.close()
+            except:
+                pass
+                
+        except Exception as e:
+            # تجاهل الأخطاء في التنظيف
+            pass
         
     def _init_database(self):
         """إنشاء جداول قاعدة البيانات"""
@@ -192,17 +228,56 @@ class DatabaseManager:
 
     @contextmanager
     def _get_connection(self):
-        """الحصول على اتصال آمن بقاعدة البيانات"""
+        """الحصول على اتصال آمن بقاعدة البيانات مع منع الأقفال"""
         with self._lock:
-            conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            conn.execute('PRAGMA journal_mode=WAL')
-            conn.execute('PRAGMA synchronous=NORMAL')
-            conn.execute('PRAGMA busy_timeout=30000')
             try:
+                # إعدادات محسنة لمنع قفل قاعدة البيانات
+                conn = sqlite3.connect(
+                    self.db_path, 
+                    timeout=60.0,  # وقت انتظار أطول
+                    check_same_thread=False,
+                    isolation_level=None  # autocommit mode
+                )
+                conn.row_factory = sqlite3.Row
+                
+                # إعدادات PRAGMA محسنة لمنع الأقفال نهائياً
+                conn.execute('PRAGMA journal_mode=TRUNCATE') # وضع آمن بدون ملفات إضافية
+                conn.execute('PRAGMA synchronous=OFF')       # تسريع العمليات
+                conn.execute('PRAGMA busy_timeout=60000')    # انتظار أطول (60 ثانية)
+                conn.execute('PRAGMA temp_store=MEMORY')     # استخدام الذاكرة للملفات المؤقتة
+                conn.execute('PRAGMA cache_size=20000')      # ذاكرة تخزين أكبر
+                conn.execute('PRAGMA locking_mode=NORMAL')   # وضع قفل عادي
+                conn.execute('PRAGMA foreign_keys=OFF')      # تعطيل foreign keys للسرعة
+                conn.execute('PRAGMA count_changes=OFF')     # تعطيل عد التغييرات
+                conn.execute('PRAGMA legacy_file_format=OFF') # تنسيق حديث
+                
                 yield conn
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e):
+                    # محاولة حل القفل
+                    import time
+                    time.sleep(0.1)
+                    # إعادة المحاولة مرة واحدة
+                    conn = sqlite3.connect(
+                        self.db_path, 
+                        timeout=60.0,
+                        check_same_thread=False,
+                        isolation_level=None
+                    )
+                    conn.row_factory = sqlite3.Row
+                                         conn.execute('PRAGMA journal_mode=TRUNCATE')
+                     conn.execute('PRAGMA synchronous=OFF')
+                     conn.execute('PRAGMA busy_timeout=60000')
+                     conn.execute('PRAGMA temp_store=MEMORY')
+                     conn.execute('PRAGMA foreign_keys=OFF')
+                    yield conn
+                else:
+                    raise e
             finally:
-                conn.close()
+                try:
+                    conn.close()
+                except:
+                    pass
 
     # ========================================
     # وظائف إدارة الحسابات المساعدة (جديد)
@@ -868,6 +943,32 @@ class DatabaseManager:
                 conn.commit()
         
         await asyncio.get_event_loop().run_in_executor(None, _update)
+    
+    def force_unlock_database(self):
+        """فرض إلغاء قفل قاعدة البيانات"""
+        try:
+            import os
+            import time
+            
+            # حذف ملفات القفل
+            self._unlock_database()
+            
+            # إنهاء جميع الاتصالات
+            try:
+                conn = sqlite3.connect(self.db_path, timeout=1.0)
+                conn.execute("PRAGMA wal_checkpoint(FULL);")
+                conn.execute("PRAGMA journal_mode=DELETE;")
+                conn.close()
+            except:
+                pass
+            
+            # تنظيف نهائي
+            time.sleep(0.5)
+            self._unlock_database()
+            
+            return True
+        except Exception as e:
+            return False
 
 # إنشاء مثيل مدير قاعدة البيانات
 db = DatabaseManager()

@@ -102,14 +102,33 @@ class ZeMusicBot:
             return False
     
     async def _ensure_database_ready(self):
-        """التأكد من جاهزية قاعدة البيانات"""
+        """التأكد من جاهزية قاعدة البيانات مع حل الأقفال"""
         try:
+            # حل أي أقفال في قاعدة البيانات أولاً
+            LOGGER(__name__).info("🔓 فحص وحل أقفال قاعدة البيانات...")
+            try:
+                db.force_unlock_database()
+                LOGGER(__name__).info("✅ تم حل أقفال قاعدة البيانات بنجاح")
+            except Exception as unlock_error:
+                LOGGER(__name__).warning(f"⚠️ تحذير في حل الأقفال: {unlock_error}")
+            
             # التحقق من إمكانية الوصول لقاعدة البيانات
             stats = await db.get_stats()
             LOGGER(__name__).info(f"📊 قاعدة البيانات جاهزة - {stats['users']} مستخدم، {stats['chats']} مجموعة")
         except Exception as e:
             LOGGER(__name__).error(f"❌ خطأ في قاعدة البيانات: {e}")
-            raise
+            
+            # محاولة أخيرة لحل المشكلة
+            try:
+                LOGGER(__name__).info("🔧 محاولة إصلاح قاعدة البيانات...")
+                db.force_unlock_database()
+                import time
+                time.sleep(1)
+                stats = await db.get_stats()
+                LOGGER(__name__).info("✅ تم إصلاح قاعدة البيانات بنجاح")
+            except Exception as final_error:
+                LOGGER(__name__).error(f"❌ فشل في إصلاح قاعدة البيانات: {final_error}")
+                raise
     
     async def _load_sudoers(self):
         """تحميل قائمة المديرين"""

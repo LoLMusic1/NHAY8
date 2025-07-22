@@ -176,7 +176,8 @@ async def list_assistants(client, message: Message):
             "• `/فحص_مساعد [معرف]` - فحص حساب محدد\n"
             "• `/حذف_مساعد [معرف]` - حذف حساب\n"
             "• `/تنظيف_المساعدين` - حذف الحسابات الفاسدة\n"
-            "• `/اعادة_تحميل_المساعدين` - إعادة تحميل الحسابات"
+            "• `/اعادة_تحميل_المساعدين` - إعادة تحميل الحسابات\n"
+            "• `/فك_قفل_قاعدة_البيانات` - حل أقفال قاعدة البيانات"
         )
         
         await message.reply(text)
@@ -321,6 +322,39 @@ async def cleanup_assistants_command(client, message: Message):
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في تنظيف المساعدين: {e}")
         await status_msg.edit(f"❌ **خطأ في التنظيف:** {str(e)}")
+
+@app.on_message(filters.command(["فك_قفل_قاعدة_البيانات", "unlock_database"]) & filters.private & filters.user(config.OWNER_ID))
+async def unlock_database_command(client, message: Message):
+    """فك قفل قاعدة البيانات يدوياً"""
+    
+    status_msg = await message.reply("🔓 **جاري حل أقفال قاعدة البيانات...**")
+    
+    try:
+        from ZeMusic.core.database import db
+        
+        # حل الأقفال
+        success = db.force_unlock_database()
+        
+        if success:
+            await status_msg.edit(
+                "✅ **تم حل أقفال قاعدة البيانات بنجاح!**\n\n"
+                "🔓 **تم تنظيف:**\n"
+                "• ملفات WAL وSHM\n"
+                "• أقفال SQLite\n"
+                "• اتصالات معلقة\n\n"
+                "🔄 **يُنصح بإعادة تشغيل البوت للحصول على أفضل أداء**"
+            )
+        else:
+            await status_msg.edit(
+                "⚠️ **تم المحاولة ولكن قد تكون هناك مشكلة**\n\n"
+                "🔧 **جرب:**\n"
+                "• إعادة تشغيل البوت\n"
+                "• فحص صلاحيات الملفات"
+            )
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"خطأ في فك الأقفال: {e}")
+        await status_msg.edit(f"❌ **خطأ في فك الأقفال:** {str(e)}")
 
 @app.on_message(filters.command(["اعادة_تحميل_المساعدين", "reload_assistants"]) & filters.private & filters.user(config.OWNER_ID))
 async def reload_assistants_command(client, message: Message):
