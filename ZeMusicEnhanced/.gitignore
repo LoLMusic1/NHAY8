@@ -1,0 +1,425 @@
+# 🎵 ZeMusic Bot v3.0 - Enhanced .gitignore
+# تاريخ الإنشاء: 2025-01-28
+# النسخة: 3.0.0 - Enhanced Edition
+
+# ============================================
+# ملفات البيئة والإعدادات الحساسة
+# ============================================
+
+# متغيرات البيئة
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# ملفات الإعدادات الحساسة
+config_local.py
+config_production.py
+secrets.json
+credentials.json
+
+# ============================================
+# ملفات Python
+# ============================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# ============================================
+# ملفات Telegram وجلسات البوت
+# ============================================
+
+# جلسات Telethon
+*.session
+*.session-journal
+sessions/
+telethon_sessions/
+bot_session.session*
+
+# ملفات session strings
+session_strings.txt
+assistants.txt
+
+# ملفات الكوكيز
+cookies/
+*.txt
+!sample.env
+!requirements*.txt
+!README*.txt
+
+# ============================================
+# قواعد البيانات
+# ============================================
+
+# SQLite databases
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+zemusic*.db*
+assistant_accounts.db*
+smart_cache*.db*
+
+# PostgreSQL
+*.dump
+*.sql
+
+# ============================================
+# ملفات السجلات
+# ============================================
+
+# Log files
+logs/
+*.log
+*.log.*
+log_*.txt
+error_*.txt
+debug_*.txt
+final_*.log
+bot_*.log
+enhanced_*.log
+
+# ============================================
+# ملفات التحميل والوسائط
+# ============================================
+
+# Downloads
+downloads/
+temp/
+cache/
+thumbnails/
+*.mp3
+*.mp4
+*.wav
+*.flac
+*.ogg
+*.m4a
+*.webm
+*.mkv
+*.avi
+
+# ============================================
+# النسخ الاحتياطية
+# ============================================
+
+# Backup files
+backups/
+*.backup
+*.bak
+*~
+*.swp
+*.swo
+
+# ============================================
+# ملفات النظام
+# ============================================
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Windows
+*.lnk
+*.exe
+*.msi
+
+# Linux
+*.deb
+*.rpm
+*.tar.gz
+*.tar.xz
+
+# ============================================
+# أدوات التطوير
+# ============================================
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.atom/
+*.code-workspace
+
+# Vim
+*.vim
+.vimrc
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# Docker وأدوات النشر
+# ============================================
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+.docker/
+
+# Kubernetes
+*.yaml.local
+*.yml.local
+
+# Heroku
+.heroku/
+Procfile.local
+
+# ============================================
+# أدوات المراقبة والتحليل
+# ============================================
+
+# Monitoring
+prometheus_data/
+grafana_data/
+metrics/
+monitoring/
+
+# Profiling
+*.prof
+*.pstats
+
+# ============================================
+# ملفات مؤقتة ومتنوعة
+# ============================================
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+*.tmp
+*.temp
+
+# Archive files
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+
+# Media thumbnails
+thumb_*.jpg
+thumb_*.png
+thumb_*.webp
+
+# FFmpeg temp files
+ffmpeg_*.log
+*.ffmpeg
+
+# ============================================
+# ملفات خاصة بالمشروع
+# ============================================
+
+# تقارير التطوير (يمكن إزالة هذا القسم في الإنتاج)
+*_REPORT.md
+*_LOG.txt
+*_FIXES*.md
+INSPECTION_*.md
+STATUS_*.md
+SOLUTIONS_*.md
+COMPREHENSIVE_*.md
+ULTIMATE_*.md
+ERROR_ANALYSIS*.md
+COOKIES_MANAGEMENT*.md
+OWNER_PANEL_*.md
+FINAL_*.md
+BOT_FIXES*.md
+CACHE_CHANNEL*.md
+COMMAND_VALIDATION*.md
+DUPLICATION_FIX*.md
+ENHANCED_SYSTEM*.md
+FALLBACK_DOWNLOAD*.md
+ASSISTANT_DISPLAY*.md
+
+# ملفات اختبار مؤقتة
+test_*.py
+debug_*.py
+monitor_*.py
+extracted_*.py
+advanced_*.py
+simple_*.py
+
+# ملفات قواعد بيانات تجريبية
+real_*.db
+smart_*.db
+
+# ============================================
+# استثناءات (ملفات يجب تضمينها)
+# ============================================
+
+# إعدادات مهمة
+!sample.env
+!requirements.txt
+!requirements_enhanced.txt
+!README.md
+!README_Enhanced.md
+!LICENSE
+!.gitignore
+!Dockerfile
+!docker-compose.yml
+!start.sh
+
+# ملفات الأصول المهمة
+!assets/logo.png
+!assets/font*.ttf
+!assets/default_*.png
+
+# ملفات التوثيق
+!docs/
+!*.md
+
+# ملفات الإعداد
+!setup.py
+!pyproject.toml
+!tox.ini
+
+# ملفات CI/CD
+!.github/
+!.gitlab-ci.yml
+!.travis.yml
+
+# ============================================
+# ملاحظات
+# ============================================
+
+# هذا الملف يحمي:
+# 1. معلومات حساسة (API keys, tokens, sessions)
+# 2. ملفات مؤقتة ومُولدة تلقائياً
+# 3. قواعد البيانات المحلية
+# 4. ملفات التحميل والوسائط
+# 5. سجلات النظام
+# 6. ملفات النسخ الاحتياطي
+# 7. إعدادات IDEs الشخصية

@@ -1,0 +1,141 @@
+# 🎵 ZeMusic Bot v3.0 - Enhanced Requirements
+# تاريخ الإنشاء: 2025-01-28
+# النسخة: 3.0.0 - Enhanced Edition
+
+# ============================================
+# المكتبات الأساسية
+# ============================================
+
+# Telegram Client
+telethon>=1.36.0
+telethon-session-sqlalchemy>=0.2.16
+
+# Async Support
+aiofiles>=24.1.0
+aiohttp>=3.9.1
+aiosqlite>=0.20.0
+asyncio-throttle>=1.0.2
+
+# Audio/Video Processing
+ffmpeg-python>=0.2.0
+py-tgcalls>=0.9.7
+yt-dlp>=2024.1.7
+
+# Database Support
+sqlalchemy>=2.0.25
+alembic>=1.13.1
+
+# Optional: PostgreSQL Support
+asyncpg>=0.29.0
+
+# Optional: Redis Support
+redis>=5.0.1
+
+# ============================================
+# منصات الموسيقى
+# ============================================
+
+# Spotify
+spotipy>=2.23.0
+
+# YouTube
+google-api-python-client>=2.116.0
+youtube-search-python>=1.6.6
+
+# SoundCloud
+soundcloud-lib>=0.5.2
+
+# ============================================
+# معالجة البيانات والتشفير
+# ============================================
+
+# Encryption & Security
+cryptg>=0.4.0
+cryptography>=41.0.8
+pycryptodome>=3.19.0
+
+# Data Processing
+orjson>=3.9.10
+ujson>=5.9.0
+msgpack>=1.0.7
+lz4>=4.3.3
+
+# HTTP & Networking
+httpx>=0.26.0
+requests>=2.31.0
+urllib3>=2.1.0
+
+# ============================================
+# أدوات التطوير والتحسين
+# ============================================
+
+# Performance
+uvloop>=0.19.0  # Linux/macOS only
+psutil>=5.9.7
+memory-profiler>=0.61.0
+
+# Caching
+cachetools>=5.3.2
+diskcache>=5.6.3
+
+# Configuration
+python-dotenv>=1.0.0
+pydantic>=2.5.2
+pydantic-settings>=2.1.0
+
+# ============================================
+# أدوات إضافية
+# ============================================
+
+# Image Processing
+Pillow>=10.2.0
+opencv-python-headless>=4.9.0.80
+
+# Text Processing
+python-magic>=0.4.27
+chardet>=5.2.0
+
+# Date/Time
+python-dateutil>=2.8.2
+pytz>=2023.3.post1
+
+# Utilities
+tqdm>=4.66.1
+colorama>=0.4.6
+rich>=13.7.0
+
+# ============================================
+# خدمات إضافية (اختيارية)
+# ============================================
+
+# AI Integration (Optional)
+openai>=1.7.0
+google-generativeai>=0.3.2
+
+# Cloud Storage (Optional)
+boto3>=1.34.34
+google-cloud-storage>=2.10.0
+
+# Monitoring (Optional)
+prometheus-client>=0.19.0
+sentry-sdk>=1.39.2
+
+# ============================================
+# أدوات النشر
+# ============================================
+
+# Docker Support
+gunicorn>=21.2.0
+supervisor>=4.2.5
+
+# Process Management
+setproctitle>=1.3.3
+
+# ============================================
+# مكتبات النظام (حسب الحاجة)
+# ============================================
+
+# System Dependencies
+wheel>=0.42.0
+setuptools>=69.0.3
+pip>=23.3.2

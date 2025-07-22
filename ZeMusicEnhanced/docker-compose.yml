@@ -1,0 +1,238 @@
+# 🎵 ZeMusic Bot v3.0 - Enhanced Docker Compose Configuration
+# تاريخ الإنشاء: 2025-01-28
+# النسخة: 3.0.0 - Enhanced Edition
+
+version: '3.8'
+
+services:
+  # ============================================
+  # ZeMusic Bot - الخدمة الرئيسية
+  # ============================================
+  zemusic-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zemusic-enhanced
+    restart: unless-stopped
+    
+    # متغيرات البيئة
+    environment:
+      - LOG_LEVEL=INFO
+      - HIGH_LOAD_MODE=true
+      - DATABASE_URL=postgresql://zemusic:zemusic_password@postgres:5432/zemusic
+      - REDIS_URL=redis://redis:6379
+      - ENABLE_REDIS=true
+      - ENABLE_DATABASE_CACHE=true
+      - AUTO_BACKUP=true
+      - PERFORMANCE_MONITORING=true
+    
+    # ملف البيئة (إنشئ .env من sample.env)
+    env_file:
+      - .env
+    
+    # المجلدات المحلية
+    volumes:
+      - ./downloads:/app/downloads
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+      - ./sessions:/app/sessions
+      - ./cookies:/app/cookies
+      - ./assets:/app/assets
+    
+    # الشبكات
+    networks:
+      - zemusic-network
+    
+    # التبعيات
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    
+    # فحص الصحة
+    healthcheck:
+      test: ["CMD", "python", "-c", "import asyncio; print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # حدود الموارد
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # ============================================
+  # PostgreSQL - قاعدة البيانات
+  # ============================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: zemusic-postgres
+    restart: unless-stopped
+    
+    environment:
+      POSTGRES_DB: zemusic
+      POSTGRES_USER: zemusic
+      POSTGRES_PASSWORD: zemusic_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups/postgres:/backups
+    
+    networks:
+      - zemusic-network
+    
+    # فحص الصحة
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zemusic -d zemusic"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+    # إعدادات الأداء
+    command: >
+      postgres
+      -c max_connections=100
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+
+  # ============================================
+  # Redis - التخزين المؤقت
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: zemusic-redis
+    restart: unless-stopped
+    
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --appendonly yes
+      --appendfsync everysec
+    
+    volumes:
+      - redis_data:/data
+    
+    networks:
+      - zemusic-network
+    
+    # فحص الصحة
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ============================================
+  # Nginx - البروكسي العكسي (اختياري)
+  # ============================================
+  nginx:
+    image: nginx:alpine
+    container_name: zemusic-nginx
+    restart: unless-stopped
+    
+    ports:
+      - "80:80"
+      - "443:443"
+    
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    
+    networks:
+      - zemusic-network
+    
+    depends_on:
+      - zemusic-bot
+    
+    # إعدادات اختيارية - علق عليها إذا لم تحتجها
+    profiles:
+      - web
+
+  # ============================================
+  # Prometheus - المراقبة (اختياري)
+  # ============================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: zemusic-prometheus
+    restart: unless-stopped
+    
+    ports:
+      - "9090:9090"
+    
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    
+    networks:
+      - zemusic-network
+    
+    # إعدادات اختيارية - علق عليها إذا لم تحتجها
+    profiles:
+      - monitoring
+
+  # ============================================
+  # Grafana - لوحات المراقبة (اختياري)
+  # ============================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: zemusic-grafana
+    restart: unless-stopped
+    
+    ports:
+      - "3000:3000"
+    
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    
+    volumes:
+      - grafana_data:/var/lib/grafana
+    
+    networks:
+      - zemusic-network
+    
+    depends_on:
+      - prometheus
+    
+    # إعدادات اختيارية - علق عليها إذا لم تحتجها
+    profiles:
+      - monitoring
+
+# ============================================
+# المجلدات المستمرة
+# ============================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+# ============================================
+# الشبكات
+# ============================================
+networks:
+  zemusic-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

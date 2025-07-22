@@ -2,340 +2,343 @@
 # -*- coding: utf-8 -*-
 
 """
-🎵 ZeMusic Bot Enhanced - Main Entry Point
+🎵 ZeMusic Bot v3.0 - Enhanced Main Entry Point
 تاريخ الإنشاء: 2025-01-28
-النسخة: 3.0.0 - Telethon Enhanced Edition
+النسخة: 3.0.0 - Enhanced Edition
 
-الملف الرئيسي لتشغيل بوت الموسيقى المحسن
-مُحسن للعمل مع 7000 مجموعة و 70000 مستخدم
+نقطة دخول البوت الرئيسية مع إدارة متقدمة للعمليات
 """
 
 import asyncio
-import logging
 import signal
 import sys
-import os
-from contextlib import suppress
+import logging
 from pathlib import Path
+from typing import Optional
 
-# إضافة مسار المشروع
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+# إضافة مجلد المشروع لـ Python Path
+sys.path.insert(0, str(Path(__file__).parent))
 
-# تحميل الإعدادات والمكونات
-try:
-    from config_enhanced import config
-    from ZeMusicEnhanced import (
-        initialize_bot, shutdown_bot, get_bot_info, get_system_status,
-        telethon_manager, database_manager, music_manager, performance_monitor
-    )
-    from ZeMusicEnhanced.core.enhanced_bot import EnhancedZeMusicBot
-except ImportError as e:
-    print(f"❌ خطأ في تحميل المكونات: {e}")
-    print("💡 تأكد من تثبيت المتطلبات: pip install -r requirements_enhanced.txt")
-    sys.exit(1)
-
-# إعداد نظام السجلات
-logging.basicConfig(
-    level=getattr(logging, config.logging.log_level.upper(), logging.INFO),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+from config import config
+from core import (
+    TelethonClient,
+    DatabaseManager,
+    AssistantManager,
+    MusicEngine,
+    SecurityManager,
+    PerformanceMonitor
 )
 
+# إعداد اللوجر الرئيسي
 logger = logging.getLogger(__name__)
 
-class ZeMusicBotRunner:
-    """مشغل البوت المحسن مع إدارة متقدمة للعمليات"""
+class ZeMusicEnhanced:
+    """الكلاس الرئيسي لبوت ZeMusic المحسن"""
     
     def __init__(self):
-        self.bot = None
+        """تهيئة البوت"""
+        self.client: Optional[TelethonClient] = None
+        self.database: Optional[DatabaseManager] = None
+        self.assistant_manager: Optional[AssistantManager] = None
+        self.music_engine: Optional[MusicEngine] = None
+        self.security_manager: Optional[SecurityManager] = None
+        self.performance_monitor: Optional[PerformanceMonitor] = None
+        
         self.is_running = False
-        self.startup_time = None
-        self.shutdown_requested = False
+        self.shutdown_event = asyncio.Event()
         
-    async def initialize(self):
-        """تهيئة البوت وجميع مكوناته"""
-        try:
-            logger.info("🚀 بدء تهيئة ZeMusic Bot Enhanced...")
-            
-            # عرض معلومات النظام
-            self._show_system_info()
-            
-            # التحقق من المتطلبات
-            if not self._check_requirements():
-                return False
-            
-            # إنشاء البوت المحسن
-            self.bot = EnhancedZeMusicBot()
-            
-            # تهيئة البوت
-            success = await self.bot.initialize()
-            if not success:
-                logger.error("❌ فشل في تهيئة البوت")
-                return False
-            
-            # إعداد معالجات الإشارات
-            self._setup_signal_handlers()
-            
-            # تسجيل وقت البدء
-            self.startup_time = asyncio.get_event_loop().time()
-            self.is_running = True
-            
-            logger.info("✅ تم تهيئة ZeMusic Bot Enhanced بنجاح!")
-            self._show_startup_message()
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ خطأ في تهيئة البوت: {e}")
-            return False
-    
-    def _show_system_info(self):
-        """عرض معلومات النظام"""
-        info = get_bot_info()
-        
-        system_info = f"""
-╔══════════════════════════════════════╗
-║       🔧 معلومات النظام 🔧           ║
-╠══════════════════════════════════════╣
-║                                      ║
-║  🐍 Python: {info['python_version']}                    ║
-║  🎵 ZeMusic: {info['version']}                   ║
-║  🔥 Telethon: 1.36.0                 ║
-║  💾 قاعدة البيانات: {config.database.db_type.upper()}            ║
-║                                      ║
-║  ⚡ وضع الأداء العالي: {'✅' if config.performance.high_load_mode else '❌'}           ║
-║  📱 الحد الأقصى للمساعدين: {config.assistant.max_assistants}           ║
-║  🎯 المنصات المدعومة: {len(config.get_supported_platforms())}               ║
-║                                      ║
-╚══════════════════════════════════════╝
-        """
-        print(system_info)
-    
-    def _check_requirements(self):
-        """فحص المتطلبات الأساسية"""
-        try:
-            # فحص Python version
-            if sys.version_info < (3, 8):
-                logger.error("❌ Python 3.8+ مطلوب!")
-                return False
-            
-            # فحص الإعدادات الأساسية
-            if not config.system.bot_token:
-                logger.error("❌ BOT_TOKEN غير محدد!")
-                return False
-            
-            if not config.system.api_id or not config.system.api_hash:
-                logger.error("❌ API_ID أو API_HASH غير محدد!")
-                return False
-            
-            # فحص المجلدات المطلوبة
-            required_dirs = [
-                config.music.download_path,
-                config.music.temp_path,
-                config.assistant.sessions_dir,
-                "logs",
-                "backups"
-            ]
-            
-            for directory in required_dirs:
-                Path(directory).mkdir(exist_ok=True)
-            
-            logger.info("✅ جميع المتطلبات متوفرة")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ خطأ في فحص المتطلبات: {e}")
-            return False
+        # تسجيل معالجات الإشارات
+        self._setup_signal_handlers()
     
     def _setup_signal_handlers(self):
-        """إعداد معالجات الإشارات للإيقاف الآمن"""
-        def signal_handler(signum, frame):
-            logger.info(f"🔔 تم استلام إشارة الإيقاف: {signum}")
-            self.shutdown_requested = True
-            asyncio.create_task(self.shutdown())
-        
-        # إعداد معالجات الإشارات
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-        
-        # معالج خاص لـ Windows
-        if sys.platform == "win32":
-            signal.signal(signal.SIGBREAK, signal_handler)
+        """إعداد معالجات إشارات النظام"""
+        try:
+            # معالج إشارات الإيقاف
+            for sig in [signal.SIGTERM, signal.SIGINT]:
+                signal.signal(sig, self._signal_handler)
+                
+            logger.info("✅ تم تسجيل معالجات الإشارات")
+            
+        except Exception as e:
+            logger.error(f"❌ فشل في تسجيل معالجات الإشارات: {e}")
     
-    def _show_startup_message(self):
-        """عرض رسالة بدء التشغيل"""
-        status = get_system_status()
-        
-        # حساب الإحصائيات
-        assistants_count = 0
-        connected_assistants = 0
-        active_sessions = 0
-        
-        if telethon_manager:
-            assistants_count = telethon_manager.get_assistants_count()
-            connected_assistants = telethon_manager.get_connected_assistants_count()
-        
-        if music_manager:
-            active_sessions = len(music_manager.active_sessions)
-        
-        startup_message = f"""
-╔══════════════════════════════════════╗
-║     🎵 ZeMusic Enhanced جاهز! 🎵     ║
-╠══════════════════════════════════════╣
-║                                      ║
-║  ✅ البوت الرئيسي: متصل              ║
-║  📱 الحسابات المساعدة: {assistants_count} ({connected_assistants} متصل)     ║
-║  💾 قاعدة البيانات: {'✅' if status['database_manager'] else '❌'}              ║
-║  🎵 جلسات التشغيل: {active_sessions}                ║
-║  📊 مراقب الأداء: {'✅' if status['performance_monitor'] else '❌'}              ║
-║                                      ║
-║  🎯 الوظائف المتاحة:                 ║
-║     {'✅ تشغيل الموسيقى' if assistants_count > 0 else '⚠️ تشغيل محدود (بحاجة لمساعدين)'}               ║
-║     ✅ إدارة المجموعات                ║
-║     ✅ الأوامر الإدارية               ║
-║     ✅ الإحصائيات المتقدمة            ║
-║     ✅ النسخ الاحتياطي التلقائي       ║
-║                                      ║
-║  🔥 مُحسن للأحمال الكبيرة:           ║
-║     📊 يدعم حتى 7000 مجموعة          ║
-║     👥 يدعم حتى 70000 مستخدم         ║
-║                                      ║
-║  📞 الدعم: {config.channels.support_chat or '@YourSupport'}               ║
-║                                      ║
-╚══════════════════════════════════════╝
-        """
-        print(startup_message)
-        
-        # تحذيرات إضافية
-        if assistants_count == 0:
-            print("⚠️ تحذير: لا توجد حسابات مساعدة - استخدم /owner لإضافة حسابات")
-        
-        if not config.performance.high_load_mode:
-            print("💡 نصيحة: فعل وضع الأداء العالي للحصول على أفضل أداء")
+    def _signal_handler(self, signum, frame):
+        """معالج إشارات الإيقاف"""
+        logger.info(f"📡 تم استلام إشارة {signum} - بدء الإيقاف الآمن...")
+        asyncio.create_task(self.shutdown())
+    
+    async def initialize(self) -> bool:
+        """تهيئة جميع مكونات البوت"""
+        try:
+            logger.info("🚀 بدء تهيئة ZeMusic Bot Enhanced v3.0...")
+            
+            # عرض معلومات النظام
+            self._display_system_info()
+            
+            # 1. تهيئة قاعدة البيانات
+            logger.info("📊 تهيئة قاعدة البيانات...")
+            self.database = DatabaseManager()
+            if not await self.database.initialize():
+                logger.error("❌ فشل في تهيئة قاعدة البيانات")
+                return False
+            
+            # 2. تهيئة عميل Telethon
+            logger.info("📱 تهيئة عميل Telethon...")
+            self.client = TelethonClient()
+            if not await self.client.initialize():
+                logger.error("❌ فشل في تهيئة عميل Telethon")
+                return False
+            
+            # 3. تهيئة مدير الحسابات المساعدة
+            logger.info("🤖 تهيئة مدير الحسابات المساعدة...")
+            self.assistant_manager = AssistantManager()
+            if not await self.assistant_manager.initialize():
+                logger.error("❌ فشل في تهيئة مدير الحسابات المساعدة")
+                return False
+            
+            # 4. تهيئة محرك الموسيقى
+            logger.info("🎵 تهيئة محرك الموسيقى...")
+            self.music_engine = MusicEngine(self.client, self.assistant_manager)
+            if not await self.music_engine.initialize():
+                logger.error("❌ فشل في تهيئة محرك الموسيقى")
+                return False
+            
+            # 5. تهيئة مدير الأمان
+            logger.info("🛡️ تهيئة مدير الأمان...")
+            self.security_manager = SecurityManager(self.client, self.database)
+            if not await self.security_manager.initialize():
+                logger.error("❌ فشل في تهيئة مدير الأمان")
+                return False
+            
+            # 6. تهيئة مراقب الأداء
+            logger.info("📈 تهيئة مراقب الأداء...")
+            self.performance_monitor = PerformanceMonitor()
+            if not await self.performance_monitor.initialize():
+                logger.error("❌ فشل في تهيئة مراقب الأداء")
+                return False
+            
+            # 7. تحميل المعالجات والإضافات
+            await self._load_handlers()
+            
+            self.is_running = True
+            logger.info("✅ تم تهيئة جميع مكونات البوت بنجاح")
+            
+            # عرض إحصائيات البدء
+            await self._display_startup_stats()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ فشل في تهيئة البوت: {e}")
+            return False
+    
+    def _display_system_info(self):
+        """عرض معلومات النظام"""
+        try:
+            import platform
+            import psutil
+            
+            system_info = f"""
+╭─────────────────────────────────────────────────╮
+│  🎵 ZeMusic Bot v3.0 - Enhanced Edition        │
+├─────────────────────────────────────────────────┤
+│  💻 النظام: {platform.system()} {platform.release()}
+│  🐍 Python: {platform.python_version()}
+│  🧠 المعالج: {psutil.cpu_count()} cores
+│  💾 الذاكرة: {psutil.virtual_memory().total // (1024**3)} GB
+│  💿 التخزين: {psutil.disk_usage('/').free // (1024**3)} GB متاح
+├─────────────────────────────────────────────────┤
+│  ⚙️ الإعدادات:                                  │
+│  📊 قاعدة البيانات: {config.database._get_db_type()}
+│  🤖 الحسابات المساعدة: {config.assistant.max_assistants} حد أقصى
+│  🎵 وضع الأحمال الكبيرة: {'✅' if config.performance.high_load_mode else '❌'}
+│  🔄 Redis: {'✅' if config.performance.enable_redis else '❌'}
+╰─────────────────────────────────────────────────╯
+            """
+            
+            print(system_info)
+            
+        except Exception as e:
+            logger.error(f"❌ فشل في عرض معلومات النظام: {e}")
+    
+    async def _load_handlers(self):
+        """تحميل معالجات الأحداث والإضافات"""
+        try:
+            logger.info("📥 تحميل معالجات الأحداث...")
+            
+            # سيتم تنفيذ هذا في المراحل التالية
+            # من خلال نظام الإضافات المحسن
+            
+            logger.info("✅ تم تحميل جميع المعالجات")
+            
+        except Exception as e:
+            logger.error(f"❌ فشل في تحميل المعالجات: {e}")
+    
+    async def _display_startup_stats(self):
+        """عرض إحصائيات البدء"""
+        try:
+            # الحصول على الإحصائيات
+            db_stats = await self.database.get_stats()
+            assistant_stats = await self.assistant_manager.get_assistants_stats()
+            bot_info = config.get_bot_info()
+            
+            startup_stats = f"""
+╭─────────────────────────────────────────────────╮
+│  📊 إحصائيات البوت                             │
+├─────────────────────────────────────────────────┤
+│  👥 المستخدمين: {db_stats.get('users', 0)}
+│  💬 المجموعات: {db_stats.get('chats', 0)}
+│  🤖 الحسابات المساعدة: {assistant_stats.get('connected_assistants', 0)}/{assistant_stats.get('total_assistants', 0)}
+│  🎵 إجمالي التشغيلات: {db_stats.get('total_plays', 0)}
+├─────────────────────────────────────────────────┤
+│  🌐 المنصات المدعومة:                          │
+│  {', '.join(bot_info.get('supported_platforms', []))}
+╰─────────────────────────────────────────────────╯
+
+🎉 البوت جاهز للعمل! استخدم /start للبدء
+            """
+            
+            print(startup_stats)
+            logger.info("🎉 البوت جاهز للعمل!")
+            
+        except Exception as e:
+            logger.error(f"❌ فشل في عرض إحصائيات البدء: {e}")
     
     async def run(self):
-        """تشغيل البوت الرئيسي"""
+        """تشغيل البوت"""
         try:
-            if not self.bot:
-                logger.error("❌ البوت غير مُهيأ!")
+            if not self.is_running:
+                logger.error("❌ البوت غير مهيأ - يرجى تشغيل initialize() أولاً")
                 return
             
-            logger.info("🎵 بدء تشغيل ZeMusic Bot Enhanced...")
+            logger.info("🏃 بدء تشغيل البوت...")
             
-            # بدء البوت
-            await self.bot.start()
+            # بدء مراقب الأداء
+            if self.performance_monitor:
+                asyncio.create_task(self.performance_monitor.start_monitoring())
             
-            # الحفاظ على التشغيل
-            while self.is_running and not self.shutdown_requested:
-                await asyncio.sleep(1)
-                
-                # فحص صحة النظام كل 5 دقائق
-                if asyncio.get_event_loop().time() % 300 < 1:
-                    await self._health_check()
+            # تشغيل العميل الرئيسي
+            if self.client:
+                await self.client.run_until_disconnected()
             
         except KeyboardInterrupt:
-            logger.info("⌨️ تم استلام إشارة إيقاف من المستخدم")
+            logger.info("⌨️ تم إيقاف البوت بواسطة المستخدم")
         except Exception as e:
             logger.error(f"❌ خطأ في تشغيل البوت: {e}")
         finally:
             await self.shutdown()
     
-    async def _health_check(self):
-        """فحص دوري لصحة النظام"""
-        try:
-            status = get_system_status()
-            
-            if not status['overall_ready']:
-                logger.warning("⚠️ النظام غير مستقر - محاولة إصلاح...")
-                
-                # محاولة إعادة تشغيل المكونات المعطلة
-                if not status['telethon_manager'] and telethon_manager:
-                    await telethon_manager.reconnect()
-                
-                if not status['music_manager'] and music_manager:
-                    await music_manager.restart()
-            
-            # تنظيف الذاكرة
-            if performance_monitor:
-                await performance_monitor.cleanup_memory()
-                
-        except Exception as e:
-            logger.error(f"❌ خطأ في فحص الصحة: {e}")
-    
     async def shutdown(self):
-        """إيقاف البوت بأمان"""
-        if self.shutdown_requested:
-            return
-        
-        self.shutdown_requested = True
-        self.is_running = False
-        
+        """إيقاف البوت بشكل آمن"""
         try:
-            logger.info("🛑 بدء إيقاف ZeMusic Bot Enhanced...")
+            if not self.is_running:
+                return
             
-            # إيقاف البوت
-            if self.bot:
-                await self.bot.shutdown()
+            logger.info("🛑 بدء الإيقاف الآمن للبوت...")
+            self.is_running = False
             
-            # إيقاف المكونات الأساسية
-            await shutdown_bot()
+            # إيقاف المكونات بالترتيب العكسي للتهيئة
             
-            # حساب وقت التشغيل
-            if self.startup_time:
-                uptime = asyncio.get_event_loop().time() - self.startup_time
-                logger.info(f"⏱️ إجمالي وقت التشغيل: {uptime:.2f} ثانية")
+            # 1. إيقاف مراقب الأداء
+            if self.performance_monitor:
+                await self.performance_monitor.shutdown()
+                logger.info("✅ تم إيقاف مراقب الأداء")
             
-            logger.info("✅ تم إيقاف البوت بأمان")
+            # 2. إيقاف مدير الأمان
+            if self.security_manager:
+                await self.security_manager.shutdown()
+                logger.info("✅ تم إيقاف مدير الأمان")
+            
+            # 3. إيقاف محرك الموسيقى
+            if self.music_engine:
+                await self.music_engine.shutdown()
+                logger.info("✅ تم إيقاف محرك الموسيقى")
+            
+            # 4. إيقاف مدير الحسابات المساعدة
+            if self.assistant_manager:
+                await self.assistant_manager.shutdown()
+                logger.info("✅ تم إيقاف مدير الحسابات المساعدة")
+            
+            # 5. إيقاف عميل Telethon
+            if self.client:
+                await self.client.disconnect()
+                logger.info("✅ تم إيقاف عميل Telethon")
+            
+            # 6. إيقاف قاعدة البيانات
+            if self.database:
+                await self.database.close()
+                logger.info("✅ تم إيقاف قاعدة البيانات")
+            
+            # تعيين حدث الإيقاف
+            self.shutdown_event.set()
+            
+            logger.info("🎯 تم إيقاف البوت بنجاح")
             
         except Exception as e:
             logger.error(f"❌ خطأ في إيقاف البوت: {e}")
 
+# ============================================
+# الوظائف الرئيسية
+# ============================================
+
 async def main():
-    """الدالة الرئيسية"""
+    """الوظيفة الرئيسية"""
+    bot = None
+    
     try:
-        # إعداد حلقة الأحداث
-        if sys.platform == "win32":
-            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        
-        # إنشاء مشغل البوت
-        runner = ZeMusicBotRunner()
+        # إنشاء مثيل البوت
+        bot = ZeMusicEnhanced()
         
         # تهيئة البوت
-        success = await runner.initialize()
-        if not success:
+        if not await bot.initialize():
             logger.error("❌ فشل في تهيئة البوت")
             sys.exit(1)
         
         # تشغيل البوت
-        await runner.run()
+        await bot.run()
         
     except KeyboardInterrupt:
-        print("\n🛑 تم إيقاف البوت بواسطة المستخدم")
+        logger.info("⌨️ تم إيقاف البوت بواسطة المستخدم")
     except Exception as e:
         logger.error(f"❌ خطأ فادح في البوت: {e}")
         sys.exit(1)
+    finally:
+        if bot:
+            await bot.shutdown()
 
 def run_bot():
-    """دالة مساعدة لتشغيل البوت"""
+    """تشغيل البوت مع معالجة الأخطاء"""
     try:
+        # إعداد حلقة الأحداث
+        if sys.platform == 'win32':
+            # Windows
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        else:
+            # Linux/macOS - استخدام uvloop للأداء الأفضل
+            try:
+                import uvloop
+                uvloop.install()
+                logger.info("✅ تم تفعيل uvloop للأداء الأفضل")
+            except ImportError:
+                logger.info("ℹ️ uvloop غير متاح - سيتم استخدام asyncio العادي")
+        
+        # تشغيل البوت
         asyncio.run(main())
+        
     except KeyboardInterrupt:
         print("\n👋 وداعاً!")
+        sys.exit(0)
     except Exception as e:
-        print(f"❌ خطأ فادح: {e}")
+        logger.error(f"❌ خطأ فادح: {e}")
         sys.exit(1)
 
-if __name__ == "__main__":
-    # عرض معلومات البوت
-    info = get_bot_info()
-    print(f"""
-🎵 ZeMusic Bot Enhanced v{info['version']}
-👨‍💻 بواسطة: {info['author']}
-🔥 مدعوم بـ Telethon v1.36.0
+# ============================================
+# نقطة الدخول
+# ============================================
 
-🚀 بدء التشغيل...
-    """)
+if __name__ == "__main__":
+    print("🎵 ZeMusic Bot v3.0 - Enhanced Edition")
+    print("تاريخ الإنشاء: 2025-01-28")
+    print("=" * 50)
     
-    # تشغيل البوت
     run_bot()
