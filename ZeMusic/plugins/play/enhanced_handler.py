@@ -202,18 +202,13 @@ async def enhanced_smart_download_handler(event):
         search_method = result.get('search_method', 'unknown')
         total_time = result.get('total_time', 0)
         
-        # رسالة معلومات التحميل
-        info_text = f"""🎵 **تم العثور على:** {result['title']}
-🎤 **الفنان:** {result['artist']}
-📡 **المصدر:** {source_text}
-🔍 **طريقة البحث:** {search_method}
-⏱️ **الوقت:** {total_time:.2f}s
-📊 **الحجم:** {format_file_size(result.get('file_size', 0))}
-🎚️ **الجودة:** {result.get('quality', 'medium').upper()}
+        # رسالة بسيطة للتقدم
+        progress_text = f"""🎵 **تم العثور على:** {result['title']}
+🎤 **{result['artist']}**
 
-⬆️ **جاري الرفع...**"""
+⬆️ **جاري إرسال الملف...**"""
         
-        await status_msg.edit(info_text)
+        await status_msg.edit(progress_text)
         
         # إعداد الملف للإرسال
         if result.get('cached') and result.get('file_id'):
@@ -222,13 +217,7 @@ async def enhanced_smart_download_handler(event):
                 await telethon_manager.bot_client.send_file(
                     entity=event.chat_id,
                     file=result['file_id'],
-                    caption=f"""🎵 **{result['title']}**
-🎤 **{result['artist']}**
-⏱️ **{format_duration(result.get('duration', 0))}**
-📡 **{source_text}**
-⚡ **من التخزين السريع**
-
-💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}""",
+                    caption=f"💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}",
                     reply_to=event.message.id,
                     supports_streaming=True
                 )
@@ -243,11 +232,11 @@ async def enhanced_smart_download_handler(event):
         # تحميل الصورة المصغرة
         thumb_path = None
         if 'thumb' in result and result['thumb']:
-            await status_msg.edit(f"{info_text}\n\n📸 تحميل الصورة المصغرة...")
+            await status_msg.edit(f"{progress_text}\n\n📸 تحميل الصورة المصغرة...")
             thumb_path = await download_thumbnail(result['thumb'], result['title'])
         
         # تحديث الرسالة قبل الإرسال
-        await status_msg.edit(f"{info_text}\n\n📤 إرسال الملف الصوتي...")
+        await status_msg.edit(f"{progress_text}\n\n📤 إرسال الملف الصوتي...")
         
         # إرسال الملف الجديد مع Telethon
         try:
@@ -265,17 +254,8 @@ async def enhanced_smart_download_handler(event):
                 performer=result['artist']
             )
             
-            # إعداد caption مفصل
-            caption = f"""🎵 **{result['title']}**
-🎤 **{result['artist']}**
-⏱️ **{format_duration(result.get('duration', 0))}**
-📊 **{format_file_size(result.get('file_size', 0))}**
-🎚️ **جودة {result.get('quality', 'medium').upper()}**
-📡 **{source_text}**
-
-🔍 **بحث:** {query}
-⚡ **وقت المعالجة:** {total_time:.2f}s
-💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}"""
+            # caption بسيط للمستخدم (فقط يوزر البوت)
+            caption = f"💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}"
             
             # إرسال الملف
             with open(audio_path, 'rb') as audio_file:

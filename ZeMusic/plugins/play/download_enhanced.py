@@ -1393,6 +1393,16 @@ class EnhancedHyperSpeedDownloader:
             LOGGER(__name__).warning(f"خطأ في التحويل إلى MP3: {e}")
             return str(input_path)  # أرجع الملف الأصلي في حالة الخطأ
     
+    def clean_hashtag(self, text: str) -> str:
+        """تنظيف النص لجعله مناسباً للهاشتاغات"""
+        import re
+        # إزالة الأحرف الخاصة والمسافات وتحويل للعربية/الإنجليزية فقط
+        cleaned = re.sub(r'[^\w\u0600-\u06FF]', '_', text)
+        # إزالة الأرقام الطويلة والرموز
+        cleaned = re.sub(r'_+', '_', cleaned)
+        # تحديد الطول
+        return cleaned.strip('_')[:20]
+    
     async def cache_to_channel(self, audio_info: Dict, search_query: str) -> Optional[str]:
         """حفظ محسن للملف في قناة التخزين وقاعدة البيانات"""
         if not SMART_CACHE_CHANNEL:
@@ -1407,14 +1417,45 @@ class EnhancedHyperSpeedDownloader:
             video_id = audio_info.get("video_id", "")
             quality = audio_info.get("quality", "unknown")
             
-            # إنشاء caption محسن للملف
+            # إنشاء caption مفصل ومنظم للقناة
+            formatted_size = f"{file_size/1024/1024:.1f}MB" if file_size > 0 else "غير معروف"
+            formatted_duration = f"{duration//60:02d}:{duration%60:02d}" if duration > 0 else "غير معروف"
+            source_name = audio_info.get("source", "unknown")
+            download_time = audio_info.get("download_time", 0)
+            
+            # رموز تعبيرية للمصادر
+            source_icons = {
+                "youtube_api": "🔍",
+                "invidious": "🌐", 
+                "ytdlp_cookies": "🍪",
+                "ytdlp_alternative": "🎚️",
+                "cobalt_api": "🔗",
+                "y2mate_api": "🎵",
+                "savefrom_api": "📁",
+                "youtube_dl": "📼",
+                "generic": "🔧",
+                "local_files": "📂"
+            }
+            
+            source_icon = source_icons.get(source_name, "📥")
+            
             caption = f"""🎵 **{title}**
-🎤 **{artist}**
-⏱️ **{duration}s** | 📊 **{file_size/1024/1024:.1f}MB**
-🎚️ **جودة:** {quality.upper()}
-🔗 **مصدر:** {audio_info["source"]}
-🔍 **بحث:** {search_query}
-📅 **{datetime.now().strftime('%Y-%m-%d %H:%M')}**"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎤 **الفنان:** {artist}
+⏱️ **المدة:** {formatted_duration}
+📊 **الحجم:** {formatted_size}
+🎚️ **الجودة:** {quality.upper()}
+{source_icon} **المصدر:** {source_name}
+⚡ **وقت التحميل:** {download_time:.1f}s
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔍 **مفاتيح البحث:**
+• {search_query}
+• {title.lower()}
+• {artist.lower()}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📅 **تاريخ الحفظ:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
+🆔 **معرف الفيديو:** {video_id if video_id else 'غير متوفر'}
+🏷️ **هاشتاغات:** #{self.clean_hashtag(title)} #{self.clean_hashtag(artist)} #موسيقى #تخزين_ذكي"""
             
             # رفع الملف للقناة مع Telethon
             try:
