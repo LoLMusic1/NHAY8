@@ -178,6 +178,12 @@ async def enhanced_smart_download_handler(event):
                 await status_msg.edit("❌ **فشل في العثور على النتائج**\n\n💡 جرب:\n• كلمات مختلفة\n• اسم الفنان\n• عنوان أوضح\n\n🔧 **تفاصيل تقنية:**\n• جميع خوادم التحميل معطلة حالياً\n• يرجى المحاولة لاحقاً")
                 return
         
+        # التحقق الإضافي من صحة النتيجة
+        if not isinstance(result, dict):
+            await status_msg.edit("❌ **خطأ في البيانات:** النتيجة غير صحيحة\n\n💡 جرب البحث مرة أخرى")
+            LOGGER(__name__).error(f"نتيجة غير صحيحة: {type(result)} - {result}")
+            return
+        
         # تحديث الرسالة مع معلومات مفصلة
         source_emojis = {
             'cache_direct': '⚡ كاش فوري',
@@ -214,17 +220,22 @@ async def enhanced_smart_download_handler(event):
         if result.get('cached') and result.get('file_id'):
             # إرسال من الكاش
             try:
-                await telethon_manager.bot_client.send_file(
-                    entity=event.chat_id,
-                    file=result['file_id'],
-                    caption=f"💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}",
-                    reply_to=event.message.id,
-                    supports_streaming=True
-                )
-                
-                await status_msg.delete()
-                return
-                
+                # التحقق من صحة file_id
+                file_id = result['file_id']
+                if file_id and len(str(file_id)) > 10:  # تحقق أساسي من file_id
+                    await telethon_manager.bot_client.send_file(
+                        entity=event.chat_id,
+                        file=file_id,
+                        caption=f"💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}",
+                        reply_to=event.message.id,
+                        supports_streaming=True
+                    )
+                    
+                    await status_msg.delete()
+                    return
+                else:
+                    LOGGER(__name__).warning(f"file_id غير صحيح: {file_id}")
+                    
             except Exception as cache_error:
                 LOGGER(__name__).warning(f"فشل إرسال من الكاش: {cache_error}")
                 # المتابعة للتحميل الجديد
@@ -240,11 +251,18 @@ async def enhanced_smart_download_handler(event):
         
         # إرسال الملف الجديد مع Telethon
         try:
+            # التحقق من وجود مسار الملف
+            if 'audio_path' not in result:
+                await status_msg.edit("❌ **خطأ:** لم يتم العثور على مسار الملف")
+                LOGGER(__name__).error(f"مفاتيح النتيجة: {list(result.keys())}")
+                return
+                
             audio_path = result['audio_path']
             
             # التأكد من وجود الملف
-            if not os.path.exists(audio_path):
+            if not audio_path or not os.path.exists(audio_path):
                 await status_msg.edit("❌ **خطأ:** الملف غير موجود")
+                LOGGER(__name__).error(f"مسار الملف غير صحيح: {audio_path}")
                 return
             
             # إنشاء DocumentAttributeAudio
@@ -282,11 +300,24 @@ async def enhanced_smart_download_handler(event):
             LOGGER(__name__).info(f"✅ تم إرسال بنجاح: {result['title']} في {total_time:.2f}s")
         
         except Exception as send_error:
-            LOGGER(__name__).error(f"فشل إرسال الملف: {send_error}")
-            await status_msg.edit(f"❌ **فشل الإرسال:** {str(send_error)}")
+            error_msg = str(send_error)
+            LOGGER(__name__).error(f"فشل إرسال الملف: {error_msg}")
+            
+            # رسالة خطأ مفصلة حسب نوع المشكلة
+            if 'audio_path' in error_msg:
+                await status_msg.edit("❌ **فشل الإرسال:** مشكلة في مسار الملف\n\n💡 جرب البحث مرة أخرى")
+            elif 'file not found' in error_msg.lower():
+                await status_msg.edit("❌ **فشل الإرسال:** الملف غير موجود\n\n💡 جرب البحث مرة أخرى")
+            elif 'permission' in error_msg.lower():
+                await status_msg.edit("❌ **فشل الإرسال:** مشكلة في الصلاحيات\n\n💡 تحقق من إعدادات البوت")
+            else:
+                await status_msg.edit(f"❌ **فشل الإرسال:** خطأ غير متوقع\n\n💡 جرب مرة أخرى\n\n`{error_msg[:100]}...`")
             
             # حذف الملفات المؤقتة حتى لو فشل الإرسال
-            await remove_temp_files(result.get('audio_path'), thumb_path)
+            try:
+                await remove_temp_files(result.get('audio_path'), thumb_path)
+            except:
+                pass
         
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في المعالج المطور: {e}")
