@@ -941,40 +941,46 @@ class EnhancedHyperSpeedDownloader:
                                 LOGGER(__name__).warning(f"فشل الطريقة البديلة {fmt}: {e}")
                             continue
                 
-                # محاولة متوازية عبر APIs متعددة (أسرع بكثير)
-                backup_methods = [
+                # محاولة عبر APIs خارجية (لتجنب YouTube blocking)
+                external_methods = [
                     ('cobalt', self.download_via_cobalt),
-                    ('y2mate', self.download_via_y2mate),
                     ('savefrom', self.download_via_savefrom),
-                    ('youtube_dl', self.download_via_youtube_dl),
+                    ('y2mate', self.download_via_y2mate),
                 ]
                 
-                LOGGER(__name__).info(f"تشغيل {len(backup_methods)} طرق متوازية...")
+                LOGGER(__name__).info(f"🌐 تجربة APIs خارجية...")
                 
-                # تشغيل جميع الطرق بالتوازي
-                tasks = []
-                for method_name, method_func in backup_methods:
-                    task = asyncio.create_task(self._safe_download_method(method_name, method_func, video_id, video_info))
-                    tasks.append(task)
-                
-                # انتظار أول نجاح (أسرع بكثير)
-                try:
-                    for completed_task in asyncio.as_completed(tasks, timeout=30):
-                        result = await completed_task
+                # تجربة تسلسلية سريعة للـ APIs الخارجية
+                for method_name, method_func in external_methods:
+                    try:
+                        LOGGER(__name__).info(f"🔄 تجربة {method_name}...")
+                        result = await asyncio.wait_for(
+                            self._safe_download_method(method_name, method_func, video_id, video_info),
+                            timeout=20.0
+                        )
                         if result:
-                            # إلغاء المهام المتبقية
-                            for task in tasks:
-                                if not task.done():
-                                    task.cancel()
-                            await self.update_performance_stats('parallel_download', True, time.time() - start_time)
+                            LOGGER(__name__).info(f"✅ نجح {method_name}")
+                            await self.update_performance_stats(f'{method_name}_api', True, time.time() - start_time)
                             return result
-                except asyncio.TimeoutError:
-                    LOGGER(__name__).warning("انتهت مهلة التحميل المتوازي")
+                    except asyncio.TimeoutError:
+                        LOGGER(__name__).warning(f"⏰ انتهت مهلة {method_name}")
+                    except Exception as e:
+                        LOGGER(__name__).warning(f"❌ فشل {method_name}: {e}")
+                        continue
                 
-                # إلغاء جميع المهام المتبقية
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
+                # كحل أخير، جرب youtube-dl (الأكثر استقراراً)
+                try:
+                    LOGGER(__name__).info(f"🔄 محاولة أخيرة مع youtube-dl...")
+                    result = await asyncio.wait_for(
+                        self._safe_download_method('youtube_dl', self.download_via_youtube_dl, video_id, video_info),
+                        timeout=25.0
+                    )
+                    if result:
+                        LOGGER(__name__).info(f"✅ نجح youtube-dl")
+                        await self.update_performance_stats('youtube_dl_final', True, time.time() - start_time)
+                        return result
+                except Exception as e:
+                    LOGGER(__name__).warning(f"❌ فشل youtube-dl النهائي: {e}")
                 
                 await self.update_performance_stats('ytdlp_all_methods', False, time.time() - start_time)
             
@@ -982,6 +988,53 @@ class EnhancedHyperSpeedDownloader:
                 self.active_downloads -= 1
         
         return None
+    
+    async def diverse_search(self, query: str) -> Optional[Dict]:
+        """بحث متنوع عبر مصادر متعددة لتحسين الدقة"""
+        try:
+            # تنظيف وتحسين الاستعلام
+            clean_query = self.normalize_text(query)
+            
+            # البحث بطرق مختلفة لتحسين الدقة
+            search_variations = [
+                clean_query,
+                f"{clean_query} official",
+                f"{clean_query} music video",
+                f"{clean_query} اغنية",
+                f"اغنية {clean_query}"
+            ]
+            
+            # جرب كل تنويعة
+            for variation in search_variations:
+                try:
+                    # استخدام البحث البسيط مع التنويعات
+                    result = await self.youtube_search_simple(variation)
+                    if result and result.get("video_id"):
+                        # التحقق من جودة النتيجة
+                        title = result.get('title', '').lower()
+                        if any(word in title for word in clean_query.lower().split()):
+                            LOGGER(__name__).info(f"✅ عثر على نتيجة دقيقة: {result['title']}")
+                            return result
+                except Exception as e:
+                    LOGGER(__name__).debug(f"فشل في التنويعة: {variation} - {e}")
+                    continue
+            
+            # إذا لم تنجح التنويعات، استخدم Invidious مع تنويعات
+            if INVIDIOUS_CYCLE:
+                for variation in search_variations[:3]:  # أول 3 تنويعات فقط
+                    try:
+                        result = await self.invidious_search(variation)
+                        if result and result.get("video_id"):
+                            LOGGER(__name__).info(f"✅ عثر Invidious على: {result['title']}")
+                            return result
+                    except Exception:
+                        continue
+            
+            return None
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في البحث المتنوع: {e}")
+            return None
     
     async def _safe_download_method(self, method_name: str, method_func, video_id: str, video_info: Dict) -> Optional[Dict]:
         """تشغيل آمن لطريقة تحميل مع معالجة الأخطاء"""
@@ -1581,44 +1634,55 @@ class EnhancedHyperSpeedDownloader:
                 LOGGER(__name__).info(f"📁 ملف محلي: {query} ({search_time:.3f}s)")
                 return local_result
             
-            # خطوة 2: البحث عن معلومات الفيديو بالتوازي المحسن
-            search_tasks = []
-            
-            # إضافة المهام بناء على الأداء والتوفر
-            if API_KEYS_CYCLE and self.method_performance['youtube_api']['active']:
-                search_tasks.append(('youtube_api', self.youtube_api_search(query)))
-            
-            if INVIDIOUS_CYCLE and self.method_performance['invidious']['active']:
-                search_tasks.append(('invidious', self.invidious_search(query)))
-            
-            if YOUTUBE_SEARCH_AVAILABLE and self.method_performance['youtube_search']['active']:
-                search_tasks.append(('youtube_search', self.youtube_search_simple(query)))
-            
-            if not search_tasks:
-                LOGGER(__name__).error("لا توجد طرق بحث متاحة")
-                return None
-            
-            # تشغيل جميع عمليات البحث بالتوازي مع timeout
-            try:
-                search_results = await asyncio.wait_for(
-                    asyncio.gather(*[task for _, task in search_tasks], return_exceptions=True),
-                    timeout=15.0
-                )
-            except asyncio.TimeoutError:
-                LOGGER(__name__).warning("timeout في عمليات البحث")
-                return None
-            
-            # اختيار أفضل نتيجة بناء على الأداء
+            # خطوة 2: البحث المحسن عن معلومات الفيديو
             video_info = None
-            for i, result in enumerate(search_results):
-                if isinstance(result, dict) and result.get("video_id"):
-                    method_name = search_tasks[i][0]
-                    result['search_method'] = method_name
-                    video_info = result
-                    break
             
+            # أولوية للبحث الأكثر دقة (Invidious أولاً لتجنب YouTube blocking)
+            if INVIDIOUS_CYCLE and self.method_performance['invidious']['active']:
+                try:
+                    LOGGER(__name__).info(f"🔍 بحث عبر Invidious: {query}")
+                    video_info = await asyncio.wait_for(self.invidious_search(query), timeout=10.0)
+                    if video_info and video_info.get("video_id"):
+                        video_info['search_method'] = 'invidious'
+                        LOGGER(__name__).info(f"✅ نجح Invidious: {video_info.get('title', 'غير محدد')}")
+                except Exception as e:
+                    LOGGER(__name__).warning(f"فشل Invidious: {e}")
+            
+            # إذا فشل Invidious، جرب YouTube API
+            if not video_info and API_KEYS_CYCLE and self.method_performance['youtube_api']['active']:
+                try:
+                    LOGGER(__name__).info(f"🔍 بحث عبر YouTube API: {query}")
+                    video_info = await asyncio.wait_for(self.youtube_api_search(query), timeout=8.0)
+                    if video_info and video_info.get("video_id"):
+                        video_info['search_method'] = 'youtube_api'
+                        LOGGER(__name__).info(f"✅ نجح YouTube API: {video_info.get('title', 'غير محدد')}")
+                except Exception as e:
+                    LOGGER(__name__).warning(f"فشل YouTube API: {e}")
+            
+            # جرب البحث عبر مصادر متنوعة للحصول على دقة أفضل
+            if not video_info and YOUTUBE_SEARCH_AVAILABLE:
+                try:
+                    LOGGER(__name__).info(f"🔍 بحث متنوع: {query}")
+                    video_info = await asyncio.wait_for(self.diverse_search(query), timeout=10.0)
+                    if video_info and video_info.get("video_id"):
+                        video_info['search_method'] = 'diverse_search'
+                        LOGGER(__name__).info(f"✅ نجح البحث المتنوع: {video_info.get('title', 'غير محدد')}")
+                except Exception as e:
+                    LOGGER(__name__).warning(f"فشل البحث المتنوع: {e}")
+            
+            # كحل أخير، جرب البحث البسيط
             if not video_info:
-                LOGGER(__name__).warning(f"لم يتم العثور على نتائج للبحث: {query}")
+                try:
+                    LOGGER(__name__).info(f"🔍 بحث بسيط أخير: {query}")
+                    video_info = await asyncio.wait_for(self.youtube_search_simple(query), timeout=8.0)
+                    if video_info and video_info.get("video_id"):
+                        video_info['search_method'] = 'youtube_search'
+                        LOGGER(__name__).info(f"✅ نجح البحث البسيط: {video_info.get('title', 'غير محدد')}")
+                except Exception as e:
+                    LOGGER(__name__).warning(f"فشل البحث البسيط: {e}")
+            
+            if not video_info or not video_info.get("video_id"):
+                LOGGER(__name__).error(f"❌ لم يتم العثور على نتائج دقيقة للبحث: {query}")
                 return None
             
             LOGGER(__name__).info(f"🎵 تم العثور على: {video_info['title']} عبر {video_info.get('search_method', 'unknown')}")
