@@ -14,7 +14,6 @@ except ImportError:
 # ============================================
 API_ID = int(getenv("API_ID", "20036317"))
 API_HASH = getenv("API_HASH", "986cb4ba434870a62fe96da3b5f6d411")
-
 # التحقق من وجود المتغيرات المطلوبة
 if API_ID == 0:
     raise ValueError("❌ API_ID مطلوب! يرجى تعيينه في ملف .env أو متغيرات البيئة")
