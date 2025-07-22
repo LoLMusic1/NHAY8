@@ -231,25 +231,27 @@ class DatabaseManager:
         """الحصول على اتصال آمن بقاعدة البيانات مع منع الأقفال"""
         with self._lock:
             try:
-                # إعدادات محسنة لمنع قفل قاعدة البيانات
+                # إعدادات محسنة جذرياً لمنع قفل قاعدة البيانات نهائياً
                 conn = sqlite3.connect(
                     self.db_path, 
-                    timeout=60.0,  # وقت انتظار أطول
+                    timeout=120.0,  # وقت انتظار أطول جداً
                     check_same_thread=False,
-                    isolation_level=None  # autocommit mode
+                    isolation_level='DEFERRED'  # مستوى عزل مؤجل
                 )
                 conn.row_factory = sqlite3.Row
                 
                 # إعدادات PRAGMA محسنة لمنع الأقفال نهائياً
-                conn.execute('PRAGMA journal_mode=TRUNCATE') # وضع آمن بدون ملفات إضافية
-                conn.execute('PRAGMA synchronous=OFF')       # تسريع العمليات
-                conn.execute('PRAGMA busy_timeout=60000')    # انتظار أطول (60 ثانية)
-                conn.execute('PRAGMA temp_store=MEMORY')     # استخدام الذاكرة للملفات المؤقتة
-                conn.execute('PRAGMA cache_size=20000')      # ذاكرة تخزين أكبر
-                conn.execute('PRAGMA locking_mode=NORMAL')   # وضع قفل عادي
-                conn.execute('PRAGMA foreign_keys=OFF')      # تعطيل foreign keys للسرعة
+                conn.execute('PRAGMA journal_mode=MEMORY')   # استخدام الذاكرة بدلاً من القرص
+                conn.execute('PRAGMA synchronous=OFF')       # تعطيل المزامنة كلياً
+                conn.execute('PRAGMA busy_timeout=120000')   # انتظار 2 دقيقة
+                conn.execute('PRAGMA temp_store=MEMORY')     # ملفات مؤقتة في الذاكرة
+                conn.execute('PRAGMA cache_size=-64000')     # 64MB كاش
+                conn.execute('PRAGMA locking_mode=NORMAL')   # قفل عادي
+                conn.execute('PRAGMA foreign_keys=OFF')      # تعطيل foreign keys
                 conn.execute('PRAGMA count_changes=OFF')     # تعطيل عد التغييرات
                 conn.execute('PRAGMA legacy_file_format=OFF') # تنسيق حديث
+                conn.execute('PRAGMA page_size=32768')       # حجم صفحة أكبر
+                conn.execute('PRAGMA wal_autocheckpoint=0')  # تعطيل checkpoint التلقائي
                 
                 yield conn
             except sqlite3.OperationalError as e:
@@ -260,15 +262,16 @@ class DatabaseManager:
                     # إعادة المحاولة مرة واحدة
                     conn = sqlite3.connect(
                         self.db_path, 
-                        timeout=60.0,
+                        timeout=120.0,
                         check_same_thread=False,
-                        isolation_level=None
+                        isolation_level='DEFERRED'
                     )
                     conn.row_factory = sqlite3.Row
-                    conn.execute('PRAGMA journal_mode=TRUNCATE')
+                    conn.execute('PRAGMA journal_mode=MEMORY')
                     conn.execute('PRAGMA synchronous=OFF')
-                    conn.execute('PRAGMA busy_timeout=60000')
+                    conn.execute('PRAGMA busy_timeout=120000')
                     conn.execute('PRAGMA temp_store=MEMORY')
+                    conn.execute('PRAGMA cache_size=-64000')
                     conn.execute('PRAGMA foreign_keys=OFF')
                     yield conn
                 else:

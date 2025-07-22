@@ -45,20 +45,42 @@ class TelethonClientManager:
         try:
             self.logger.info("🤖 تهيئة البوت الرئيسي باستخدام Telethon...")
             
-            # إنشاء عميل البوت
+            # حل أي مشاكل في قاعدة البيانات قبل البدء
+            try:
+                from ZeMusic.core.database import db
+                db.force_unlock_database()
+                self.logger.info("🔓 تم حل أقفال قاعدة البيانات قبل تشغيل البوت")
+            except Exception as db_error:
+                self.logger.warning(f"⚠️ تحذير في حل أقفال قاعدة البيانات: {db_error}")
+            
+            # إنشاء عميل البوت مع معالجة محسنة
+            session_path = f"{self.sessions_dir}/bot_session"
+            
             self.bot_client = TelegramClient(
-                session=f"{self.sessions_dir}/bot_session",
+                session=session_path,
                 api_id=self.api_id,
                 api_hash=self.api_hash,
                 device_model=config.DEVICE_MODEL,
                 system_version=config.SYSTEM_VERSION,
                 app_version=config.APPLICATION_VERSION,
                 lang_code="ar",
-                system_lang_code="ar"
+                system_lang_code="ar",
+                timeout=60,
+                connection_retries=3,
+                retry_delay=2
             )
             
-            # بدء العميل
-            await self.bot_client.start(bot_token=self.bot_token)
+            # بدء العميل مع إعادة المحاولة
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    await self.bot_client.start(bot_token=self.bot_token)
+                    break
+                except Exception as start_error:
+                    if attempt == max_retries - 1:
+                        raise start_error
+                    self.logger.warning(f"⚠️ محاولة {attempt + 1}: فشل في البدء، إعادة المحاولة...")
+                    await asyncio.sleep(2)
             
             # التحقق من نجاح الاتصال
             me = await self.bot_client.get_me()
@@ -71,7 +93,29 @@ class TelethonClientManager:
             
         except Exception as e:
             self.logger.error(f"❌ فشل في تهيئة البوت: {e}")
-            return False
+            
+            # محاولة تنظيف وإعادة المحاولة
+            try:
+                self.logger.info("🔧 محاولة تنظيف وإعادة المحاولة...")
+                if hasattr(self, 'bot_client') and self.bot_client:
+                    await self.bot_client.disconnect()
+                
+                # حذف ملف الجلسة المعطل
+                import os
+                session_files = [
+                    f"{self.sessions_dir}/bot_session.session",
+                    f"{self.sessions_dir}/bot_session.session-journal"
+                ]
+                for session_file in session_files:
+                    if os.path.exists(session_file):
+                        os.remove(session_file)
+                        
+                self.logger.info("✅ تم تنظيف ملفات الجلسة المعطلة")
+                return False
+                
+            except Exception as cleanup_error:
+                self.logger.error(f"❌ خطأ في التنظيف: {cleanup_error}")
+                return False
     
     async def add_assistant(self, phone: str, session_string: Optional[str] = None) -> Dict[str, Any]:
         """إضافة حساب مساعد جديد"""
