@@ -60,7 +60,7 @@ from ZeMusic.logging import LOGGER
 
 # --- إعدادات النظام الذكي المحسن ---
 REQUEST_TIMEOUT = 15  # زيادة المهلة قليلاً
-DOWNLOAD_TIMEOUT = 180  # مهلة التحميل
+DOWNLOAD_TIMEOUT = 45   # مهلة التحميل (سريع)
 MAX_SESSIONS = 30  # تقليل عدد الجلسات لتحسين الاستقرار
 MAX_CONCURRENT_DOWNLOADS = 5  # حد أقصى للتحميلات المتزامنة
 
@@ -824,9 +824,9 @@ class EnhancedHyperSpeedDownloader:
                     f"https://m.youtube.com/watch?v={video_id}"
                 ]
                 
-                # محاولة مع الكوكيز أولاً
+                # محاولة مع الكوكيز أولاً (سريع)
                 if COOKIES_CYCLE:
-                    for attempt in range(min(2, len(COOKIES_FILES))):  # تقليل المحاولات
+                    for attempt in range(min(1, len(COOKIES_FILES))):  # محاولة واحدة فقط
                         for url in urls_to_try:
                             try:
                                 cookies_file = next(COOKIES_CYCLE)
@@ -884,17 +884,18 @@ class EnhancedHyperSpeedDownloader:
                         try:
                             LOGGER(__name__).info(f"محاولة بديلة: {fmt} مع {url}")
                             opts = {
-                                'format': fmt,
-                                'extractaudio': True,
-                                'audioformat': 'mp3',
-                                'audioquality': '128',
-                                'outtmpl': f'downloads/{video_id}_alt.%(ext)s',
-                                'quiet': True,
-                                'no_warnings': True,
-                                'timeout': 25,
-                                'retries': 1,
-                                'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)',
-                                'referer': 'https://www.google.com/',
+                                                        'format': fmt,
+                        'extractaudio': True,
+                        'audioformat': 'mp3',
+                        'audioquality': '128',
+                        'outtmpl': f'downloads/{video_id}_alt.%(ext)s',
+                        'quiet': True,
+                        'no_warnings': True,
+                        'timeout': 20,  # تقليل المهلة
+                        'retries': 0,   # بدون إعادة محاولة
+                        'prefer_ffmpeg': True,  # استخدام ffmpeg مباشرة
+                        'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)',
+                        'referer': 'https://www.google.com/',
                             }
                             
                             loop = asyncio.get_running_loop()
@@ -940,31 +941,58 @@ class EnhancedHyperSpeedDownloader:
                                 LOGGER(__name__).warning(f"فشل الطريقة البديلة {fmt}: {e}")
                             continue
                 
-                # محاولة أخيرة عبر APIs متعددة
+                # محاولة متوازية عبر APIs متعددة (أسرع بكثير)
                 backup_methods = [
                     ('cobalt', self.download_via_cobalt),
                     ('y2mate', self.download_via_y2mate),
                     ('savefrom', self.download_via_savefrom),
                     ('youtube_dl', self.download_via_youtube_dl),
-                    ('generic', self.download_via_generic_extractor)
                 ]
                 
+                LOGGER(__name__).info(f"تشغيل {len(backup_methods)} طرق متوازية...")
+                
+                # تشغيل جميع الطرق بالتوازي
+                tasks = []
                 for method_name, method_func in backup_methods:
-                    try:
-                        LOGGER(__name__).info(f"محاولة أخيرة عبر {method_name}...")
-                        result = await method_func(video_id, video_info)
+                    task = asyncio.create_task(self._safe_download_method(method_name, method_func, video_id, video_info))
+                    tasks.append(task)
+                
+                # انتظار أول نجاح (أسرع بكثير)
+                try:
+                    for completed_task in asyncio.as_completed(tasks, timeout=30):
+                        result = await completed_task
                         if result:
-                            await self.update_performance_stats(f'{method_name}_api', True, time.time() - start_time)
+                            # إلغاء المهام المتبقية
+                            for task in tasks:
+                                if not task.done():
+                                    task.cancel()
+                            await self.update_performance_stats('parallel_download', True, time.time() - start_time)
                             return result
-                    except Exception as e:
-                        LOGGER(__name__).warning(f"فشل {method_name}: {e}")
-                        continue
+                except asyncio.TimeoutError:
+                    LOGGER(__name__).warning("انتهت مهلة التحميل المتوازي")
+                
+                # إلغاء جميع المهام المتبقية
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
                 
                 await self.update_performance_stats('ytdlp_all_methods', False, time.time() - start_time)
             
             finally:
                 self.active_downloads -= 1
         
+        return None
+    
+    async def _safe_download_method(self, method_name: str, method_func, video_id: str, video_info: Dict) -> Optional[Dict]:
+        """تشغيل آمن لطريقة تحميل مع معالجة الأخطاء"""
+        try:
+            LOGGER(__name__).info(f"🚀 بدء {method_name}...")
+            result = await method_func(video_id, video_info)
+            if result:
+                LOGGER(__name__).info(f"✅ نجح {method_name}")
+                return result
+        except Exception as e:
+            LOGGER(__name__).warning(f"❌ فشل {method_name}: {e}")
         return None
     
     async def download_via_cobalt(self, video_id: str, video_info: Dict) -> Optional[Dict]:
@@ -1361,12 +1389,14 @@ class EnhancedHyperSpeedDownloader:
             # مسار الملف المحول
             output_path = f"downloads/{video_id}_converted.mp3"
             
-            # استخدام ffmpeg للتحويل
+            # استخدام ffmpeg للتحويل (سريع)
             cmd = [
                 'ffmpeg', '-i', str(input_file),
                 '-acodec', 'libmp3lame', '-ab', '128k',
                 '-ac', '2', '-ar', '44100',
-                output_path, '-y'
+                '-preset', 'ultrafast',  # أسرع تحويل
+                '-threads', '4',         # استخدام 4 threads
+                output_path, '-y', '-hide_banner', '-loglevel', 'error'
             ]
             
             # تشغيل التحويل
