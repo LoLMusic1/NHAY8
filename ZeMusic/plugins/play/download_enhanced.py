@@ -81,10 +81,12 @@ YT_API_KEYS = getattr(config, 'YT_API_KEYS', [])
 API_KEYS_CYCLE = cycle(YT_API_KEYS) if YT_API_KEYS else None
 
 INVIDIOUS_SERVERS = getattr(config, 'INVIDIOUS_SERVERS', [
-    'https://invidious.io',
-    'https://yewtu.be',
-    'https://vid.puffyan.us',
-    'https://invidious.lunar.icu'
+    'https://invidious.privacydev.net',
+    'https://invidious.fdn.fr',
+    'https://invidious.projectsegfau.lt',
+    'https://iv.ggtyler.dev',
+    'https://invidious.nerdvpn.de',
+    'https://yewtu.be'
 ])
 INVIDIOUS_CYCLE = cycle(INVIDIOUS_SERVERS) if INVIDIOUS_SERVERS else None
 
@@ -799,7 +801,7 @@ class EnhancedHyperSpeedDownloader:
             return 0
     
     async def download_with_ytdlp(self, video_info: Dict, quality: str = "medium") -> Optional[Dict]:
-        """تحميل محسن عبر yt-dlp مع تدوير الكوكيز وإدارة الجودة"""
+        """تحميل محسن عبر yt-dlp مع تدوير الكوكيز وإدارة الجودة + طرق إضافية"""
         if not YT_DLP_AVAILABLE:
             LOGGER(__name__).warning("yt-dlp غير متوفر")
             return None
@@ -808,7 +810,6 @@ class EnhancedHyperSpeedDownloader:
         if not video_id:
             return None
         
-        url = f"https://youtu.be/{video_id}"
         start_time = time.time()
         
         async with self.download_semaphore:
@@ -816,12 +817,85 @@ class EnhancedHyperSpeedDownloader:
             LOGGER(__name__).info(f"📥 بدء التحميل: {video_id} (نشط: {self.active_downloads})")
             
             try:
+                # قائمة بـ URLs مختلفة لتجربتها
+                urls_to_try = [
+                    f"https://youtu.be/{video_id}",
+                    f"https://www.youtube.com/watch?v={video_id}",
+                    f"https://m.youtube.com/watch?v={video_id}"
+                ]
+                
                 # محاولة مع الكوكيز أولاً
                 if COOKIES_CYCLE:
-                    for attempt in range(min(3, len(COOKIES_FILES))):
+                    for attempt in range(min(2, len(COOKIES_FILES))):  # تقليل المحاولات
+                        for url in urls_to_try:
+                            try:
+                                cookies_file = next(COOKIES_CYCLE)
+                                opts = get_ytdlp_opts(cookies_file, quality)
+                                opts['timeout'] = 30  # مهلة أقصر
+                                
+                                loop = asyncio.get_running_loop()
+                                info = await asyncio.wait_for(
+                                    loop.run_in_executor(
+                                        self.executor_pool,
+                                        lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)
+                                    ),
+                                    timeout=45
+                                )
+                                
+                                if info:
+                                    audio_path = f"downloads/{video_id}.mp3"
+                                    if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
+                                        file_size = os.path.getsize(audio_path)
+                                        
+                                        if file_size > MAX_FILE_SIZE:
+                                            LOGGER(__name__).warning(f"ملف كبير جداً: {file_size/1024/1024:.1f}MB")
+                                            os.remove(audio_path)
+                                            continue
+                                        
+                                        await self.update_performance_stats('ytdlp_cookies', True, time.time() - start_time)
+                                        
+                                        return {
+                                            "audio_path": audio_path,
+                                            "title": info.get("title", video_info.get("title", ""))[:80],
+                                            "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                                            "duration": int(info.get("duration", video_info.get("duration", 0))),
+                                            "file_size": file_size,
+                                            "video_id": video_id,
+                                            "source": f"ytdlp_cookies_{Path(cookies_file).name}",
+                                            "quality": quality,
+                                            "download_time": time.time() - start_time
+                                        }
+                            
+                            except Exception as e:
+                                if "Sign in to confirm" in str(e):
+                                    LOGGER(__name__).warning(f"كوكيز {cookies_file} منتهية الصلاحية")
+                                    break  # تجربة ملف كوكيز آخر
+                                continue
+                
+                # محاولة طرق بديلة بدون كوكيز
+                alternative_formats = [
+                    'worst[height<=480]/best[height<=480]/worst',
+                    '18/worst[ext=mp4]/worst[ext=webm]/worst',
+                    'worstaudio[filesize<15M]/bestaudio[filesize<15M]/worst'
+                ]
+                
+                for fmt in alternative_formats:
+                    for url in urls_to_try:
                         try:
-                            cookies_file = next(COOKIES_CYCLE)
-                            opts = get_ytdlp_opts(cookies_file, quality)
+                            LOGGER(__name__).info(f"محاولة بديلة: {fmt} مع {url}")
+                            opts = {
+                                'format': fmt,
+                                'extractaudio': True,
+                                'audioformat': 'mp3',
+                                'audioquality': '128',
+                                'outtmpl': f'downloads/{video_id}_alt.%(ext)s',
+                                'quiet': True,
+                                'no_warnings': True,
+                                'timeout': 25,
+                                'retries': 1,
+                                'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)',
+                                'referer': 'https://www.google.com/',
+                            }
                             
                             loop = asyncio.get_running_loop()
                             info = await asyncio.wait_for(
@@ -829,80 +903,102 @@ class EnhancedHyperSpeedDownloader:
                                     self.executor_pool,
                                     lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)
                                 ),
-                                timeout=DOWNLOAD_TIMEOUT
+                                timeout=35
                             )
                             
                             if info:
-                                audio_path = f"downloads/{video_id}.mp3"
-                                if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
-                                    file_size = os.path.getsize(audio_path)
-                                    
-                                    if file_size > MAX_FILE_SIZE:
-                                        LOGGER(__name__).warning(f"ملف كبير جداً: {file_size/1024/1024:.1f}MB")
-                                        os.remove(audio_path)
-                                        continue
-                                    
-                                    await self.update_performance_stats('ytdlp_cookies', True, time.time() - start_time)
-                                    
-                                    return {
-                                        "audio_path": audio_path,
-                                        "title": info.get("title", video_info.get("title", ""))[:80],
-                                        "artist": info.get("uploader", video_info.get("artist", "Unknown")),
-                                        "duration": int(info.get("duration", video_info.get("duration", 0))),
-                                        "file_size": file_size,
-                                        "video_id": video_id,
-                                        "source": f"ytdlp_cookies_{Path(cookies_file).name}",
-                                        "quality": quality,
-                                        "download_time": time.time() - start_time
-                                    }
+                                # البحث عن الملف المحمل
+                                possible_paths = [
+                                    f"downloads/{video_id}_alt.mp3",
+                                    f"downloads/{video_id}_alt.m4a",
+                                    f"downloads/{video_id}_alt.webm"
+                                ]
+                                
+                                for audio_path in possible_paths:
+                                    if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
+                                        file_size = os.path.getsize(audio_path)
+                                        await self.update_performance_stats('ytdlp_alternative', True, time.time() - start_time)
+                                        
+                                        return {
+                                            "audio_path": audio_path,
+                                            "title": info.get("title", video_info.get("title", ""))[:80],
+                                            "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                                            "duration": int(info.get("duration", video_info.get("duration", 0))),
+                                            "file_size": file_size,
+                                            "video_id": video_id,
+                                            "source": f"ytdlp_alternative_{fmt.split('/')[0]}",
+                                            "quality": "low",
+                                            "download_time": time.time() - start_time
+                                        }
                         
-                        except asyncio.TimeoutError:
-                            LOGGER(__name__).warning(f"timeout في التحميل مع {cookies_file}")
-                            continue
                         except Exception as e:
-                            LOGGER(__name__).warning(f"فشل yt-dlp مع كوكيز {cookies_file}: {e}")
+                            if "Sign in to confirm" not in str(e):
+                                LOGGER(__name__).warning(f"فشل الطريقة البديلة {fmt}: {e}")
                             continue
                 
-                # محاولة بدون كوكيز (مع جودة أقل)
+                # محاولة أخيرة عبر cobalt.tools API
                 try:
-                    LOGGER(__name__).info("محاولة التحميل بدون كوكيز...")
-                    fallback_quality = "low" if quality == "medium" else quality
-                    opts = get_ytdlp_opts(None, fallback_quality)
-                    
-                    loop = asyncio.get_running_loop()
-                    info = await asyncio.wait_for(
-                        loop.run_in_executor(
-                            self.executor_pool,
-                            lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)
-                        ),
-                        timeout=DOWNLOAD_TIMEOUT // 2
-                    )
-                    
-                    if info:
-                        audio_path = f"downloads/{video_id}.mp3"
-                        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
-                            file_size = os.path.getsize(audio_path)
-                            await self.update_performance_stats('ytdlp_no_cookies', True, time.time() - start_time)
-                            
-                            return {
-                                "audio_path": audio_path,
-                                "title": info.get("title", video_info.get("title", ""))[:80],
-                                "artist": info.get("uploader", video_info.get("artist", "Unknown")),
-                                "duration": int(info.get("duration", video_info.get("duration", 0))),
-                                "file_size": file_size,
-                                "video_id": video_id,
-                                "source": "ytdlp_no_cookies",
-                                "quality": fallback_quality,
-                                "download_time": time.time() - start_time
-                            }
-                
+                    LOGGER(__name__).info("محاولة أخيرة عبر Cobalt API...")
+                    cobalt_result = await self.download_via_cobalt(video_id, video_info)
+                    if cobalt_result:
+                        await self.update_performance_stats('cobalt_api', True, time.time() - start_time)
+                        return cobalt_result
                 except Exception as e:
-                    LOGGER(__name__).error(f"فشل yt-dlp بدون كوكيز: {e}")
+                    LOGGER(__name__).warning(f"فشل Cobalt API: {e}")
                 
-                await self.update_performance_stats('ytdlp_no_cookies', False, time.time() - start_time)
+                await self.update_performance_stats('ytdlp_all_methods', False, time.time() - start_time)
             
             finally:
                 self.active_downloads -= 1
+        
+        return None
+    
+    async def download_via_cobalt(self, video_id: str, video_info: Dict) -> Optional[Dict]:
+        """تحميل عبر Cobalt.tools API كحل أخير"""
+        try:
+            session = await self.get_session()
+            cobalt_url = "https://api.cobalt.tools/api/json"
+            
+            payload = {
+                "url": f"https://youtu.be/{video_id}",
+                "vCodec": "h264",
+                "vQuality": "720",
+                "aFormat": "mp3",
+                "isAudioOnly": True
+            }
+            
+            async with session.post(cobalt_url, json=payload, timeout=30) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    
+                    if data.get("status") == "success" and data.get("url"):
+                        download_url = data["url"]
+                        
+                        # تحميل الملف
+                        audio_path = f"downloads/{video_id}_cobalt.mp3"
+                        async with session.get(download_url, timeout=60) as download_resp:
+                            if download_resp.status == 200:
+                                async with aiofiles.open(audio_path, 'wb') as f:
+                                    async for chunk in download_resp.content.iter_chunked(8192):
+                                        await f.write(chunk)
+                                
+                                if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1024:
+                                    file_size = os.path.getsize(audio_path)
+                                    
+                                    return {
+                                        "audio_path": audio_path,
+                                        "title": video_info.get("title", "Unknown")[:80],
+                                        "artist": video_info.get("artist", "Unknown"),
+                                        "duration": video_info.get("duration", 0),
+                                        "file_size": file_size,
+                                        "video_id": video_id,
+                                        "source": "cobalt_api",
+                                        "quality": "medium",
+                                        "download_time": 0
+                                    }
+        
+        except Exception as e:
+            LOGGER(__name__).warning(f"خطأ في Cobalt API: {e}")
         
         return None
     
