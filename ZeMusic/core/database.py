@@ -829,7 +829,7 @@ class DatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT assistant_id, session_string, name, is_active, added_date as created_at, last_used as last_activity
+                    SELECT assistant_id as id, session_string, name, phone, user_id, username, is_active, added_date as created_at, last_used as last_activity
                     FROM assistants
                     ORDER BY added_date DESC
                 ''')

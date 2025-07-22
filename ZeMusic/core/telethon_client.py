@@ -292,7 +292,11 @@ class TelethonClientManager:
                     if assistant['session_string']:
                         session = StringSession(assistant['session_string'])
                     else:
-                        session = f"{self.sessions_dir}/assistant_{assistant['phone'].replace('+', '')}"
+                        # استخدام معرف المساعد كاسم الجلسة إذا لم يكن هناك رقم هاتف
+                        phone_safe = assistant.get('phone', f"assistant_{assistant['id']}")
+                        if phone_safe and '+' in phone_safe:
+                            phone_safe = phone_safe.replace('+', '')
+                        session = f"{self.sessions_dir}/assistant_{phone_safe}"
                     
                     assistant_client = TelegramClient(
                         session=session,
@@ -314,10 +318,12 @@ class TelethonClientManager:
                         me = await assistant_client.get_me()
                         self.logger.info(f"✅ تم تحميل المساعد: @{me.username or 'Unknown'} ({me.id})")
                     else:
-                        self.logger.warning(f"⚠️ المساعد {assistant['phone']} غير مُصرح")
+                        assistant_name = assistant.get('phone') or assistant.get('name') or f"ID_{assistant['id']}"
+                        self.logger.warning(f"⚠️ المساعد {assistant_name} غير مُصرح")
                         
                 except Exception as e:
-                    self.logger.error(f"❌ خطأ في تحميل المساعد {assistant['phone']}: {e}")
+                    assistant_name = assistant.get('phone') or assistant.get('name') or f"ID_{assistant['id']}"
+                    self.logger.error(f"❌ خطأ في تحميل المساعد {assistant_name}: {e}")
                     
             self.logger.info(f"📊 تم تحميل {loaded_count} من {len(assistants)} حساب مساعد")
             return loaded_count

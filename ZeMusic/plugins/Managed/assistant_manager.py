@@ -124,8 +124,28 @@ async def join_assistant_to_chat(chat_id: int, requested_by: int) -> Tuple[bool,
         
         # الانضمام للمجموعة
         try:
-            # محاكاة عملية الانضمام (يمكن تخصيصها حسب Telethon)
-            join_result = await assistant.join_chat(chat_id)
+            # الانضمام باستخدام Telethon
+            from telethon.errors import UserAlreadyParticipantError, ChatAdminRequiredError
+            
+            try:
+                # الحصول على كيان المجموعة
+                chat_entity = await assistant.get_entity(chat_id)
+                
+                # محاولة الانضمام
+                await assistant(JoinChannelRequest(chat_entity))
+                join_result = True
+                
+            except UserAlreadyParticipantError:
+                # المستخدم موجود بالفعل
+                join_result = True
+                
+            except ChatAdminRequiredError:
+                # يحتاج صلاحيات إدارية - استخدام رابط دعوة
+                join_result = False
+                
+            except Exception as join_error:
+                LOGGER(__name__).error(f"خطأ في انضمام المساعد: {join_error}")
+                join_result = False
             
             if join_result:
                 # تسجيل الحساب المساعد للمجموعة
