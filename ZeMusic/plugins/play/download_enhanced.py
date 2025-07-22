@@ -69,8 +69,8 @@ RETRY_ATTEMPTS = 3
 BACKOFF_FACTOR = 2
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB حد أقصى
 
-# قناة التخزين الذكي (يوزر أو ID)
-SMART_CACHE_CHANNEL = getattr(config, 'CACHE_CHANNEL_USERNAME', None) or getattr(config, 'CACHE_CHANNEL_ID', None)
+# قناة التخزين الذكي (يوزر أو ID) - استخدام المعرف المعالج من config.py
+SMART_CACHE_CHANNEL = getattr(config, 'CACHE_CHANNEL_ID', None)
 
 # إعدادات العرض
 channel = getattr(config, 'STORE_LINK', '')
@@ -336,9 +336,9 @@ class EnhancedHyperSpeedDownloader:
                 limit_per_host=100,
                 ttl_dns_cache=600,
                 use_dns_cache=True,
-                keepalive_timeout=60,
                 enable_cleanup_closed=True,
-                force_close=True
+                force_close=False,  # تم تغييره لتجنب التعارض
+                keepalive_timeout=60
             )
             
             # إنشاء جلسات HTTP محسنة
