@@ -92,49 +92,63 @@ class OwnerPanel:
         if user_id != config.OWNER_ID:
             return {'success': False, 'message': "❌ غير مصرح"}
         
-        assistants = await db.get_all_assistants()
-        connected_count = telethon_manager.get_connected_assistants_count()
-        
-        keyboard = [
-            [
-                {'text': '➕ إضافة حساب مساعد', 'callback_data': 'add_assistant'},
-                {'text': '🗑️ حذف حساب مساعد', 'callback_data': 'remove_assistant'}
-            ],
-            [
-                {'text': '📋 قائمة الحسابات', 'callback_data': 'list_assistants'},
-                {'text': '🔄 إعادة تشغيل الحسابات', 'callback_data': 'restart_assistants'}
-            ],
-            [
-                {'text': '⚠️ إلغاء تفعيل حساب', 'callback_data': 'deactivate_assistant'},
-                {'text': '✅ تفعيل حساب', 'callback_data': 'activate_assistant'}
-            ],
-            [
-                {'text': '📊 إحصائيات مفصلة', 'callback_data': 'assistant_stats'},
-                {'text': '🧹 تنظيف الحسابات الخاملة', 'callback_data': 'cleanup_assistants'}
-            ],
-            [
-                {'text': '🔙 العودة للوحة الرئيسية', 'callback_data': 'owner_main'}
+        try:
+            assistants = await db.get_all_assistants()
+            connected_count = telethon_manager.get_connected_assistants_count()
+            active_sessions = len(music_manager.active_sessions) if hasattr(music_manager, 'active_sessions') else 0
+            
+            # تحديد الحد الأقصى والأدنى
+            max_assistants = getattr(config, 'MAX_ASSISTANTS', 10)
+            min_assistants = getattr(config, 'MIN_ASSISTANTS', 1)
+            
+            keyboard = [
+                [
+                    {'text': '➕ إضافة حساب مساعد', 'callback_data': 'add_assistant'},
+                    {'text': '📋 قائمة الحسابات', 'callback_data': 'list_assistants'}
+                ],
+                [
+                    {'text': '🗑️ حذف حساب', 'callback_data': 'remove_assistant_list'},
+                    {'text': '🔄 إعادة تشغيل الحسابات', 'callback_data': 'restart_assistants'}
+                ],
+                [
+                    {'text': '📊 إحصائيات مفصلة', 'callback_data': 'assistant_stats'},
+                    {'text': '🔍 فحص الحسابات', 'callback_data': 'check_assistants'}
+                ],
+                [
+                    {'text': '⚙️ إعدادات الحسابات', 'callback_data': 'assistant_settings'},
+                    {'text': '🧹 تنظيف الحسابات', 'callback_data': 'cleanup_assistants'}
+                ],
+                [
+                    {'text': '🔙 العودة للوحة الرئيسية', 'callback_data': 'owner_main'}
+                ]
             ]
-        ]
-        
-        message = (
-            "📱 **إدارة الحسابات المساعدة**\n\n"
-            f"📊 **الحالة الحالية:**\n"
-            f"🤖 إجمالي الحسابات: `{len(assistants)}`\n"
-            f"🟢 متصل: `{connected_count}`\n"
-            f"🔴 غير متصل: `{len(assistants) - connected_count}`\n\n"
-            f"⚡ **الأداء:**\n"
-            f"🎵 الجلسات النشطة: `{len(music_manager.active_sessions)}`\n"
-            f"📈 الحد الأقصى: `{config.MAX_ASSISTANTS}`\n"
-            f"📉 الحد الأدنى: `{config.MIN_ASSISTANTS}`\n\n"
-            "اختر العملية المطلوبة:"
-        )
-        
-        return {
-            'success': True,
-            'message': message,
-            'keyboard': keyboard
-        }
+            
+            message = (
+                "📱 **إدارة الحسابات المساعدة**\n\n"
+                f"📊 **الحالة الحالية:**\n"
+                f"🤖 إجمالي الحسابات: `{len(assistants)}`\n"
+                f"🟢 متصل: `{connected_count}`\n"
+                f"🔴 غير متصل: `{len(assistants) - connected_count}`\n\n"
+                f"⚡ **الأداء:**\n"
+                f"🎵 الجلسات النشطة: `{active_sessions}`\n"
+                f"📈 الحد الأقصى: `{max_assistants}`\n"
+                f"📉 الحد الأدنى: `{min_assistants}`\n\n"
+                f"💡 **حالة النظام:** {'✅ مستقر' if connected_count >= min_assistants else '⚠️ يحتاج حسابات'}\n\n"
+                "اختر العملية المطلوبة:"
+            )
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في عرض لوحة الحسابات المساعدة: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض اللوحة: {str(e)}"
+            }
     
     async def start_add_assistant(self, user_id: int) -> Dict:
         """بدء عملية إضافة حساب مساعد"""
@@ -279,68 +293,567 @@ class OwnerPanel:
                 'message': f"❌ خطأ في إضافة الحساب: {str(e)}"
             }
     
+    async def show_remove_assistant_list(self, user_id: int) -> Dict:
+        """عرض قائمة الحسابات للحذف"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            assistants = await db.get_all_assistants()
+            
+            if not assistants:
+                return {
+                    'success': True,
+                    'message': "❌ لا توجد حسابات للحذف",
+                    'keyboard': [
+                        [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                    ]
+                }
+            
+            keyboard = []
+            for assistant in assistants[:10]:  # حد أقصى 10 حسابات في الصفحة
+                # التحقق من حالة الاتصال
+                is_connected = False
+                try:
+                    for telethon_assistant in telethon_manager.assistants:
+                        if telethon_assistant.assistant_id == assistant['assistant_id']:
+                            is_connected = telethon_assistant.is_connected
+                            break
+                except:
+                    pass
+                
+                status_emoji = "🟢" if is_connected else "🔴"
+                button_text = f"{status_emoji} {assistant.get('name', f'حساب {assistant['assistant_id']}')} ({assistant['assistant_id']})"
+                keyboard.append([{
+                    'text': button_text,
+                    'callback_data': f'remove_assistant_{assistant["assistant_id"]}'
+                }])
+            
+            keyboard.append([{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}])
+            
+            return {
+                'success': True,
+                'message': "🗑️ **حذف حساب مساعد**\n\n⚠️ اختر الحساب الذي تريد حذفه:\n\n🟢 = متصل | 🔴 = غير متصل",
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في عرض قائمة الحذف: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض القائمة: {str(e)}"
+            }
+    
+    async def restart_assistants(self, user_id: int) -> Dict:
+        """إعادة تشغيل الحسابات المساعدة"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            # إعادة تشغيل جميع الحسابات
+            result = await telethon_manager.restart_all_assistants()
+            
+            if result['success']:
+                return {
+                    'success': True,
+                    'message': f"✅ **تم إعادة تشغيل الحسابات المساعدة بنجاح!**\n\n📊 النتيجة:\n{result['message']}",
+                    'keyboard': [
+                        [{'text': '📋 قائمة الحسابات', 'callback_data': 'list_assistants'}],
+                        [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                    ]
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': f"❌ **فشل في إعادة تشغيل الحسابات**\n\n📋 السبب:\n{result['message']}"
+                }
+                
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إعادة تشغيل الحسابات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في إعادة التشغيل: {str(e)}"
+            }
+    
+    async def check_assistants(self, user_id: int) -> Dict:
+        """فحص حالة الحسابات المساعدة"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            assistants = await db.get_all_assistants()
+            
+            if not assistants:
+                return {
+                    'success': True,
+                    'message': "❌ لا توجد حسابات للفحص",
+                    'keyboard': [
+                        [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                    ]
+                }
+            
+            check_results = []
+            for assistant in assistants:
+                try:
+                    # فحص الحساب
+                    result = await telethon_manager.check_assistant(assistant['assistant_id'])
+                    check_results.append({
+                        'id': assistant['assistant_id'],
+                        'name': assistant.get('name', f'حساب {assistant["assistant_id"]}'),
+                        'status': result
+                    })
+                except Exception as e:
+                    check_results.append({
+                        'id': assistant['assistant_id'],
+                        'name': assistant.get('name', f'حساب {assistant["assistant_id"]}'),
+                        'status': {'connected': False, 'error': str(e)}
+                    })
+            
+            # تكوين النتائج
+            message_parts = ["🔍 **نتائج فحص الحسابات المساعدة:**\n\n"]
+            
+            connected_count = 0
+            for result in check_results:
+                status = result['status']
+                if status.get('connected'):
+                    emoji = "✅"
+                    status_text = "متصل وجاهز"
+                    connected_count += 1
+                else:
+                    emoji = "❌"
+                    error = status.get('error', 'غير متصل')
+                    status_text = f"خطأ: {error[:50]}"
+                
+                message_parts.append(
+                    f"{emoji} **{result['name']}** (ID: {result['id']})\n"
+                    f"   الحالة: {status_text}\n\n"
+                )
+            
+            message_parts.append(f"📊 **الملخص:** {connected_count}/{len(assistants)} حساب متصل")
+            
+            keyboard = [
+                [
+                    {'text': '🔄 إعادة الفحص', 'callback_data': 'check_assistants'},
+                    {'text': '🔄 إعادة تشغيل', 'callback_data': 'restart_assistants'}
+                ],
+                [
+                    {'text': '🔙 العودة', 'callback_data': 'owner_assistants'}
+                ]
+            ]
+            
+            return {
+                'success': True,
+                'message': ''.join(message_parts),
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في فحص الحسابات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في الفحص: {str(e)}"
+            }
+    
+    async def show_assistant_settings(self, user_id: int) -> Dict:
+        """عرض إعدادات الحسابات المساعدة"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            # الحصول على الإعدادات الحالية
+            max_assistants = getattr(config, 'MAX_ASSISTANTS', 10)
+            min_assistants = getattr(config, 'MIN_ASSISTANTS', 1)
+            auto_restart = getattr(config, 'AUTO_RESTART_ASSISTANTS', True)
+            
+            assistants = await db.get_all_assistants()
+            connected_count = telethon_manager.get_connected_assistants_count()
+            
+            message = (
+                "⚙️ **إعدادات الحسابات المساعدة**\n\n"
+                f"📊 **الحالة الحالية:**\n"
+                f"🤖 إجمالي الحسابات: `{len(assistants)}`\n"
+                f"🟢 متصل: `{connected_count}`\n"
+                f"🔴 غير متصل: `{len(assistants) - connected_count}`\n\n"
+                f"⚙️ **الإعدادات:**\n"
+                f"📈 الحد الأقصى: `{max_assistants}`\n"
+                f"📉 الحد الأدنى: `{min_assistants}`\n"
+                f"🔄 إعادة التشغيل التلقائي: `{'✅ مفعل' if auto_restart else '❌ معطل'}`\n\n"
+                "اختر الإعداد الذي تريد تعديله:"
+            )
+            
+            keyboard = [
+                [
+                    {'text': '📈 تعديل الحد الأقصى', 'callback_data': 'set_max_assistants'},
+                    {'text': '📉 تعديل الحد الأدنى', 'callback_data': 'set_min_assistants'}
+                ],
+                [
+                    {'text': '🔄 تبديل إعادة التشغيل التلقائي', 'callback_data': 'toggle_auto_restart'},
+                    {'text': '🧹 تنظيف الحسابات الخاملة', 'callback_data': 'cleanup_assistants'}
+                ],
+                [
+                    {'text': '📊 إحصائيات مفصلة', 'callback_data': 'assistant_stats'},
+                    {'text': '🔙 العودة', 'callback_data': 'owner_assistants'}
+                ]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في عرض إعدادات الحسابات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض الإعدادات: {str(e)}"
+            }
+    
+    async def cleanup_assistants(self, user_id: int) -> Dict:
+        """تنظيف الحسابات الخاملة"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            # فحص الحسابات الخاملة
+            assistants = await db.get_all_assistants()
+            inactive_assistants = []
+            
+            for assistant in assistants:
+                try:
+                    # فحص إذا كان الحساب غير متصل لفترة طويلة
+                    is_connected = False
+                    for telethon_assistant in telethon_manager.assistants:
+                        if telethon_assistant.assistant_id == assistant['assistant_id']:
+                            is_connected = telethon_assistant.is_connected
+                            break
+                    
+                    if not is_connected:
+                        # محاولة الاتصال للتأكد
+                        check_result = await telethon_manager.check_assistant(assistant['assistant_id'])
+                        if not check_result.get('connected'):
+                            inactive_assistants.append(assistant)
+                            
+                except Exception:
+                    inactive_assistants.append(assistant)
+            
+            if not inactive_assistants:
+                return {
+                    'success': True,
+                    'message': "✅ **جميع الحسابات نشطة ومتصلة**\n\nلا توجد حسابات خاملة تحتاج للتنظيف.",
+                    'keyboard': [
+                        [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                    ]
+                }
+            
+            keyboard = [
+                [
+                    {'text': f'🗑️ حذف {len(inactive_assistants)} حساب خامل', 'callback_data': 'confirm_cleanup_assistants'},
+                    {'text': '🔄 إعادة محاولة الاتصال', 'callback_data': 'retry_inactive_assistants'}
+                ],
+                [
+                    {'text': '❌ إلغاء', 'callback_data': 'owner_assistants'}
+                ]
+            ]
+            
+            message_parts = [
+                "🧹 **تنظيف الحسابات الخاملة**\n\n"
+                f"🔍 تم العثور على **{len(inactive_assistants)}** حساب خامل:\n\n"
+            ]
+            
+            for assistant in inactive_assistants:
+                message_parts.append(
+                    f"🔴 **{assistant.get('name', f'حساب {assistant['assistant_id']}')}** (ID: {assistant['assistant_id']})\n"
+                )
+            
+            message_parts.append(
+                "\n⚠️ **تحذير:** الحسابات المحذوفة لا يمكن استرجاعها!\n"
+                "💡 يُنصح بمحاولة إعادة الاتصال أولاً."
+            )
+            
+            return {
+                'success': True,
+                'message': ''.join(message_parts),
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تنظيف الحسابات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في التنظيف: {str(e)}"
+            }
+    
+    async def _execute_cleanup_assistants(self, user_id: int) -> Dict:
+        """تنفيذ حذف الحسابات الخاملة"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            # الحصول على قائمة الحسابات الخاملة مرة أخرى
+            assistants = await db.get_all_assistants()
+            inactive_assistants = []
+            
+            for assistant in assistants:
+                try:
+                    is_connected = False
+                    for telethon_assistant in telethon_manager.assistants:
+                        if telethon_assistant.assistant_id == assistant['assistant_id']:
+                            is_connected = telethon_assistant.is_connected
+                            break
+                    
+                    if not is_connected:
+                        check_result = await telethon_manager.check_assistant(assistant['assistant_id'])
+                        if not check_result.get('connected'):
+                            inactive_assistants.append(assistant)
+                except Exception:
+                    inactive_assistants.append(assistant)
+            
+            # حذف الحسابات الخاملة
+            deleted_count = 0
+            for assistant in inactive_assistants:
+                try:
+                    success = await telethon_manager.remove_assistant(assistant['assistant_id'])
+                    if success:
+                        deleted_count += 1
+                except Exception as e:
+                    LOGGER(__name__).warning(f"فشل حذف الحساب {assistant['assistant_id']}: {e}")
+            
+            message = (
+                f"🧹 **تم تنظيف الحسابات الخاملة**\n\n"
+                f"✅ تم حذف: `{deleted_count}` حساب\n"
+                f"❌ فشل الحذف: `{len(inactive_assistants) - deleted_count}` حساب\n"
+                f"📊 إجمالي: `{len(inactive_assistants)}` حساب خامل\n\n"
+                "✨ تم تحسين أداء النظام!"
+            )
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': [
+                    [{'text': '📋 قائمة الحسابات', 'callback_data': 'list_assistants'}],
+                    [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                ]
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تنفيذ تنظيف الحسابات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في تنفيذ التنظيف: {str(e)}"
+            }
+    
+    async def _show_set_max_assistants(self, user_id: int) -> Dict:
+        """عرض إعداد الحد الأقصى للحسابات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        current_max = getattr(config, 'MAX_ASSISTANTS', 10)
+        
+        keyboard = []
+        for value in [5, 10, 15, 20, 25, 30]:
+            emoji = "✅" if value == current_max else "⚪"
+            keyboard.append([{
+                'text': f'{emoji} {value} حساب',
+                'callback_data': f'set_max_{value}'
+            }])
+        
+        keyboard.append([{'text': '🔙 العودة', 'callback_data': 'assistant_settings'}])
+        
+        return {
+            'success': True,
+            'message': f"📈 **تعديل الحد الأقصى للحسابات المساعدة**\n\nالحد الحالي: `{current_max}` حساب\n\nاختر الحد الجديد:",
+            'keyboard': keyboard
+        }
+    
+    async def _show_set_min_assistants(self, user_id: int) -> Dict:
+        """عرض إعداد الحد الأدنى للحسابات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        current_min = getattr(config, 'MIN_ASSISTANTS', 1)
+        
+        keyboard = []
+        for value in [1, 2, 3, 5, 7, 10]:
+            emoji = "✅" if value == current_min else "⚪"
+            keyboard.append([{
+                'text': f'{emoji} {value} حساب',
+                'callback_data': f'set_min_{value}'
+            }])
+        
+        keyboard.append([{'text': '🔙 العودة', 'callback_data': 'assistant_settings'}])
+        
+        return {
+            'success': True,
+            'message': f"📉 **تعديل الحد الأدنى للحسابات المساعدة**\n\nالحد الحالي: `{current_min}` حساب\n\nاختر الحد الجديد:",
+            'keyboard': keyboard
+        }
+    
+    async def _toggle_auto_restart(self, user_id: int) -> Dict:
+        """تبديل إعدادات إعادة التشغيل التلقائي"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            # قراءة الحالة الحالية
+            current_state = getattr(config, 'AUTO_RESTART_ASSISTANTS', True)
+            new_state = not current_state
+            
+            # تحديث الإعداد (يجب حفظه في ملف config أو قاعدة البيانات)
+            config.AUTO_RESTART_ASSISTANTS = new_state
+            
+            state_text = "✅ مفعل" if new_state else "❌ معطل"
+            
+            return {
+                'success': True,
+                'message': f"🔄 **تم تحديث إعدادات إعادة التشغيل التلقائي**\n\nالحالة الجديدة: `{state_text}`\n\n💡 سيتم تطبيق التغيير فوراً.",
+                'keyboard': [
+                    [{'text': '⚙️ إعدادات أخرى', 'callback_data': 'assistant_settings'}],
+                    [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                ]
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تبديل إعادة التشغيل التلقائي: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في التحديث: {str(e)}"
+            }
+    
+    async def _set_max_assistants(self, user_id: int, value: int) -> Dict:
+        """تحديث الحد الأقصى للحسابات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            # تحديث القيمة
+            config.MAX_ASSISTANTS = value
+            
+            return {
+                'success': True,
+                'message': f"✅ **تم تحديث الحد الأقصى للحسابات**\n\nالحد الجديد: `{value}` حساب\n\n💡 سيتم تطبيق التغيير عند إضافة حسابات جديدة.",
+                'keyboard': [
+                    [{'text': '⚙️ إعدادات أخرى', 'callback_data': 'assistant_settings'}],
+                    [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                ]
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تحديث الحد الأقصى: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في التحديث: {str(e)}"
+            }
+    
+    async def _set_min_assistants(self, user_id: int, value: int) -> Dict:
+        """تحديث الحد الأدنى للحسابات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            # تحديث القيمة
+            config.MIN_ASSISTANTS = value
+            
+            return {
+                'success': True,
+                'message': f"✅ **تم تحديث الحد الأدنى للحسابات**\n\nالحد الجديد: `{value}` حساب\n\n💡 سيتم تطبيق التغيير عند إدارة الحسابات.",
+                'keyboard': [
+                    [{'text': '⚙️ إعدادات أخرى', 'callback_data': 'assistant_settings'}],
+                    [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                ]
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تحديث الحد الأدنى: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في التحديث: {str(e)}"
+            }
+    
     async def list_assistants(self, user_id: int) -> Dict:
         """عرض قائمة الحسابات المساعدة"""
         if user_id != config.OWNER_ID:
             return {'success': False, 'message': "❌ غير مصرح"}
         
-        assistants = await db.get_all_assistants()
-        
-        if not assistants:
+        try:
+            assistants = await db.get_all_assistants()
+            
+            if not assistants:
+                keyboard = [
+                    [{'text': '➕ إضافة حساب مساعد', 'callback_data': 'add_assistant'}],
+                    [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                ]
+                
+                return {
+                    'success': True,
+                    'message': "📝 **قائمة الحسابات المساعدة**\n\n❌ لا توجد حسابات مساعدة مضافة",
+                    'keyboard': keyboard
+                }
+            
+            message_parts = ["📝 **قائمة الحسابات المساعدة:**\n"]
+            
+            for assistant in assistants:
+                # التحقق من حالة الاتصال
+                is_connected = False
+                active_calls = 0
+                user_info = {}
+                
+                try:
+                    for telethon_assistant in telethon_manager.assistants:
+                        if telethon_assistant.assistant_id == assistant['assistant_id']:
+                            is_connected = telethon_assistant.is_connected
+                            active_calls = getattr(telethon_assistant, 'active_calls_count', 0)
+                            user_info = getattr(telethon_assistant, 'user_info', {})
+                            break
+                except:
+                    pass
+                
+                status_emoji = "🟢" if is_connected else "🔴"
+                status_text = "متصل" if is_connected else "غير متصل"
+                
+                # معلومات إضافية
+                phone = user_info.get('phone', 'غير معروف')
+                username = user_info.get('username', 'غير متاح')
+                
+                assistant_info = (
+                    f"\n{status_emoji} **الحساب {assistant['assistant_id']}**\n"
+                    f"📝 الاسم: `{assistant.get('name', 'غير محدد')}`\n"
+                    f"📱 الهاتف: `{phone}`\n"
+                    f"👤 اليوزر: `@{username}` " if username != 'غير متاح' else f"👤 اليوزر: `{username}`\n"
+                    f"🔌 الحالة: `{status_text}`\n"
+                    f"🎵 المكالمات النشطة: `{active_calls}`\n"
+                    f"📊 إجمالي الاستخدام: `{assistant.get('total_calls', 0)}`\n"
+                    f"🕐 آخر استخدام: `{assistant.get('last_used', 'غير محدد')[:19]}`\n"
+                )
+                
+                message_parts.append(assistant_info)
+            
             keyboard = [
-                [{'text': '➕ إضافة حساب مساعد', 'callback_data': 'add_assistant'}],
-                [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                [
+                    {'text': '➕ إضافة حساب', 'callback_data': 'add_assistant'},
+                    {'text': '🗑️ حذف حساب', 'callback_data': 'remove_assistant_list'}
+                ],
+                [
+                    {'text': '🔄 تحديث القائمة', 'callback_data': 'list_assistants'},
+                    {'text': '🔍 فحص الحسابات', 'callback_data': 'check_assistants'}
+                ],
+                [
+                    {'text': '🔙 العودة', 'callback_data': 'owner_assistants'}
+                ]
             ]
             
             return {
                 'success': True,
-                'message': "📝 **قائمة الحسابات المساعدة**\n\n❌ لا توجد حسابات مساعدة مضافة",
+                'message': ''.join(message_parts),
                 'keyboard': keyboard
             }
-        
-        message_parts = ["📝 **قائمة الحسابات المساعدة:**\n"]
-        
-        for assistant in assistants:
-            # التحقق من حالة الاتصال
-            is_connected = False
-            active_calls = 0
             
-            for telethon_assistant in telethon_manager.assistants:
-                if telethon_assistant.assistant_id == assistant['assistant_id']:
-                    is_connected = telethon_assistant.is_connected
-                    active_calls = telethon_assistant.get_active_calls_count()
-                    break
-            
-            status_emoji = "🟢" if is_connected else "🔴"
-            status_text = "متصل" if is_connected else "غير متصل"
-            
-            assistant_info = (
-                f"\n{status_emoji} **الحساب {assistant['assistant_id']}**\n"
-                f"📝 الاسم: `{assistant['name']}`\n"
-                f"🔌 الحالة: `{status_text}`\n"
-                f"🎵 المكالمات النشطة: `{active_calls}`\n"
-                f"📊 إجمالي الاستخدام: `{assistant['total_calls']}`\n"
-                f"🕐 آخر استخدام: `{assistant['last_used'][:19]}`\n"
-            )
-            
-            message_parts.append(assistant_info)
-        
-        keyboard = [
-            [
-                {'text': '➕ إضافة حساب', 'callback_data': 'add_assistant'},
-                {'text': '🗑️ حذف حساب', 'callback_data': 'remove_assistant'}
-            ],
-            [
-                {'text': '🔄 تحديث القائمة', 'callback_data': 'list_assistants'},
-                {'text': '🔙 العودة', 'callback_data': 'owner_assistants'}
-            ]
-        ]
-        
-        return {
-            'success': True,
-            'message': ''.join(message_parts),
-            'keyboard': keyboard
-        }
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في عرض قائمة الحسابات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض القائمة: {str(e)}"
+            }
     
     async def show_detailed_stats(self, user_id: int) -> Dict:
         """عرض إحصائيات مفصلة"""
@@ -1011,6 +1524,7 @@ async def handle_owner_callbacks(event):
             await event.answer("❌ هذا الأمر مخصص لمالك البوت فقط", alert=True)
             return
         
+        # معالجة اللوحات الرئيسية
         if data == "owner_assistants":
             result = await owner_panel.show_assistants_panel(user_id)
         elif data == "owner_stats":
@@ -1025,11 +1539,55 @@ async def handle_owner_callbacks(event):
             result = await owner_panel.show_database_panel(user_id)
         elif data == "owner_main":
             result = await owner_panel.show_main_panel(user_id)
-        elif data.startswith("add_assistant"):
+        
+        # معالجة الحسابات المساعدة
+        elif data == "add_assistant":
             result = await owner_panel.handle_add_assistant(user_id)
+        elif data == "list_assistants":
+            result = await owner_panel.list_assistants(user_id)
+        elif data == "remove_assistant_list":
+            result = await owner_panel.show_remove_assistant_list(user_id)
         elif data.startswith("remove_assistant_"):
             assistant_id = data.replace("remove_assistant_", "")
             result = await owner_panel.handle_remove_assistant(user_id, assistant_id)
+        elif data == "restart_assistants":
+            result = await owner_panel.restart_assistants(user_id)
+        elif data == "check_assistants":
+            result = await owner_panel.check_assistants(user_id)
+        elif data == "assistant_settings":
+            result = await owner_panel.show_assistant_settings(user_id)
+        elif data == "cleanup_assistants":
+            result = await owner_panel.cleanup_assistants(user_id)
+        elif data == "assistant_stats":
+            result = await owner_panel.show_detailed_stats(user_id)
+        
+        # معالجة أوامر إضافية للحسابات
+        elif data == "confirm_add_assistant":
+            result = await owner_panel.confirm_add_assistant(user_id)
+        elif data == "cancel_add_assistant":
+            result = await owner_panel.show_assistants_panel(user_id)
+        elif data == "confirm_cleanup_assistants":
+            # تنفيذ تنظيف الحسابات الخاملة
+            result = await owner_panel._execute_cleanup_assistants(user_id)
+        elif data == "retry_inactive_assistants":
+            # إعادة محاولة اتصال الحسابات الخاملة
+            result = await owner_panel.restart_assistants(user_id)
+        
+        # معالجة الإعدادات
+        elif data == "set_max_assistants":
+            result = await owner_panel._show_set_max_assistants(user_id)
+        elif data == "set_min_assistants":
+            result = await owner_panel._show_set_min_assistants(user_id)
+        elif data == "toggle_auto_restart":
+            result = await owner_panel._toggle_auto_restart(user_id)
+        elif data.startswith("set_max_"):
+            value = int(data.replace("set_max_", ""))
+            result = await owner_panel._set_max_assistants(user_id, value)
+        elif data.startswith("set_min_"):
+            value = int(data.replace("set_min_", ""))
+            result = await owner_panel._set_min_assistants(user_id, value)
+        
+        # معالجة أوامر النظام
         elif data == "owner_restart":
             result = await owner_panel.handle_restart(user_id)
         elif data == "owner_shutdown":
@@ -1038,6 +1596,7 @@ async def handle_owner_callbacks(event):
             result = await owner_panel.execute_restart(user_id)
         elif data == "confirm_shutdown":
             result = await owner_panel.execute_shutdown(user_id)
+        
         else:
             await event.answer("⚠️ خيار غير معروف")
             return
