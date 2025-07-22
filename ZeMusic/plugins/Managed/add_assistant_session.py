@@ -175,6 +175,7 @@ async def list_assistants(client, message: Message):
             "• `/المساعدين` - عرض قائمة الحسابات\n"
             "• `/فحص_مساعد [معرف]` - فحص حساب محدد\n"
             "• `/حذف_مساعد [معرف]` - حذف حساب\n"
+            "• `/تنظيف_المساعدين` - حذف الحسابات الفاسدة\n"
             "• `/اعادة_تحميل_المساعدين` - إعادة تحميل الحسابات"
         )
         
@@ -294,6 +295,32 @@ async def check_assistant_command(client, message: Message):
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في فحص المساعد: {e}")
         await message.reply(f"❌ **خطأ في الفحص:** {str(e)}")
+
+@app.on_message(filters.command(["تنظيف_المساعدين", "cleanup_assistants"]) & filters.private & filters.user(config.OWNER_ID))
+async def cleanup_assistants_command(client, message: Message):
+    """تنظيف الحسابات المساعدة الفاسدة"""
+    
+    status_msg = await message.reply("🧹 **جاري تنظيف الحسابات الفاسدة...**")
+    
+    try:
+        # تنظيف الحسابات الفاسدة
+        await telethon_manager.cleanup_idle_assistants()
+        
+        # الحصول على الإحصائيات المحدثة
+        total_count = telethon_manager.get_assistants_count()
+        connected_count = telethon_manager.get_connected_assistants_count()
+        
+        await status_msg.edit(
+            f"✅ **تم تنظيف الحسابات بنجاح**\n\n"
+            f"🗑️ **تم إزالة الحسابات الفاسدة**\n"
+            f"🟢 **متصل:** {connected_count}\n"
+            f"📱 **المجموع:** {total_count}\n\n"
+            f"🔧 **استخدم /اعادة_تحميل_المساعدين لإعادة التحميل**"
+        )
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"خطأ في تنظيف المساعدين: {e}")
+        await status_msg.edit(f"❌ **خطأ في التنظيف:** {str(e)}")
 
 @app.on_message(filters.command(["اعادة_تحميل_المساعدين", "reload_assistants"]) & filters.private & filters.user(config.OWNER_ID))
 async def reload_assistants_command(client, message: Message):

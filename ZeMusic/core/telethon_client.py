@@ -404,18 +404,31 @@ class TelethonClientManager:
                     await assistant_client.connect()
                     
                     if await assistant_client.is_user_authorized():
-                        self.assistant_clients[assistant['id']] = assistant_client
-                        loaded_count += 1
-                        
-                        me = await assistant_client.get_me()
-                        self.logger.info(f"✅ تم تحميل المساعد: @{me.username or 'Unknown'} ({me.id})")
+                        # التحقق من صحة الكائن قبل الحفظ
+                        if assistant_client and hasattr(assistant_client, 'is_connected'):
+                            self.assistant_clients[assistant['id']] = assistant_client
+                            loaded_count += 1
+                            
+                            me = await assistant_client.get_me()
+                            self.logger.info(f"✅ تم تحميل المساعد: @{me.username or 'Unknown'} ({me.id})")
+                        else:
+                            self.logger.error(f"❌ كائن المساعد {assistant['id']} غير صالح")
+                            await assistant_client.disconnect()
                     else:
                         assistant_name = assistant.get('phone') or assistant.get('name') or f"ID_{assistant['id']}"
                         self.logger.warning(f"⚠️ المساعد {assistant_name} غير مُصرح")
+                        await assistant_client.disconnect()
                         
                 except Exception as e:
                     assistant_name = assistant.get('phone') or assistant.get('name') or f"ID_{assistant['id']}"
                     self.logger.error(f"❌ خطأ في تحميل المساعد {assistant_name}: {e}")
+                    
+                    # تنظيف الاتصال في حالة الخطأ
+                    try:
+                        if 'assistant_client' in locals():
+                            await assistant_client.disconnect()
+                    except:
+                        pass
                     
             self.logger.info(f"📊 تم تحميل {loaded_count} من {len(assistants)} حساب مساعد")
             return loaded_count
@@ -534,16 +547,26 @@ class TelethonClientManager:
         """الحصول على عدد الحسابات المتصلة"""
         connected = 0
         for client in self.assistant_clients.values():
-            if client.is_connected():
-                connected += 1
+            try:
+                if client and hasattr(client, 'is_connected') and client.is_connected():
+                    connected += 1
+            except Exception as e:
+                self.logger.error(f"خطأ في فحص اتصال المساعد: {e}")
+                continue
         return connected
     
     def is_assistant_connected(self, assistant_id: int) -> bool:
         """التحقق من اتصال حساب مساعد محدد"""
         try:
             assistant_client = self.assistant_clients.get(assistant_id)
-            return assistant_client and assistant_client.is_connected()
-        except:
+            if not assistant_client:
+                return False
+            if not hasattr(assistant_client, 'is_connected'):
+                self.logger.error(f"المساعد {assistant_id} لا يحتوي على دالة is_connected")
+                return False
+            return assistant_client.is_connected()
+        except Exception as e:
+            self.logger.error(f"خطأ في فحص اتصال المساعد {assistant_id}: {e}")
             return False
     
     def assistant_exists(self, assistant_id: int) -> bool:
@@ -555,6 +578,10 @@ class TelethonClientManager:
         try:
             if assistant_id in self.assistant_clients:
                 assistant_client = self.assistant_clients[assistant_id]
+                if not assistant_client:
+                    return {'connected': False, 'error': 'Client is None'}
+                if not hasattr(assistant_client, 'is_connected'):
+                    return {'connected': False, 'error': 'No is_connected method'}
                 if assistant_client.is_connected():
                     me = await assistant_client.get_me()
                     return {
@@ -569,7 +596,7 @@ class TelethonClientManager:
             return None
         except Exception as e:
             self.logger.error(f"خطأ في الحصول على معلومات المساعد {assistant_id}: {e}")
-            return None
+            return {'connected': False, 'error': str(e)}
     
     async def remove_assistant(self, assistant_id: int) -> bool:
         """حذف حساب مساعد"""
@@ -589,8 +616,37 @@ class TelethonClientManager:
     async def cleanup_idle_assistants(self):
         """تنظيف الحسابات الخاملة"""
         try:
-            # مهمة تنظيف بسيطة
-            self.logger.info("🧹 تنظيف الحسابات الخاملة")
+            self.logger.info("🧹 تنظيف الحسابات الخاملة والفاسدة...")
+            
+            corrupted_assistants = []
+            for assistant_id, client in list(self.assistant_clients.items()):
+                try:
+                    # فحص صحة الكائن
+                    if not client or not hasattr(client, 'is_connected'):
+                        corrupted_assistants.append(assistant_id)
+                        continue
+                    
+                    # فحص الاتصال
+                    if not client.is_connected():
+                        corrupted_assistants.append(assistant_id)
+                        
+                except Exception as e:
+                    self.logger.error(f"خطأ في فحص المساعد {assistant_id}: {e}")
+                    corrupted_assistants.append(assistant_id)
+            
+            # حذف الحسابات الفاسدة
+            for assistant_id in corrupted_assistants:
+                try:
+                    if assistant_id in self.assistant_clients:
+                        client = self.assistant_clients[assistant_id]
+                        if client and hasattr(client, 'disconnect'):
+                            await client.disconnect()
+                        del self.assistant_clients[assistant_id]
+                        self.logger.info(f"🗑️ تم حذف المساعد الفاسد: {assistant_id}")
+                except Exception as e:
+                    self.logger.error(f"خطأ في حذف المساعد الفاسد {assistant_id}: {e}")
+            
+            self.logger.info(f"✅ تم تنظيف {len(corrupted_assistants)} حساب فاسد")
             
         except Exception as e:
             self.logger.error(f"❌ خطأ في تنظيف المساعدين: {e}")
