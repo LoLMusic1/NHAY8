@@ -10,7 +10,6 @@ from ZeMusic.utils.database import is_search_enabled, is_search_enabled1
 from ZeMusic.plugins.play.enhanced_handler import enhanced_smart_download_handler
 import config
 
-@events.register(events.NewMessage)
 async def search_command_handler(event):
     """معالج أوامر البحث المباشر"""
     
@@ -19,6 +18,7 @@ async def search_command_handler(event):
         return
     
     text = event.message.text.strip()
+    LOGGER(__name__).info(f"🔍 تم استلام رسالة: {text[:50]}...")
     
     # قائمة أوامر البحث
     search_commands = [
@@ -49,16 +49,20 @@ async def search_command_handler(event):
     if not is_search:
         return
     
+    LOGGER(__name__).info(f"✅ تم التعرف على أمر بحث: {text[:50]}...")
+    
     # التحقق من تفعيل الخدمة
     try:
+        chat_id = event.chat_id
         if hasattr(event, 'is_private') and event.is_private:
             if not await is_search_enabled1():
                 await event.reply("⚠️ عذراً، خدمة البحث معطلة في المحادثات الخاصة")
                 return
         else:
-            if not await is_search_enabled():
+            if not await is_search_enabled(chat_id):
                 await event.reply("⚠️ عذراً، خدمة البحث معطلة في المجموعات")
                 return
+        LOGGER(__name__).info(f"✅ خدمة البحث مفعلة للمحادثة: {chat_id}")
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في فحص تفعيل الخدمة: {e}")
         return
@@ -90,13 +94,17 @@ async def search_command_handler(event):
     status_msg = await event.reply(f"🔍 جاري البحث عن: **{search_text}**...")
     
     try:
+        LOGGER(__name__).info(f"🎵 بدء البحث عن: {search_text}")
+        
         # تمرير الحدث للمعالج المحسن
         # إنشاء نسخة معدلة من النص للمعالج
         original_text = event.message.text
         event.message.text = f"بحث {search_text}"
         
         # استدعاء المعالج المحسن
+        LOGGER(__name__).info("📡 استدعاء enhanced_smart_download_handler...")
         await enhanced_smart_download_handler(event)
+        LOGGER(__name__).info("✅ تم الانتهاء من المعالج المحسن")
         
         # استعادة النص الأصلي
         event.message.text = original_text
@@ -114,8 +122,4 @@ async def search_command_handler(event):
         except:
             await event.reply(f"❌ حدث خطأ أثناء البحث: {str(e)}")
 
-# تسجيل المعالج
-def register_search_handler(bot_client):
-    """تسجيل معالج البحث مع البوت"""
-    bot_client.add_event_handler(search_command_handler)
-    LOGGER(__name__).info("✅ تم تسجيل معالج البحث المخصص")
+# تم نقل التسجيل إلى handlers_registry.py
