@@ -133,6 +133,9 @@ class DatabaseManager:
                     assistant_id INTEGER PRIMARY KEY,
                     session_string TEXT NOT NULL,
                     name TEXT,
+                    user_id INTEGER,
+                    username TEXT,
+                    phone TEXT,
                     is_active BOOLEAN DEFAULT 1,
                     added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -620,6 +623,53 @@ class DatabaseManager:
         
         return await asyncio.get_event_loop().run_in_executor(None, _check)
 
+    async def blacklist_chat(self, chat_id: int):
+        """إضافة مجموعة للقائمة السوداء"""
+        def _blacklist():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('UPDATE chats SET is_blacklisted = 1 WHERE chat_id = ?', (chat_id,))
+                if cursor.rowcount == 0:
+                    # إذا لم تكن المجموعة موجودة، أضفها
+                    cursor.execute('''
+                        INSERT INTO chats (chat_id, is_blacklisted)
+                        VALUES (?, 1)
+                    ''', (chat_id,))
+                conn.commit()
+        
+        await asyncio.get_event_loop().run_in_executor(None, _blacklist)
+
+    async def whitelist_chat(self, chat_id: int):
+        """إزالة مجموعة من القائمة السوداء"""
+        def _whitelist():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('UPDATE chats SET is_blacklisted = 0 WHERE chat_id = ?', (chat_id,))
+                conn.commit()
+        
+        await asyncio.get_event_loop().run_in_executor(None, _whitelist)
+
+    async def is_blacklisted_chat(self, chat_id: int) -> bool:
+        """التحقق من وجود المجموعة في القائمة السوداء"""
+        def _check():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT is_blacklisted FROM chats WHERE chat_id = ?', (chat_id,))
+                row = cursor.fetchone()
+                return bool(row['is_blacklisted']) if row else False
+        
+        return await asyncio.get_event_loop().run_in_executor(None, _check)
+
+    async def get_blacklisted_chats(self) -> List[int]:
+        """الحصول على جميع المجموعات المحظورة"""
+        def _get():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT chat_id FROM chats WHERE is_blacklisted = 1')
+                return [row['chat_id'] for row in cursor.fetchall()]
+        
+        return await asyncio.get_event_loop().run_in_executor(None, _get)
+
     async def get_stats(self) -> Dict[str, int]:
         """الحصول على إحصائيات قاعدة البيانات"""
         def _get():
@@ -710,6 +760,32 @@ class DatabaseManager:
         
         await asyncio.get_event_loop().run_in_executor(None, _log)
     
+    async def fix_inactive_assistants(self) -> Dict:
+        """إصلاح الحسابات غير النشطة"""
+        def _fix():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # جلب جميع الحسابات غير النشطة
+                cursor.execute('SELECT assistant_id, name FROM assistants WHERE is_active = 0 OR is_active IS NULL')
+                inactive_assistants = cursor.fetchall()
+                
+                if not inactive_assistants:
+                    return {'fixed': 0, 'total': 0}
+                
+                # تفعيل جميع الحسابات
+                cursor.execute('UPDATE assistants SET is_active = 1 WHERE is_active = 0 OR is_active IS NULL')
+                fixed_count = cursor.rowcount
+                conn.commit()
+                
+                # جلب العدد الإجمالي
+                cursor.execute('SELECT COUNT(*) as total FROM assistants')
+                total_count = cursor.fetchone()['total']
+                
+                return {'fixed': fixed_count, 'total': total_count}
+        
+        return await asyncio.get_event_loop().run_in_executor(None, _fix)
+
     async def add_assistant(self, assistant_id: int = None, session_string: str = None, name: str = None, user_id: int = None, username: str = None, phone: str = None) -> int:
         """إضافة حساب مساعد جديد (متوافق مع الطرق القديمة والجديدة)"""
         def _add():

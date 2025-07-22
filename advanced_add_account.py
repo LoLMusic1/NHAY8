@@ -12,8 +12,8 @@ from telethon.errors import (
 )
 
 # === الإعدادات ===
-API_ID = int(os.getenv('TG_API_ID', '26924046'))
-API_HASH = os.getenv('TG_API_HASH', '4c6ef4cee5e129b7a674de156e2bcc15')
+API_ID = int(os.getenv('TG_API_ID', '0'))
+API_HASH = os.getenv('TG_API_HASH', '')
 
 # قائمة أجهزة للمحاكاة
 DEVICES = [

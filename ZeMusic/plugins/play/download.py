@@ -744,6 +744,67 @@ class HyperSpeedDownloader:
                 await cookies_manager.report_failure(best_cookie, str(e))
             return None
 
+    async def download_without_cookies(self, video_info: Dict) -> Optional[Dict]:
+        """تحميل بدون كوكيز - نسخة مبسطة وسريعة"""
+        if not yt_dlp:
+            LOGGER(__name__).warning("yt-dlp غير متوفر")
+            return None
+            
+        video_id = video_info.get("video_id")
+        if not video_id:
+            LOGGER(__name__).warning("video_id مفقود")
+            return None
+        
+        try:
+            # إعدادات بسيطة وسريعة
+            opts = {
+                'format': 'worst[ext=m4a]/worst[ext=mp3]/worst',  # أقل جودة لضمان النجاح
+                'outtmpl': f'downloads/{video_id}_fallback.%(ext)s',
+                'quiet': True,
+                'no_warnings': True,
+                'ignoreerrors': True,
+                'extract_flat': False,
+                'writethumbnail': False,
+                'writeinfojson': False,
+                'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)',
+                'referer': 'https://www.google.com/',
+                'timeout': 20,  # مهلة قصيرة
+            }
+            
+            url = f"https://youtu.be/{video_id}"
+            LOGGER(__name__).info(f"محاولة تحميل {video_id} بدون كوكيز...")
+            
+            loop = asyncio.get_running_loop()
+            info = await loop.run_in_executor(
+                self.executor_pool,
+                lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)
+            )
+            
+            if info:
+                # البحث عن الملف المحمل
+                possible_files = [
+                    f"downloads/{video_id}_fallback.m4a",
+                    f"downloads/{video_id}_fallback.mp3",
+                    f"downloads/{video_id}_fallback.webm"
+                ]
+                
+                for audio_path in possible_files:
+                    if os.path.exists(audio_path):
+                        LOGGER(__name__).info(f"نجح التحميل: {audio_path}")
+                        return {
+                            "audio_path": audio_path,
+                            "title": info.get("title", video_info.get("title", ""))[:60],
+                            "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                            "duration": int(info.get("duration", 0)),
+                            "file_size": os.path.getsize(audio_path),
+                            "source": "ytdlp_simple_fallback"
+                        }
+                        
+        except Exception as e:
+            LOGGER(__name__).error(f"فشل التحميل بدون كوكيز: {e}")
+            
+        return None
+
 # إنشاء مدير التحميل العالمي
 downloader = HyperSpeedDownloader()
 
@@ -777,10 +838,16 @@ async def download_thumbnail(url: str, title: str) -> Optional[str]:
     return None
 
 # --- المعالج الموحد لجميع أنواع المحادثات مع Telethon ---
+# استيراد المعالج المطور
+from ZeMusic.plugins.play.enhanced_handler import enhanced_smart_download_handler
+
 async def smart_download_handler(event):
-    """المعالج الموحد للتحميل الذكي مع Telethon"""
-    
-    # التحقق من تفعيل الخدمة
+    """المعالج الموحد للتحميل الذكي - يستدعي النظام المطور"""
+    return await enhanced_smart_download_handler(event)
+
+# المعالج القديم تم استبداله بالنظام المطور
+async def old_smart_download_handler_backup(event):
+    """النسخة القديمة للمرجع فقط - لا تستخدم"""
     try:
         chat_id = event.chat_id
         if chat_id > 0:  # محادثة خاصة
@@ -905,18 +972,63 @@ async def smart_download_handler(event):
                     pass
                 return
         
-        # التحميل فشل - عرض معلومات الفيديو فقط
-        result_text = f"""🎵 **تم العثور على:**
+        # التحميل فشل - محاولة أخيرة بدون كوكيز
+        try:
+            LOGGER(__name__).info("🔄 بدء المحاولة الاحتياطية للتحميل بدون كوكيز...")
+            await status_msg.edit("🔄 **محاولة احتياطية...**\n\n⏳ تحميل بجودة منخفضة...")
+            
+            audio_result = await downloader.download_without_cookies(video_info)
+            LOGGER(__name__).info(f"نتيجة التحميل الاحتياطي: {audio_result}")
+            
+            if audio_result and audio_result.get('audio_path'):
+                audio_file = audio_result['audio_path']
+                
+                if Path(audio_file).exists():
+                    # نجح التحميل بدون كوكيز - إرسال الملف مباشرة
+                    await status_msg.edit("📤 **تم التحميل! جاري الإرسال...**")
+                    
+                    await telethon_manager.bot_client.send_file(
+                        event.chat_id,
+                        audio_file,
+                        caption=f"""🎵 **{audio_result.get('title', 'مقطع صوتي')}**
+🎤 **{audio_result.get('artist', 'غير معروف')}**
+⏱️ **{format_duration(audio_result.get('duration', 0))}**
+📁 **{format_file_size(audio_result.get('file_size', 0))}**
+
+💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}
+⚠️ **تحميل محدود الجودة**""",
+                        reply_to=event.message.id,
+                        supports_streaming=True
+                    )
+                    
+                    await status_msg.delete()
+                    # حذف الملف المؤقت
+                    try:
+                        Path(audio_file).unlink()
+                    except:
+                        pass
+                    return
+                    
+        except Exception as e:
+            LOGGER(__name__).warning(f"فشل التحميل بدون كوكيز: {e}")
+        
+        # التحميل فشل كلياً - عرض معلومات الفيديو مع رسالة تفسيرية
+        result_text = f"""🔍 **تم العثور على الأغنية:**
 
 📝 **العنوان:** {video_info.get('title', 'غير معروف')}
-🎤 **القناة:** {video_info.get('channel', {}).get('name', 'غير معروف')}
+🎤 **الفنان:** {video_info.get('channel', {}).get('name', 'غير معروف')}
 ⏱️ **المدة:** {video_info.get('duration', 'غير معروف')}
 👁️ **المشاهدات:** {video_info.get('viewCount', {}).get('short', 'غير معروف')}
 
 🔗 **الرابط:** {video_info.get('link', '')}
 
-⚠️ **ملاحظة:** التحميل غير متاح حالياً
-🔧 **للمطور:** تحقق من ملفات cookies"""
+⚠️ **التحميل غير متاح حالياً:**
+• انتهت صلاحية ملفات الكوكيز
+• قيود أمنية من YouTube
+• مشكلة مؤقتة في الخدمة
+
+💡 **الحل:** يمكنك مشاهدة الفيديو من الرابط أعلاه
+🔧 **للمطور:** تحديث ملفات الكوكيز مطلوب"""
         
         await status_msg.edit(result_text)
         
@@ -928,8 +1040,20 @@ async def smart_download_handler(event):
             pass
 
 # --- أوامر المطور مع Telethon ---
+# --- أوامر محسنة للإحصائيات ---
+from ZeMusic.plugins.play.enhanced_handler import enhanced_cache_stats_handler, enhanced_cache_clear_handler
+
 async def cache_stats_handler(event):
-    """عرض إحصائيات التخزين الذكي"""
+    """عرض إحصائيات التخزين الذكي المطور"""
+    return await enhanced_cache_stats_handler(event)
+
+async def cache_clear_handler(event):
+    """مسح التخزين الذكي المطور"""
+    return await enhanced_cache_clear_handler(event)
+
+# النسخة القديمة للمرجع
+async def old_cache_stats_handler_backup(event):
+    """عرض إحصائيات التخزين الذكي - النسخة القديمة"""
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -1081,49 +1205,6 @@ try:
 except Exception as e:
     LOGGER(__name__).error(f"❌ خطأ في تهيئة نظام التحميل: {e}")
 
-# دالة معالج البحث - يتم تسجيلها في handlers_registry.py
-async def handle_search_messages(event):
-    """معالج رسائل البحث"""
-    # التحقق من أن هذه رسالة وليس callback
-    if not hasattr(event, 'message') or not event.message or not event.message.text:
-        return
-    
-    # تجنب معالجة الرسائل القديمة
-    if hasattr(event.message, 'date'):
-        import time
-        from datetime import datetime, timezone
-        try:
-            # التأكد من التوقيت مع timezone
-            now = datetime.now(timezone.utc)
-            message_date = event.message.date
-            if hasattr(message_date, 'replace'):
-                # إذا كان naive datetime، إضافة UTC
-                if message_date.tzinfo is None:
-                    message_date = message_date.replace(tzinfo=timezone.utc)
-            
-            if (now - message_date).total_seconds() > 30:
-                return
-        except Exception:
-            # تجاهل فحص التوقيت في حالة الخطأ
-            pass
-    
-    text = event.message.text.lower().strip()
-    
-    # التحقق من أمر البحث بدقة أكبر
-    is_search_command = False
-    
-    # التحقق من أوامر البحث
-    search_commands = ["بحث ", "/song ", "song ", "يوت "]
-    for cmd in search_commands:
-        if text.startswith(cmd):
-            is_search_command = True
-            break
-    
-    # أو إذا كان يحتوي على كلمة بحث منفصلة
-    if " بحث " in text or text == "بحث":
-        is_search_command = True
-    
-    if is_search_command:
-        await smart_download_handler(event)
+# تم دمج معالج البحث في smart_download_handler لتجنب التكرار
 
 LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon")

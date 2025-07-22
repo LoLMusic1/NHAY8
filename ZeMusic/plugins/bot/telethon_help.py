@@ -93,7 +93,8 @@ async def handle_help_callback(event):
         _ = get_string(language)
         
         # معالجة البيانات
-        callback_data = event.data.decode('utf-8')
+        # في Telethon v1.36+، event.data هو نص مباشرة
+        callback_data = event.data if isinstance(event.data, str) else event.data.decode('utf-8')
         
         if callback_data == "settings_back_helper":
             # العودة للمساعدة الرئيسية

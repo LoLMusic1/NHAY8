@@ -363,14 +363,14 @@ class TelethonClientManager:
                 except Exception as e:
                     self.logger.error(f"خطأ في معالج الcallbacks: {e}")
             
-            # معالج البحث والتحميل
-            @self.bot_client.on(events.NewMessage(pattern=r'(?i)(song|/song|بحث|يوت)'))
-            async def download_handler(event):
-                try:
-                    from ZeMusic.plugins.play.download import smart_download_handler
-                    await smart_download_handler(event)
-                except Exception as e:
-                    self.logger.error(f"خطأ في معالج التحميل: {e}")
+            # تم نقل معالج البحث إلى handlers_registry.py لتجنب التكرار
+            # @self.bot_client.on(events.NewMessage(pattern=r'(?i)(song|/song|بحث|يوت)'))
+            # async def download_handler(event):
+            #     try:
+            #         from ZeMusic.plugins.play.download import smart_download_handler
+            #         await smart_download_handler(event)
+            #     except Exception as e:
+            #         self.logger.error(f"خطأ في معالج التحميل: {e}")
             
             # معالجات أوامر المطور للتخزين الذكي
             @self.bot_client.on(events.NewMessage(pattern=r'/cache_stats'))

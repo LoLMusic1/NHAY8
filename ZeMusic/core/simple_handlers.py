@@ -121,7 +121,8 @@ class TelethonSimpleHandlers:
             if not hasattr(event, 'data') or not event.data:
                 return
             
-            callback_data = event.data.decode('utf-8')
+            # في Telethon v1.36+، event.data هو نص مباشرة
+        callback_data = event.data if isinstance(event.data, str) else event.data.decode('utf-8')
             user_id = event.sender_id
             
             # معالجة بيانات callback مختلفة

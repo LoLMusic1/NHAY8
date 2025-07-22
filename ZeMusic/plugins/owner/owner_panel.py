@@ -776,7 +776,41 @@ class OwnerPanel:
             return {'success': False, 'message': "❌ غير مصرح"}
         
         try:
-            assistants = await db.get_all_assistants()
+            # جلب جميع الحسابات (نشطة وغير نشطة) للتشخيص
+            all_assistants = await db.get_assistants()  # جميع الحسابات
+            active_assistants = await db.get_all_assistants()  # النشطة فقط
+            
+            # تشخيص المشكلة
+            if all_assistants and not active_assistants:
+                # يوجد حسابات لكنها غير نشطة
+                debug_message = (
+                    f"🔍 **تشخيص المشكلة:**\n\n"
+                    f"📊 إجمالي الحسابات: `{len(all_assistants)}`\n"
+                    f"✅ الحسابات النشطة: `{len(active_assistants)}`\n\n"
+                    f"⚠️ **المشكلة:** يوجد {len(all_assistants)} حساب لكنها غير مفعلة\n\n"
+                    f"**الحسابات الموجودة:**\n"
+                )
+                
+                for i, assistant in enumerate(all_assistants[:5]):  # أول 5 حسابات فقط
+                    debug_message += (
+                        f"{i+1}. ID: `{assistant['assistant_id']}` | "
+                        f"نشط: `{'✅' if assistant.get('is_active') else '❌'}` | "
+                        f"الاسم: `{assistant.get('name', 'غير محدد')}`\n"
+                    )
+                
+                keyboard = [
+                    [{'text': '🔧 إصلاح الحسابات', 'callback_data': 'fix_inactive_assistants'}],
+                    [{'text': '➕ إضافة حساب جديد', 'callback_data': 'add_assistant'}],
+                    [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+                ]
+                
+                return {
+                    'success': True,
+                    'message': debug_message,
+                    'keyboard': keyboard
+                }
+            
+            assistants = active_assistants
             
             if not assistants:
                 keyboard = [
@@ -1497,6 +1531,153 @@ class OwnerPanel:
                 'message': f"❌ فشل في إيقاف البوت: {str(e)}"
             }
     
+    async def fix_inactive_assistants(self, user_id: int) -> Dict:
+        """إصلاح الحسابات غير النشطة"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        try:
+            # جلب جميع الحسابات
+            all_assistants = await db.get_assistants()
+            
+            if not all_assistants:
+                return {
+                    'success': True,
+                    'message': "❌ لا توجد حسابات لإصلاحها",
+                    'keyboard': [[{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]]
+                }
+            
+            # استخدام دالة الإصلاح من قاعدة البيانات
+            fix_result = await db.fix_inactive_assistants()
+            fixed_count = fix_result['fixed']
+            
+            if fixed_count > 0:
+                message = (
+                    f"✅ **تم إصلاح الحسابات بنجاح!**\n\n"
+                    f"🔧 تم تفعيل `{fixed_count}` حساب\n"
+                    f"📊 إجمالي الحسابات: `{len(all_assistants)}`\n\n"
+                    f"الآن يمكنك عرض قائمة الحسابات بشكل طبيعي."
+                )
+            else:
+                message = "✅ جميع الحسابات مفعلة بالفعل"
+            
+            keyboard = [
+                [{'text': '📋 عرض الحسابات', 'callback_data': 'list_assistants'}],
+                [{'text': '🔙 العودة', 'callback_data': 'owner_assistants'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إصلاح الحسابات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في إصلاح الحسابات: {str(e)}"
+            }
+    
+    async def _activate_assistant(self, assistant_id: int):
+        """تفعيل حساب مساعد"""
+        try:
+            # تحديث قاعدة البيانات لتفعيل الحساب
+            import sqlite3
+            with sqlite3.connect(config.DATABASE_PATH) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE assistants 
+                    SET is_active = 1 
+                    WHERE assistant_id = ?
+                ''', (assistant_id,))
+                conn.commit()
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تفعيل الحساب {assistant_id}: {e}")
+
+    async def handle_settings_callback(self, user_id: int, data: str) -> Dict:
+        """معالج أزرار الإعدادات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        setting_type = data.replace("settings_", "")
+        
+        messages = {
+            'assistants': "📱 **إعدادات الحسابات المساعدة**\n\n🚧 هذه الميزة قيد التطوير...",
+            'music': "🎵 **إعدادات الموسيقى**\n\n🚧 هذه الميزة قيد التطوير...",
+            'security': "🛡️ **إعدادات الأمان**\n\n🚧 هذه الميزة قيد التطوير...",
+            'general': "🌐 **إعدادات عامة**\n\n🚧 هذه الميزة قيد التطوير..."
+        }
+        
+        return {
+            'success': True,
+            'message': messages.get(setting_type, "⚠️ إعداد غير معروف"),
+            'keyboard': [[{'text': '🔙 العودة للإعدادات', 'callback_data': 'owner_settings'}]]
+        }
+    
+    async def handle_maintenance_callback(self, user_id: int, data: str) -> Dict:
+        """معالج أزرار الصيانة"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        maintenance_type = data.replace("maintenance_", "")
+        
+        messages = {
+            'cleanup': "🧹 **تنظيف النظام**\n\n🚧 هذه الميزة قيد التطوير...",
+            'update': "🔄 **تحديث النظام**\n\n🚧 هذه الميزة قيد التطوير...",
+            'check': "🔍 **فحص النظام**\n\n🚧 هذه الميزة قيد التطوير...",
+            'optimize': "⚡ **تحسين الأداء**\n\n🚧 هذه الميزة قيد التطوير..."
+        }
+        
+        return {
+            'success': True,
+            'message': messages.get(maintenance_type, "⚠️ عملية صيانة غير معروفة"),
+            'keyboard': [[{'text': '🔙 العودة للصيانة', 'callback_data': 'owner_maintenance'}]]
+        }
+    
+    async def handle_logs_callback(self, user_id: int, data: str) -> Dict:
+        """معالج أزرار السجلات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        log_type = data.replace("logs_", "")
+        
+        messages = {
+            'full': "📄 **السجل الكامل**\n\n🚧 هذه الميزة قيد التطوير...",
+            'errors': "⚠️ **الأخطاء فقط**\n\n🚧 هذه الميزة قيد التطوير...",
+            'stats': "📊 **إحصائيات السجل**\n\n🚧 هذه الميزة قيد التطوير...",
+            'clear': "🗑️ **مسح السجلات**\n\n🚧 هذه الميزة قيد التطوير..."
+        }
+        
+        return {
+            'success': True,
+            'message': messages.get(log_type, "⚠️ نوع سجل غير معروف"),
+            'keyboard': [[{'text': '🔙 العودة للسجلات', 'callback_data': 'owner_logs'}]]
+        }
+    
+    async def handle_database_callback(self, user_id: int, data: str) -> Dict:
+        """معالج أزرار قاعدة البيانات"""
+        if user_id != config.OWNER_ID:
+            return {'success': False, 'message': "❌ غير مصرح"}
+        
+        db_type = data.replace("db_", "")
+        
+        messages = {
+            'backup': "💾 **نسخة احتياطية**\n\n🚧 هذه الميزة قيد التطوير...",
+            'restore': "📤 **استيراد نسخة**\n\n🚧 هذه الميزة قيد التطوير...",
+            'cleanup': "🧹 **تنظيف البيانات**\n\n🚧 هذه الميزة قيد التطوير...",
+            'optimize': "🔧 **تحسين قاعدة البيانات**\n\n🚧 هذه الميزة قيد التطوير...",
+            'detailed_stats': "📊 **إحصائيات مفصلة**\n\n🚧 هذه الميزة قيد التطوير...",
+            'integrity_check': "🔍 **فحص سلامة البيانات**\n\n🚧 هذه الميزة قيد التطوير..."
+        }
+        
+        return {
+            'success': True,
+            'message': messages.get(db_type, "⚠️ عملية قاعدة بيانات غير معروفة"),
+            'keyboard': [[{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}]]
+        }
+
     async def _restart_process(self):
         """عملية إعادة التشغيل"""
         import os
@@ -1517,7 +1698,8 @@ owner_panel = OwnerPanel()
 async def handle_owner_callbacks(event):
     """معالج callbacks أزرار لوحة المطور"""
     try:
-        data = event.data.decode('utf-8')
+        # في Telethon v1.36+، event.data هو نص مباشرة
+        data = event.data if isinstance(event.data, str) else event.data.decode('utf-8')
         user_id = event.sender_id
         
         # التحقق من الصلاحيات
@@ -1597,10 +1779,32 @@ async def handle_owner_callbacks(event):
             result = await owner_panel.execute_restart(user_id)
         elif data == "confirm_shutdown":
             result = await owner_panel.execute_shutdown(user_id)
+        elif data == "fix_inactive_assistants":
+            result = await owner_panel.fix_inactive_assistants(user_id)
+        
+        # معالجة أزرار الإعدادات
+        elif data.startswith("settings_"):
+            result = await owner_panel.handle_settings_callback(user_id, data)
+            
+        # معالجة أزرار الصيانة
+        elif data.startswith("maintenance_"):
+            result = await owner_panel.handle_maintenance_callback(user_id, data)
+            
+        # معالجة أزرار السجلات
+        elif data.startswith("logs_"):
+            result = await owner_panel.handle_logs_callback(user_id, data)
+            
+        # معالجة أزرار قاعدة البيانات
+        elif data.startswith("db_"):
+            result = await owner_panel.handle_database_callback(user_id, data)
         
         else:
-            await event.answer("⚠️ خيار غير معروف")
-            return
+            # رسالة واضحة للأزرار غير المُنفذة
+            result = {
+                'success': True,
+                'message': f"🚧 **{data}**\n\nهذه الميزة قيد التطوير...\n📅 سيتم إضافتها في التحديثات القادمة",
+                'keyboard': [[{'text': '🔙 العودة للوحة الرئيسية', 'callback_data': 'owner_main'}]]
+            }
         
         if result and result.get('success'):
             keyboard_data = result.get('keyboard')
