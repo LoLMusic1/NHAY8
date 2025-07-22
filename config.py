@@ -12,11 +12,19 @@ except ImportError:
 # ============================================
 # إعدادات Telegram API الأساسية
 # ============================================
-API_ID = int(getenv("API_ID", "20036317"))
-API_HASH = getenv("API_HASH", "986cb4ba434870a62fe96da3b5f6d411")
+API_ID = int(getenv("API_ID", "0"))
+API_HASH = getenv("API_HASH", "")
+
+# التحقق من وجود المتغيرات المطلوبة
+if API_ID == 0:
+    raise ValueError("❌ API_ID مطلوب! يرجى تعيينه في ملف .env أو متغيرات البيئة")
+if not API_HASH:
+    raise ValueError("❌ API_HASH مطلوب! يرجى تعيينه في ملف .env أو متغيرات البيئة")
 
 # Get your token from @BotFather on Telegram
-BOT_TOKEN = getenv("BOT_TOKEN", "7727065450:AAH9Dcw3j1qsBF06-D2vITGSOuC9E8jtp-s")
+BOT_TOKEN = getenv("BOT_TOKEN", "")
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN مطلوب! احصل عليه من @BotFather")
 BOT_NAME = getenv("BOT_NAME", "سعود")
 BOT_USERNAME = getenv("BOT_USERNAME", "Msnisbisbot")  # يوزر البوت من البوت فاذر
 BOT_ID = getenv("BOT_ID", "7727065450")  # معرف البوت الرقمي

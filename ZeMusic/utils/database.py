@@ -371,8 +371,7 @@ async def add_served_chat(chat_id: int):
 # وظائف القائمة السوداء
 async def blacklisted_chats() -> list:
     """الحصول على المجموعات المحظورة"""
-    # TODO: تنفيذ هذه الوظيفة
-    return []
+    return await db.get_blacklisted_chats()
 
 async def blacklist_chat(chat_id: int):
     """إضافة مجموعة للقائمة السوداء"""
@@ -408,8 +407,7 @@ async def delete_authuser(chat_id: int, user_id: int) -> bool:
 # وظائف الحظر العام
 async def get_gbanned_users() -> list:
     """الحصول على المستخدمين المحظورين عالمياً"""
-    # TODO: تنفيذ هذه الوظيفة
-    return []
+    return await db.get_banned_users()
 
 async def is_gbanned_user(user_id: int) -> bool:
     """التحقق من الحظر العالمي"""
@@ -496,8 +494,7 @@ async def add_off(on_off: int):
 # وظائف المحظورين محلياً
 async def get_banned_users() -> list:
     """الحصول على المستخدمين المحظورين محلياً"""
-    # TODO: تنفيذ هذه الوظيفة
-    return []
+    return await db.get_banned_users()
 
 async def is_banned_user(user_id: int) -> bool:
     """التحقق من الحظر المحلي"""
