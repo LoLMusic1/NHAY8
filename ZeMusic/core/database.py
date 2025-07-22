@@ -265,11 +265,11 @@ class DatabaseManager:
                         isolation_level=None
                     )
                     conn.row_factory = sqlite3.Row
-                                         conn.execute('PRAGMA journal_mode=TRUNCATE')
-                     conn.execute('PRAGMA synchronous=OFF')
-                     conn.execute('PRAGMA busy_timeout=60000')
-                     conn.execute('PRAGMA temp_store=MEMORY')
-                     conn.execute('PRAGMA foreign_keys=OFF')
+                    conn.execute('PRAGMA journal_mode=TRUNCATE')
+                    conn.execute('PRAGMA synchronous=OFF')
+                    conn.execute('PRAGMA busy_timeout=60000')
+                    conn.execute('PRAGMA temp_store=MEMORY')
+                    conn.execute('PRAGMA foreign_keys=OFF')
                     yield conn
                 else:
                     raise e
