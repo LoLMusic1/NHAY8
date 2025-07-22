@@ -216,7 +216,7 @@ async def enhanced_smart_download_handler(event):
         
         await status_msg.edit(progress_text)
         
-        # إعداد الملف للإرسال
+        # تحديد طريقة الإرسال حسب نوع النتيجة
         if result.get('cached') and result.get('file_id'):
             # إرسال من الكاش
             try:
@@ -232,13 +232,28 @@ async def enhanced_smart_download_handler(event):
                     )
                     
                     await status_msg.delete()
+                    LOGGER(__name__).info(f"✅ تم إرسال من الكاش: {result['title']}")
                     return
                 else:
                     LOGGER(__name__).warning(f"file_id غير صحيح: {file_id}")
                     
             except Exception as cache_error:
                 LOGGER(__name__).warning(f"فشل إرسال من الكاش: {cache_error}")
-                # المتابعة للتحميل الجديد
+                # إعادة التحميل الجديد
+                await status_msg.edit(f"{progress_text}\n\n🔄 فشل الكاش، جاري التحميل الجديد...")
+                
+                # إعادة تحميل بدون استخدام الكاش
+                fresh_result = await downloader.download_with_ytdlp(result, quality)
+                if not fresh_result or 'audio_path' not in fresh_result:
+                    await status_msg.edit("❌ **فشل إعادة التحميل**\n\n💡 جرب البحث مرة أخرى")
+                    return
+                result = fresh_result
+        
+        # إذا وصلنا هنا، فالنتيجة يجب أن تحتوي على audio_path
+        if 'audio_path' not in result:
+            await status_msg.edit("❌ **خطأ:** مشكلة في بيانات التحميل\n\n💡 جرب البحث مرة أخرى")
+            LOGGER(__name__).error(f"مفاتيح النتيجة بعد المعالجة: {list(result.keys())}")
+            return
         
         # تحميل الصورة المصغرة
         thumb_path = None
@@ -251,11 +266,6 @@ async def enhanced_smart_download_handler(event):
         
         # إرسال الملف الجديد مع Telethon
         try:
-            # التحقق من وجود مسار الملف
-            if 'audio_path' not in result:
-                await status_msg.edit("❌ **خطأ:** لم يتم العثور على مسار الملف")
-                LOGGER(__name__).error(f"مفاتيح النتيجة: {list(result.keys())}")
-                return
                 
             audio_path = result['audio_path']
             
