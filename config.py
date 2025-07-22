@@ -15,19 +15,16 @@ except ImportError:
 API_ID = int(getenv("API_ID", "0"))
 API_HASH = getenv("API_HASH", "")
 
-# التحقق من وجود المتغيرات المطلوبة (معطل للعرض التوضيحي)
+# التحقق من وجود المتغيرات المطلوبة
 if API_ID == 0:
-    print("⚠️ وضع العرض التوضيحي: API_ID غير مُعين")
-    API_ID = 123456  # قيمة وهمية للاختبار
+    raise ValueError("❌ API_ID مطلوب! يرجى تعيينه في ملف .env أو متغيرات البيئة")
 if not API_HASH:
-    print("⚠️ وضع العرض التوضيحي: API_HASH غير مُعين")
-    API_HASH = "demo_api_hash"  # قيمة وهمية للاختبار
+    raise ValueError("❌ API_HASH مطلوب! يرجى تعيينه في ملف .env أو متغيرات البيئة")
 
 # Get your token from @BotFather on Telegram
 BOT_TOKEN = getenv("BOT_TOKEN", "")
 if not BOT_TOKEN:
-    print("⚠️ وضع العرض التوضيحي: BOT_TOKEN غير مُعين")
-    BOT_TOKEN = "demo_bot_token"  # قيمة وهمية للاختبار
+    raise ValueError("❌ BOT_TOKEN مطلوب! احصل عليه من @BotFather")
 BOT_NAME = getenv("BOT_NAME", "سعود")
 BOT_USERNAME = getenv("BOT_USERNAME", "Msnisbisbot")  # يوزر البوت من البوت فاذر
 BOT_ID = getenv("BOT_ID", "7727065450")  # معرف البوت الرقمي
