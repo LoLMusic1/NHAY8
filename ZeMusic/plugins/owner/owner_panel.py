@@ -1098,12 +1098,25 @@ class OwnerPanel:
                 if user_info.first_name:
                     auto_name = f"{user_info.first_name}_{user_info.id}"
                 
-                # إضافة الحساب للنظام
+                # إضافة الحساب للنظام مباشرة
                 from ZeMusic.core.telethon_client import telethon_manager
-                result = await telethon_manager.add_assistant_with_session(session_string, auto_name)
-                success = result.get('success', False)
                 
-                if success:
+                try:
+                    # تحديد معرف المساعد
+                    assistant_id = len(telethon_manager.assistant_clients) + 1
+                    
+                    # إضافة العميل إلى القائمة
+                    telethon_manager.assistant_clients[assistant_id] = test_client
+                    
+                    # حفظ في قاعدة البيانات
+                    await db.add_assistant(
+                        assistant_id=assistant_id,
+                        phone=user_info.phone or f"+{user_info.id}",
+                        session_string=session_string,
+                        user_id=user_info.id,
+                        username=user_info.username or ""
+                    )
+                    
                     # تحديث الإحصائيات
                     assistants = await db.get_all_assistants()
                     connected_count = telethon_manager.get_connected_assistants_count()
@@ -1127,10 +1140,15 @@ class OwnerPanel:
                             [{'text': '🔙 العودة للوحة الرئيسية', 'callback_data': 'owner_main'}]
                         ]
                     }
-                else:
+                    
+                except Exception as save_error:
+                    # إذا فشل الحفظ، أزل العميل من القائمة
+                    if assistant_id in telethon_manager.assistant_clients:
+                        del telethon_manager.assistant_clients[assistant_id]
+                    await test_client.disconnect()
                     return {
                         'success': False,
-                        'message': "❌ **فشل في إضافة الحساب للنظام**\n\n🔧 تحقق من سجلات النظام أو أعد المحاولة"
+                        'message': f"❌ **فشل في حفظ الحساب**\n\n📝 **السبب:** {str(save_error)[:100]}{'...' if len(str(save_error)) > 100 else ''}\n\n🔄 أعد المحاولة"
                     }
                  
             except Exception as e:
