@@ -5,7 +5,7 @@ from ZeMusic import app
 from ZeMusic.utils.database import get_loop, set_loop
 from ZeMusic.utils.decorators import AdminRightsCheck
 from ZeMusic.utils.inline import close_markup
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(filters.command(["loop", "cloop", "تكرار", "التكرار"],"") & filters.group & ~BANNED_USERS)

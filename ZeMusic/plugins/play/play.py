@@ -22,7 +22,8 @@ from ZeMusic.utils.inline import (
 )
 from ZeMusic.utils.logger import play_logs
 from ZeMusic.utils.stream.stream import stream
-from config import BANNED_USERS, lyrical
+from config import lyrical
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 Nem = config.BOT_NAME + " شغل"
 @app.on_message(

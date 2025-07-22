@@ -20,7 +20,7 @@ from ZeMusic.utils.database import (
 from ZeMusic.utils.decorators.language import LanguageStart
 from ZeMusic.utils.formatters import get_readable_time
 from ZeMusic.utils.inline import help_pannel, private_panel, start_panel
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 from strings import get_string
 
 

@@ -3,7 +3,7 @@ from ZeMusic.pyrogram_compatibility import Message
 from ZeMusic import app
 import config
 from ZeMusic.misc import SUDOERS
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 from ZeMusic.utils.database import autoend_off, autoend_on
 from ZeMusic.utils.decorators import AdminRightsCheck
 from ZeMusic.core.userbot import assistants  # استدعاء المعطيات المتعلقة بـ assistant

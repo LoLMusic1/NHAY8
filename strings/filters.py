@@ -3,6 +3,7 @@
 Telethon Filters - مرشحات بسيطة مع Telethon
 """
 
+from typing import Union, List
 from telethon import events
 
 class TelethonFilters:
@@ -70,15 +71,33 @@ class TelethonFilters:
         def filter_func(event):
             return event.sender_id in user_ids
         return filter_func
+    
+    @staticmethod
+    def via_bot():
+        """رسائل عبر بوت"""
+        def filter_func(event):
+            return hasattr(event.message, 'via_bot_id') and event.message.via_bot_id
+        return filter_func
+    
+    @staticmethod
+    def forwarded():
+        """رسائل معاد توجيهها"""
+        def filter_func(event):
+            return hasattr(event.message, 'forward') and event.message.forward
+        return filter_func
 
 # إنشاء مثيل
 filters = TelethonFilters()
 
-other_filters = filters.group & ~filters.via_bot & ~filters.forwarded
-other_filters2 = (
-    filters.private & ~filters.via_bot & ~filters.forwarded
-)
+# مرشحات مركبة
+other_filters = lambda event: (filters.group()(event) and 
+                              not filters.via_bot()(event) and 
+                              not filters.forwarded()(event))
 
+other_filters2 = lambda event: (filters.private()(event) and 
+                               not filters.via_bot()(event) and 
+                               not filters.forwarded()(event))
 
 def command(commands: Union[str, List[str]]):
-    return filters.command(commands, "")
+    """دالة مساعدة لإنشاء مرشح أوامر"""
+    return filters.command(commands)

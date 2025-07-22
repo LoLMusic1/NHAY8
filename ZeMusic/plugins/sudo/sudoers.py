@@ -7,7 +7,8 @@ from ZeMusic.utils.database import add_sudo, remove_sudo
 from ZeMusic.utils.decorators.language import language
 from ZeMusic.utils.extraction import extract_user
 from ZeMusic.utils.inline import close_markup
-from config import BANNED_USERS, OWNER_ID, DAV
+from config import OWNER_ID, DAV
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(filters.command(["رفع مطور"],"") & filters.user(OWNER_ID))

@@ -36,6 +36,14 @@ class ZeMusicBot:
                     LOGGER(__name__).error("❌ فشل في تشغيل البوت الرئيسي")
                     return False
                 LOGGER(__name__).info("✅ تم تشغيل البوت مع Telethon بنجاح")
+                
+                # تسجيل المعالجات بعد تهيئة البوت
+                try:
+                    from ZeMusic.core.handlers_registry import register_all_handlers
+                    await register_all_handlers(telethon_manager.bot_client)
+                    LOGGER(__name__).info("✅ تم تسجيل جميع المعالجات")
+                except Exception as e:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في تسجيل المعالجات: {e}")
             except Exception as e:
                 LOGGER(__name__).error(f"❌ خطأ في تشغيل البوت: {e}")
                 return False

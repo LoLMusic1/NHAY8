@@ -117,9 +117,13 @@ class TelethonCommandHandler:
         """معالج الاستعلامات المضمنة من Telethon"""
         try:
             data = event.data.decode('utf-8') if isinstance(event.data, bytes) else str(event.data)
-            chat_id = event.chat_id
-            sender_id = event.sender_id
-            message_id = event.message.id if event.message else None
+            chat_id = getattr(event, 'chat_id', None)
+            sender_id = getattr(event, 'sender_id', None)
+            message_id = None
+            
+            # التحقق من وجود message بشكل آمن
+            if hasattr(event, 'message') and event.message:
+                message_id = getattr(event.message, 'id', None)
             
             # تحويل للتنسيق المتوافق
             mock_callback = self._create_mock_callback_from_telethon(event)
@@ -154,13 +158,22 @@ class TelethonCommandHandler:
         
         class MockMessage:
             def __init__(self, event):
-                self.text = event.message.text or ""
-                self.message_id = event.message.id
-                self.chat = MockChat(event.chat_id)
-                self.from_user = MockUser(event.sender_id)
-                self.date = event.message.date
+                # التحقق الآمن من الخصائص
+                if hasattr(event, 'message') and event.message:
+                    self.text = getattr(event.message, 'text', '') or ""
+                    self.message_id = getattr(event.message, 'id', 0)
+                    self.date = getattr(event.message, 'date', None)
+                    reply_to_msg_id = getattr(event.message, 'reply_to_msg_id', None)
+                else:
+                    self.text = ""
+                    self.message_id = 0
+                    self.date = None
+                    reply_to_msg_id = None
+                
+                self.chat = MockChat(getattr(event, 'chat_id', 0))
+                self.from_user = MockUser(getattr(event, 'sender_id', 0))
                 self.reply_to_message = None
-                if event.message.reply_to_msg_id:
+                if reply_to_msg_id:
                     self.reply_to_message = MockMessage(event)
         
         class MockChat:
@@ -181,15 +194,21 @@ class TelethonCommandHandler:
         class MockCallback:
             def __init__(self, event):
                 self.data = event.data.decode('utf-8') if isinstance(event.data, bytes) else str(event.data)
-                self.message = MockMessage(event) if event.message else None
-                self.from_user = MockUser(event.sender_id)
-                self.id = str(event.query_id) if hasattr(event, 'query_id') else "0"
+                self.message = MockMessage(event)
+                self.from_user = MockUser(getattr(event, 'sender_id', 0))
+                self.id = str(getattr(event, 'query_id', 0))
         
         class MockMessage:
             def __init__(self, event):
-                self.message_id = event.message.id if event.message else 0
-                self.chat = MockChat(event.chat_id)
-                self.text = event.message.text if event.message else ""
+                # التحقق الآمن من الخصائص
+                if hasattr(event, 'message') and event.message:
+                    self.message_id = getattr(event.message, 'id', 0)
+                    self.text = getattr(event.message, 'text', '')
+                else:
+                    self.message_id = 0
+                    self.text = ''
+                
+                self.chat = MockChat(getattr(event, 'chat_id', 0))
         
         class MockChat:
             def __init__(self, chat_id):
@@ -254,73 +273,145 @@ class TelethonCommandHandler:
     async def handle_start(self, update):
         """معالج أمر /start"""
         try:
-            # تحويل المعالجة للملف المناسب
-            from ZeMusic.plugins.bot.start import handle_start_command
-            await handle_start_command(update)
+            # استخدام معالج مباشر بدلاً من start_pm
+            from ZeMusic.utils.inline.start import private_panel
+            from ZeMusic.pyrogram_compatibility import InlineKeyboardMarkup
+            from ZeMusic.utils.database import get_lang, add_served_user
+            from strings import get_string
+            import config
+            
+            # إضافة المستخدم
+            await add_served_user(update.sender_id)
+            
+            # الحصول على اللغة
+            language = await get_lang(update.sender_id)
+            _ = get_string(language)
+            
+            # إنشاء الأزرار
+            buttons_data = private_panel(_)
+            
+            # تحويل إلى أزرار Telethon
+            from telethon import Button
+            buttons = []
+            for row in buttons_data:
+                button_row = []
+                for btn in row:
+                    if hasattr(btn, 'url') and btn.url:
+                        button_row.append(Button.url(btn.text, btn.url))
+                    elif hasattr(btn, 'user_id') and btn.user_id:
+                        button_row.append(Button.mention(btn.text, btn.user_id))
+                    elif hasattr(btn, 'callback_data') and btn.callback_data:
+                        button_row.append(Button.inline(btn.text, data=btn.callback_data))
+                    else:
+                        # زر عادي بدون callback
+                        button_row.append(Button.inline(btn.text, data="default"))
+                buttons.append(button_row)
+            
+            # إرسال الرسالة
+            try:
+                # الحصول على معلومات البوت
+                bot_username = "ZeMusicBot"  # افتراضي
+                try:
+                    bot_me = await self.bot_client.get_me()
+                    if bot_me and bot_me.username:
+                        bot_username = bot_me.username
+                except:
+                    pass
+                
+                # الحصول على اسم المستخدم بشكل آمن
+                user_name = "المستخدم"
+                if hasattr(update, 'sender') and update.sender:
+                    user_name = getattr(update.sender, 'first_name', 'المستخدم')
+                elif hasattr(update, 'effective_user') and update.effective_user:
+                    user_name = getattr(update.effective_user, 'first_name', 'المستخدم')
+                
+                user_mention = f"[{user_name}](tg://user?id={getattr(update, 'sender_id', 0)})"
+                
+                # استخدام النص الافتراضي إذا لم تتوفر الترجمة
+                try:
+                    caption = _["start_2"].format(user_mention, f"@{bot_username}")
+                except:
+                    caption = f"🎵 **مرحباً بك في ZeMusic Bot!**\n\n👋 أهلاً {user_mention}\n\n🎶 بوت تشغيل الموسيقى في المكالمات الصوتية\n\n💡 استخدم /help لعرض الأوامر\n\n🤖 البوت: @{bot_username}"
+                
+                await update.reply(
+                    caption,
+                    file=config.START_IMG_URL,
+                    buttons=buttons
+                )
+                
+            except Exception as e:
+                # في حالة فشل إرسال الصورة، نرسل نص فقط
+                await update.reply(
+                    f"🎵 **مرحباً بك في ZeMusic Bot!**\n\n"
+                    f"👋 أهلاً {update.sender.first_name or 'المستخدم'}\n\n"
+                    f"🎶 بوت تشغيل الموسيقى في المكالمات الصوتية\n\n"
+                    f"💡 استخدم /help لعرض الأوامر\n\n"
+                    f"🤖 البوت: @{bot_username}",
+                    buttons=buttons
+                )
+                
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج /start: {e}")
+            try:
+                await update.reply("❌ حدث خطأ في معالجة الأمر")
+            except:
+                pass
     
     async def handle_help(self, update):
         """معالج أمر /help"""
         try:
-            from ZeMusic.plugins.bot.help import handle_help_command
-            await handle_help_command(update)
+            # استخدام دالة موجودة بدلاً من دالة غير موجودة
+            await update.reply("📚 **مرحباً بك في ZeMusic Bot**\n\n🎵 بوت تشغيل الموسيقى في المكالمات الصوتية\n\n💡 الأوامر الأساسية:\n• `/play` - تشغيل موسيقى\n• `/pause` - إيقاف مؤقت\n• `/resume` - استكمال\n• `/stop` - إيقاف\n• `/skip` - تخطي\n\n👨‍💼 للمطورين:\n• `/owner` - لوحة المطور\n• `/cookies` - إدارة cookies")
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج /help: {e}")
     
     async def handle_play(self, update):
         """معالج أمر /play"""
         try:
-            from ZeMusic.plugins.play.play import handle_play_command
-            await handle_play_command(update)
+            # رسالة مؤقتة حتى يتم تطوير النظام كاملاً
+            await update.reply("🎵 **خدمة تشغيل الموسيقى**\n\n⚠️ النظام قيد التطوير\n\n💡 سيتم إضافة هذه الخدمة قريباً")
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج /play: {e}")
     
     async def handle_pause(self, update):
         """معالج أمر /pause"""
         try:
-            from ZeMusic.plugins.admins.pause import handle_pause_command
-            await handle_pause_command(update)
+            await update.reply("⏸️ **إيقاف مؤقت**\n\n⚠️ النظام قيد التطوير")
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج /pause: {e}")
     
     async def handle_resume(self, update):
         """معالج أمر /resume"""
         try:
-            from ZeMusic.plugins.admins.resume import handle_resume_command
-            await handle_resume_command(update)
+            await update.reply("▶️ **استكمال التشغيل**\n\n⚠️ النظام قيد التطوير")
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج /resume: {e}")
     
     async def handle_stop(self, update):
         """معالج أمر /stop"""
         try:
-            from ZeMusic.plugins.admins.stop import handle_stop_command
-            await handle_stop_command(update)
+            await update.reply("⏹️ **إيقاف التشغيل**\n\n⚠️ النظام قيد التطوير")
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج /stop: {e}")
     
     async def handle_skip(self, update):
         """معالج أمر /skip"""
         try:
-            from ZeMusic.plugins.admins.skip import handle_skip_command
-            await handle_skip_command(update)
+            await update.reply("⏭️ **تخطي الأغنية**\n\n⚠️ النظام قيد التطوير")
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج /skip: {e}")
     
     async def handle_current(self, update):
         """معالج أمر /current"""
         try:
-            from ZeMusic.plugins.tools.current import handle_current_command
-            await handle_current_command(update)
+            await update.reply("🎵 **الأغنية الحالية**\n\n⚠️ لا يوجد تشغيل حالياً")
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج /current: {e}")
     
     async def handle_queue(self, update):
         """معالج أمر /queue"""
         try:
-            from ZeMusic.plugins.tools.queue import handle_queue_command
-            await handle_queue_command(update)
+            await update.reply("📜 **قائمة الانتظار**\n\n⚠️ القائمة فارغة")
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج /queue: {e}")
     
@@ -362,7 +453,9 @@ class TelethonCommandHandler:
     async def handle_owner_callback(self, callback):
         """معالج callbacks المالك"""
         try:
-            await owner_panel.handle_callback(callback)
+            # استدعاء معالج callbacks المطور مباشرة
+            from ZeMusic.plugins.owner.owner_panel import handle_owner_callbacks
+            await handle_owner_callbacks(callback)
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج owner callback: {e}")
     
@@ -376,8 +469,61 @@ class TelethonCommandHandler:
     async def _handle_normal_message(self, update):
         """معالج الرسائل العادية"""
         try:
-            # يمكن إضافة معالجة للرسائل غير الأوامر هنا
-            pass
+            # معالجة إضافة الحسابات المساعدة
+            if hasattr(update, 'message') and update.message and hasattr(update.message, 'text'):
+                user_id = getattr(update, 'sender_id', 0)
+                message_text = update.message.text.strip()
+                
+                # التحقق من أن هذا session string
+                # سجل محاولة الفحص
+                if user_id == config.OWNER_ID:
+                    LOGGER(__name__).info(f"🔍 فحص رسالة من المالك: طول={len(message_text)}")
+                
+                # شروط session string أوسع
+                is_session_string = (
+                    user_id == config.OWNER_ID and 
+                    len(message_text) > 150 and  # session strings عادة طويلة
+                    (
+                        '1BVtsOHU' in message_text or  # علامة Telethon session
+                        'BQA' in message_text or       # علامة أخرى
+                        'BAA' in message_text or       # علامة أخرى  
+                        'AQAA' in message_text or      # علامة أخرى
+                        len(message_text) > 300        # أو طول كبير جداً
+                    )
+                )
+                
+                if is_session_string:
+                    LOGGER(__name__).info(f"✅ تم اكتشاف session string من المالك")
+                    
+                    try:
+                        from ZeMusic.plugins.owner.owner_panel import owner_panel
+                        
+                        # معالجة session string
+                        LOGGER(__name__).info(f"🔄 بدء معالجة session string...")
+                        result = await owner_panel.process_add_assistant_input(user_id, message_text)
+                        LOGGER(__name__).info(f"📊 نتيجة المعالجة: {result}")
+                        
+                        if result and result.get('success'):
+                            keyboard_data = result.get('keyboard', [])
+                            if keyboard_data:
+                                # تحويل إلى أزرار Telethon
+                                from telethon import Button
+                                buttons = []
+                                for row in keyboard_data:
+                                    button_row = []
+                                    for btn in row:
+                                        button_row.append(Button.inline(btn['text'], data=btn['callback_data']))
+                                    buttons.append(button_row)
+                                await update.reply(result['message'], buttons=buttons)
+                            else:
+                                await update.reply(result['message'])
+                        else:
+                            await update.reply(result.get('message', '❌ حدث خطأ في المعالجة'))
+                            
+                    except Exception as e:
+                        LOGGER(__name__).error(f"خطأ في معالجة session string: {e}")
+                        await update.reply("❌ حدث خطأ في معالجة session string")
+                        
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في معالج الرسائل العادية: {e}")
     

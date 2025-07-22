@@ -5,7 +5,7 @@ from ZeMusic.pyrogram_compatibility import InlineKeyboardButton, Message
 from ZeMusic import app
 from ZeMusic.utils.database import get_lang, set_lang
 from ZeMusic.utils.decorators import ActualAdminCB, language, languageCB
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 from strings import get_string, languages_present
 
 

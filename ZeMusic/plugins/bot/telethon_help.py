@@ -7,7 +7,7 @@ from telethon import events
 
 from ZeMusic.utils.database import get_lang, is_banned_user
 from ZeMusic.utils.inline import help_pannel
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 from strings import get_string
 
 

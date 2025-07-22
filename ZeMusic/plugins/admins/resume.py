@@ -1,12 +1,10 @@
-from ZeMusic.pyrogram_compatibility import filters
-from ZeMusic.pyrogram_compatibility import Message
+from ZeMusic.pyrogram_compatibility import filters, Message, BANNED_USERS
 
 from ZeMusic import app
 from ZeMusic.core.call import Mody
 from ZeMusic.utils.database import is_music_playing, music_on
 from ZeMusic.utils.decorators import AdminRightsCheck
 from ZeMusic.utils.inline import close_markup
-from config import BANNED_USERS
 
 # قم بتحقق من الدالة AdminRightsCheck وتأكد من أنها موجودة ومستوردة بشكل صحيح
 

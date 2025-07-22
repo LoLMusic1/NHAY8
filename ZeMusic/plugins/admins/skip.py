@@ -14,7 +14,7 @@ from ZeMusic.utils.decorators import AdminRightsCheck
 from ZeMusic.utils.inline import close_markup, stream_markup
 from ZeMusic.utils.stream.autoclear import auto_clean
 from ZeMusic.utils.thumbnails import get_thumb
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 from strings import get_string
 from strings.filters import command
 

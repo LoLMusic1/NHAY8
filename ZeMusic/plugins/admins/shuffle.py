@@ -7,7 +7,7 @@ from ZeMusic import app
 from ZeMusic.misc import db
 from ZeMusic.utils.decorators import AdminRightsCheck
 from ZeMusic.utils.inline import close_markup
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(

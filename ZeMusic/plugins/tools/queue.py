@@ -12,7 +12,7 @@ from ZeMusic.utils import ModyBin, get_channeplayCB, seconds_to_min
 from ZeMusic.utils.database import get_cmode, is_active_chat, is_music_playing
 from ZeMusic.utils.decorators.language import language, languageCB
 from ZeMusic.utils.inline import queue_back_markup, queue_markup
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 basic = {}
 

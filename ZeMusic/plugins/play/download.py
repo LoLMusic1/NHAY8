@@ -24,6 +24,7 @@ from typing import Dict, Optional, List
 from itertools import cycle
 import aiohttp
 import aiofiles
+from telethon.tl.types import DocumentAttributeAudio
 
 # استيراد المكتبات مع معالجة الأخطاء
 try:
@@ -407,27 +408,32 @@ class HyperSpeedDownloader:
             return None
             
         try:
-            # محاولة استخدام youtube-search-python أولاً
-            try:
-                search = YoutubeSearch(query, limit=1)
-                results = await search.next()
-                results = results.get('result', [])
-            except:
-                # استخدام youtube_search القديم
-                search = YoutubeSearch(query)
-                results = search.to_dict()
+            # استخدام youtube_search مع معالجة محسنة
+            search = YoutubeSearch(query, max_results=1)
+            results = search.to_dict()
             
             if not results:
                 return None
             
             result = results[0]
+            
+            # استخراج video_id من الرابط
+            video_id = ""
+            if 'url_suffix' in result:
+                video_id = result['url_suffix'].replace('/watch?v=', '')
+            elif 'id' in result:
+                video_id = result['id']
+            
+            # معالجة المدة
+            duration = result.get('duration', '0:00')
+            
             return {
-                "video_id": result.get("id", ""),
-                "title": result.get("title", "")[:60],
-                "artist": result.get("channel", {}).get("name", "Unknown") if isinstance(result.get("channel"), dict) else result.get("channel", "Unknown"),
-                "duration": result.get("duration", ""),
-                "thumb": result.get("thumbnails", [{}])[0].get("url") if result.get("thumbnails") else None,
-                "link": result.get("link", f"https://youtube.com{result.get('url_suffix', '')}"),
+                "video_id": video_id,
+                "title": result.get("title", "Unknown Title")[:60],
+                "artist": result.get("channel", "Unknown Artist")[:40],
+                "duration": duration,
+                "thumb": result.get("thumbnails", [None])[0] if result.get("thumbnails") else None,
+                "link": f"https://youtube.com{result.get('url_suffix', '')}",
                 "source": "youtube_search"
             }
             
@@ -446,11 +452,17 @@ class HyperSpeedDownloader:
         
         url = f"https://youtu.be/{video_id}"
         
-        # محاولة مع الكوكيز أولاً
-        if COOKIES_CYCLE:
-            for _ in range(len(COOKIES_FILES)):
+        # محاولة مع مدير الكوكيز الذكي
+        try:
+            from ZeMusic.core.cookies_manager import cookies_manager, report_cookie_success, report_cookie_failure
+            
+            # محاولة مع الكوكيز أولاً
+            for attempt in range(3):  # محاولة 3 كوكيز مختلفة
                 try:
-                    cookies_file = next(COOKIES_CYCLE)
+                    cookies_file = await cookies_manager.get_next_cookie()
+                    if not cookies_file:
+                        break
+                        
                     opts = get_ytdlp_opts(cookies_file)
                     
                     loop = asyncio.get_running_loop()
@@ -462,18 +474,54 @@ class HyperSpeedDownloader:
                     if info:
                         audio_path = f"downloads/{video_id}.mp3"
                         if os.path.exists(audio_path):
+                            # تقرير نجاح
+                            await report_cookie_success(cookies_file)
+                            
                             return {
                                 "audio_path": audio_path,
                                 "title": info.get("title", video_info.get("title", ""))[:60],
                                 "artist": info.get("uploader", video_info.get("artist", "Unknown")),
                                 "duration": int(info.get("duration", 0)),
                                 "file_size": os.path.getsize(audio_path),
-                                "source": f"ytdlp_cookies_{cookies_file}"
+                                "source": f"ytdlp_cookies_{Path(cookies_file).name}"
                             }
                 
                 except Exception as e:
+                    # تقرير فشل
+                    if 'cookies_file' in locals() and cookies_file:
+                        await report_cookie_failure(cookies_file, str(e))
                     LOGGER(__name__).warning(f"فشل yt-dlp مع كوكيز {cookies_file}: {e}")
                     continue
+                    
+        except ImportError:
+            # العودة للنظام القديم إذا لم يكن المدير متاحاً
+            if COOKIES_CYCLE:
+                for _ in range(len(COOKIES_FILES)):
+                    try:
+                        cookies_file = next(COOKIES_CYCLE)
+                        opts = get_ytdlp_opts(cookies_file)
+                        
+                        loop = asyncio.get_running_loop()
+                        info = await loop.run_in_executor(
+                            self.executor_pool,
+                            lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)
+                        )
+                        
+                        if info:
+                            audio_path = f"downloads/{video_id}.mp3"
+                            if os.path.exists(audio_path):
+                                return {
+                                    "audio_path": audio_path,
+                                    "title": info.get("title", video_info.get("title", ""))[:60],
+                                    "artist": info.get("uploader", video_info.get("artist", "Unknown")),
+                                    "duration": int(info.get("duration", 0)),
+                                    "file_size": os.path.getsize(audio_path),
+                                    "source": f"ytdlp_cookies_{cookies_file}"
+                                }
+                    
+                    except Exception as e:
+                        LOGGER(__name__).warning(f"فشل yt-dlp مع كوكيز {cookies_file}: {e}")
+                        continue
         
         # محاولة بدون كوكيز
         try:
@@ -625,6 +673,76 @@ class HyperSpeedDownloader:
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في التحميل الخارق: {e}")
             return None
+    
+    async def direct_ytdlp_download(self, video_id: str, title: str = "Unknown") -> Optional[Dict]:
+        """تحميل مباشر باستخدام yt-dlp مع cookies"""
+        if not yt_dlp:
+            return None
+            
+        best_cookie = None
+        try:
+            # إنشاء مجلد مؤقت
+            from pathlib import Path
+            temp_dir = Path("downloads/temp")
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            
+            # إعداد yt-dlp
+            try:
+                from ZeMusic.core.cookies_manager import cookies_manager
+                
+                # التأكد من تهيئة cookies_manager
+                try:
+                    await cookies_manager.initialize()
+                    LOGGER(__name__).info("🍪 تم تهيئة cookies_manager للتحميل")
+                except Exception as init_error:
+                    LOGGER(__name__).warning(f"تعذر تهيئة cookies_manager: {init_error}")
+                
+                # الحصول على أفضل cookie متاح
+                best_cookie = await cookies_manager.get_next_cookie()
+                LOGGER(__name__).info(f"🍪 تم الحصول على cookie: {best_cookie}")
+            except Exception as e:
+                LOGGER(__name__).warning(f"تعذر الحصول على cookies: {e}")
+                best_cookie = None
+            
+            ydl_opts = {
+                'format': 'bestaudio[ext=m4a]/best[ext=m4a]/bestaudio/best',
+                'outtmpl': str(temp_dir / f'{video_id}.%(ext)s'),
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
+                'writethumbnail': False,
+            }
+            
+            # إضافة cookies إذا كانت متاحة
+            if best_cookie:
+                ydl_opts['cookiefile'] = best_cookie
+                LOGGER(__name__).info(f"🍪 استخدام cookies: {Path(best_cookie).name}")
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # تحميل الفيديو
+                video_url = f"https://www.youtube.com/watch?v={video_id}"
+                info = ydl.extract_info(video_url, download=True)
+                
+                if info:
+                    # البحث عن الملف المحمل
+                    for file_path in temp_dir.glob(f"{video_id}.*"):
+                        if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4']:
+                            return {
+                                'success': True,
+                                'file_path': str(file_path),
+                                'title': info.get('title', title),
+                                'duration': info.get('duration', 0),
+                                'uploader': info.get('uploader', 'Unknown')
+                            }
+            
+            return None
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في التحميل المباشر: {e}")
+            # تحديث حالة cookie في حالة الفشل
+            if best_cookie:
+                await cookies_manager.report_failure(best_cookie, str(e))
+            return None
 
 # إنشاء مدير التحميل العالمي
 downloader = HyperSpeedDownloader()
@@ -704,69 +822,108 @@ async def smart_download_handler(event):
             await status_msg.edit("❌ **المكتبات المطلوبة غير متوفرة**\n\n🔧 **يحتاج تثبيت:** yt-dlp, youtube-search")
             return
         
-        # التحميل بالنظام الخارق
-        result = await downloader.hyper_download(query)
+        # النظام المبسط: بحث مباشر وتحميل
+        await status_msg.edit("🔍 **جاري البحث عن الأغنية...**")
         
-        if not result:
-            await status_msg.edit("❌ **فشل في العثور على النتائج، جرب استعلاماً آخر**")
+        # البحث عن الفيديو
+        video_info = None
+        try:
+            from youtubesearchpython import VideosSearch
+            search = VideosSearch(query, limit=1)
+            search_results = search.result()
+            if search_results and search_results.get('result'):
+                video_info = search_results['result'][0]
+        except Exception:
+            try:
+                from youtube_search import YoutubeSearch
+                search = YoutubeSearch(query, max_results=1)
+                results = search.to_dict()
+                if results:
+                    video = results[0]
+                    video_info = {
+                        'title': video.get('title', ''),
+                        'channel': {'name': video.get('channel', '')},
+                        'duration': video.get('duration', ''),
+                        'viewCount': {'short': video.get('views', '')},
+                        'link': f"https://youtube.com{video.get('url_suffix', '')}"
+                    }
+            except Exception:
+                await status_msg.edit("❌ **لم يتم العثور على نتائج للبحث**\n\n💡 **جرب:**\n• كلمات مختلفة\n• اسم الفنان\n• جزء من كلمات الأغنية")
+                return
+        
+        if not video_info:
+            await status_msg.edit("❌ **لم يتم العثور على نتائج للبحث**\n\n💡 **جرب:**\n• كلمات مختلفة\n• اسم الفنان\n• جزء من كلمات الأغنية")
             return
         
-        # تحديث الرسالة
-        source_emoji = {
-            'cache': '⚡ من التخزين السريع',
-            'youtube_api': '🔍 YouTube API',
-            'invidious': '🌐 Invidious',
-            'ytdlp_cookies': '🍪 تحميل مع كوكيز',
-            'ytdlp_no_cookies': '📥 تحميل مباشر',
-            'youtube_search': '🔎 بحث يوتيوب'
-        }
+        # استخراج video_id
+        video_url = video_info.get('link', '')
+        video_id = ""
+        if "watch?v=" in video_url:
+            video_id = video_url.split("watch?v=")[1].split("&")[0]
+        elif "youtu.be/" in video_url:
+            video_id = video_url.split("youtu.be/")[1].split("?")[0]
         
-        source_text = source_emoji.get(result['source'], result['source'])
-        await status_msg.edit(f"🎵 **تم العثور على:** {result['title']}\n📡 **المصدر:** {source_text}\n⬆️ **جاري الرفع...**")
+        if not video_id:
+            await status_msg.edit("❌ **خطأ في استخراج معرف الفيديو**")
+            return
         
-        # إعداد الملف للإرسال
-        if result.get('cached') and result.get('file_id'):
-            # إرسال من الكاش باستخدام Telethon
-            caption = f"🎵 **{result['title']}**\n🎤 **{result['artist']}**\n📡 **{source_text}**"
-            if lnk:
-                caption += f"\n\n📢 [قناة البوت]({lnk})"
-            
-            await event.reply(file=result['file_id'], message=caption)
-        else:
-            # تحميل الصورة المصغرة
-            thumb_path = None
-            if 'thumb' in result and result['thumb']:
-                thumb_path = await download_thumbnail(result['thumb'], result['title'])
-            
-            # إرسال الملف الجديد باستخدام Telethon
-            caption = f"🎵 **{result['title']}**\n🎤 **{result['artist']}**\n📡 **{source_text}**"
-            if lnk:
-                caption += f"\n\n📢 [قناة البوت]({lnk})"
-            
-            await event.reply(
-                file=result['audio_path'],
-                caption=caption,
-                attributes=[
-                    {'_': 'DocumentAttributeAudio',
-                     'duration': result.get('duration', 0),
-                     'title': result['title'],
-                     'performer': result['artist']}
-                ]
-            )
-            
-            # حذف الملفات المؤقتة
-            await remove_temp_files(result.get('audio_path'), thumb_path)
+        # محاولة التحميل
+        await status_msg.edit("🔄 **جاري تحميل الملف الصوتي...**")
         
-        # حذف رسالة المعالجة
-        try:
-            await status_msg.delete()
-        except:
-            pass
+        download_result = await downloader.direct_ytdlp_download(video_id, video_info.get('title', 'Unknown'))
+        
+        if download_result and download_result.get('success'):
+            # التحميل نجح - إرسال الملف
+            from pathlib import Path
+            audio_file = download_result.get('file_path')
+            if audio_file and Path(audio_file).exists():
+                await status_msg.edit("📤 **جاري إرسال الملف...**")
+                
+                caption = f"""🎵 **{download_result.get('title', 'Unknown')[:60]}**
+🎤 {download_result.get('uploader', 'Unknown')[:40]}
+⏱️ {video_info.get('duration', 'Unknown')}
+
+📥 تم التحميل بنجاح"""
+                
+                await event.respond(
+                    caption,
+                    file=audio_file,
+                    attributes=[
+                        DocumentAttributeAudio(
+                            duration=download_result.get('duration', 0),
+                            title=download_result.get('title', 'Unknown')[:60],
+                            performer=download_result.get('uploader', 'Unknown')[:40]
+                        )
+                    ]
+                )
+                await status_msg.delete()
+                
+                # حذف الملف المؤقت
+                try:
+                    Path(audio_file).unlink()
+                except:
+                    pass
+                return
+        
+        # التحميل فشل - عرض معلومات الفيديو فقط
+        result_text = f"""🎵 **تم العثور على:**
+
+📝 **العنوان:** {video_info.get('title', 'غير معروف')}
+🎤 **القناة:** {video_info.get('channel', {}).get('name', 'غير معروف')}
+⏱️ **المدة:** {video_info.get('duration', 'غير معروف')}
+👁️ **المشاهدات:** {video_info.get('viewCount', {}).get('short', 'غير معروف')}
+
+🔗 **الرابط:** {video_info.get('link', '')}
+
+⚠️ **ملاحظة:** التحميل غير متاح حالياً
+🔧 **للمطور:** تحقق من ملفات cookies"""
+        
+        await status_msg.edit(result_text)
         
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في المعالج: {e}")
         try:
-            await status_msg.edit(f"❌ **خطأ في المعالجة:** {str(e)}")
+            await status_msg.edit("❌ **حدث خطأ في المعالجة**\n\n💡 **جرب:**\n• كلمات مختلفة\n• إعادة المحاولة لاحقاً")
         except:
             pass
 
@@ -923,5 +1080,50 @@ try:
             pass
 except Exception as e:
     LOGGER(__name__).error(f"❌ خطأ في تهيئة نظام التحميل: {e}")
+
+# دالة معالج البحث - يتم تسجيلها في handlers_registry.py
+async def handle_search_messages(event):
+    """معالج رسائل البحث"""
+    # التحقق من أن هذه رسالة وليس callback
+    if not hasattr(event, 'message') or not event.message or not event.message.text:
+        return
+    
+    # تجنب معالجة الرسائل القديمة
+    if hasattr(event.message, 'date'):
+        import time
+        from datetime import datetime, timezone
+        try:
+            # التأكد من التوقيت مع timezone
+            now = datetime.now(timezone.utc)
+            message_date = event.message.date
+            if hasattr(message_date, 'replace'):
+                # إذا كان naive datetime، إضافة UTC
+                if message_date.tzinfo is None:
+                    message_date = message_date.replace(tzinfo=timezone.utc)
+            
+            if (now - message_date).total_seconds() > 30:
+                return
+        except Exception:
+            # تجاهل فحص التوقيت في حالة الخطأ
+            pass
+    
+    text = event.message.text.lower().strip()
+    
+    # التحقق من أمر البحث بدقة أكبر
+    is_search_command = False
+    
+    # التحقق من أوامر البحث
+    search_commands = ["بحث ", "/song ", "song ", "يوت "]
+    for cmd in search_commands:
+        if text.startswith(cmd):
+            is_search_command = True
+            break
+    
+    # أو إذا كان يحتوي على كلمة بحث منفصلة
+    if " بحث " in text or text == "بحث":
+        is_search_command = True
+    
+    if is_search_command:
+        await smart_download_handler(event)
 
 LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق مع Telethon")

@@ -113,28 +113,11 @@ class DownloadResult:
 # دوال مساعدة محسنة
 # =============================================================================
 
-def cookies():
-    """إرجاع مسار ملف كوكيز عشوائي مع فلترة الملفات الصالحة"""
+async def cookies():
+    """إرجاع مسار ملف كوكيز من المدير الذكي"""
     try:
-        folder_path = Path("cookies")
-        folder_path.mkdir(exist_ok=True)
-        
-        txt_files = list(folder_path.glob("*.txt"))
-        
-        # فلترة الملفات الصالحة فقط
-        valid_files = []
-        for file_path in txt_files:
-            if file_path.stat().st_size > 0:  # التأكد من أن الملف ليس فارغاً
-                valid_files.append(str(file_path))
-        
-        if not valid_files:
-            logger.warning("⚠️ لم يتم العثور على ملفات كوكيز صالحة")
-            return None
-            
-        selected_file = random.choice(valid_files)
-        logger.debug(f"🍪 تم اختيار ملف كوكيز: {selected_file}")
-        return selected_file
-        
+        from ZeMusic.core.cookies_manager import cookies_manager
+        return await cookies_manager.get_next_cookie()
     except Exception as e:
         logger.error(f"❌ خطأ في دالة الكوكيز: {str(e)}")
         return None
@@ -466,7 +449,7 @@ class YouTubeAPI:
             if cached_data and cached_data.get('success'):
                 return 1, cached_data['url']
             
-            cookie_file = cookies()
+            cookie_file = await cookies()
             cmd = [
                 "yt-dlp",
                 "-g",
@@ -489,6 +472,14 @@ class YouTubeAPI:
             if stdout:
                 video_url = stdout.decode().strip().split("\n")[0]
                 
+                # تقرير نجاح استخدام cookie
+                if cookie_file:
+                    try:
+                        from ZeMusic.core.cookies_manager import report_cookie_success
+                        await report_cookie_success(cookie_file)
+                    except:
+                        pass
+                
                 # حفظ في الكاش
                 cache_data = {'success': True, 'url': video_url}
                 await save_to_cache(cache_key, cache_data)
@@ -500,8 +491,22 @@ class YouTubeAPI:
             return 0, error_msg
             
         except asyncio.TimeoutError:
+            # تقرير فشل cookie في حالة timeout
+            if 'cookie_file' in locals() and cookie_file:
+                try:
+                    from ZeMusic.core.cookies_manager import report_cookie_failure
+                    await report_cookie_failure(cookie_file, "timeout")
+                except:
+                    pass
             return 0, "انتهت مهلة الحصول على رابط الفيديو"
         except Exception as e:
+            # تقرير فشل cookie في حالة الخطأ
+            if 'cookie_file' in locals() and cookie_file:
+                try:
+                    from ZeMusic.core.cookies_manager import report_cookie_failure
+                    await report_cookie_failure(cookie_file, str(e))
+                except:
+                    pass
             logger.error(f"❌ خطأ في video: {str(e)}")
             return 0, str(e)
 

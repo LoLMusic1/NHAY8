@@ -5,7 +5,7 @@ from ZeMusic import app
 from ZeMusic.utils.database import get_playmode, get_playtype, is_nonadmin_chat
 from ZeMusic.utils.decorators import language
 from ZeMusic.utils.inline.settings import playmode_users_markup
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(filters.command(["playmode", "mode", "وضع التشغيل"]) & filters.group & ~BANNED_USERS)

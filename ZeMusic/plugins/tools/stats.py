@@ -16,7 +16,7 @@ from ZeMusic.plugins import ALL_MODULES
 from ZeMusic.utils.database import get_served_chats, get_served_users, get_sudoers
 from ZeMusic.utils.decorators.language import language, languageCB
 from ZeMusic.utils.inline.stats import back_stats_buttons, stats_buttons
-from config import BANNED_USERS
+from ZeMusic.pyrogram_compatibility import BANNED_USERS
 
 
 @app.on_message(filters.command(["الاحصائيات", "ترند","الإحصائيات"]) & filters.group & ~BANNED_USERS)
