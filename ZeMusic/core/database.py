@@ -757,6 +757,32 @@ class DatabaseManager:
         
         await asyncio.get_event_loop().run_in_executor(None, _log)
     
+    async def fix_inactive_assistants(self) -> Dict:
+        """إصلاح الحسابات غير النشطة"""
+        def _fix():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # جلب جميع الحسابات غير النشطة
+                cursor.execute('SELECT assistant_id, name FROM assistants WHERE is_active = 0 OR is_active IS NULL')
+                inactive_assistants = cursor.fetchall()
+                
+                if not inactive_assistants:
+                    return {'fixed': 0, 'total': 0}
+                
+                # تفعيل جميع الحسابات
+                cursor.execute('UPDATE assistants SET is_active = 1 WHERE is_active = 0 OR is_active IS NULL')
+                fixed_count = cursor.rowcount
+                conn.commit()
+                
+                # جلب العدد الإجمالي
+                cursor.execute('SELECT COUNT(*) as total FROM assistants')
+                total_count = cursor.fetchone()['total']
+                
+                return {'fixed': fixed_count, 'total': total_count}
+        
+        return await asyncio.get_event_loop().run_in_executor(None, _fix)
+
     async def add_assistant(self, assistant_id: int = None, session_string: str = None, name: str = None, user_id: int = None, username: str = None, phone: str = None) -> int:
         """إضافة حساب مساعد جديد (متوافق مع الطرق القديمة والجديدة)"""
         def _add():
