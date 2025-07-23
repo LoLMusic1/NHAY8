@@ -18,9 +18,13 @@ import time
 import sqlite3
 import hashlib
 import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Dict, Optional, List, Tuple
 from itertools import cycle
+from collections import defaultdict, deque
+from asyncio import Semaphore
+import threading
 import aiohttp
 import aiofiles
 from telethon.tl.types import DocumentAttributeAudio
@@ -1681,7 +1685,7 @@ async def parallel_search_with_monitoring(query: str, bot_client) -> Optional[Di
         
         # إنشاء مهام متوازية مع تتبع الوقت
         db_task = asyncio.create_task(search_in_database_cache(query))
-        cache_task = asyncio.create_task(search_in_smart_cache(query, bot_client))
+        cache_task = asyncio.create_task(search_in_telegram_cache(query, bot_client))
         
         # تسجيل بدء المهام
         db_start = time.time()
@@ -3234,7 +3238,7 @@ async def download_song_smart(message, query: str):
     """
     try:
         # رسالة الحالة
-        status_msg = await message.reply_text(
+        status_msg = await message.reply(
             "⚡ **النظام الذكي المتوازي**\n\n"
             "🔍 جاري البحث المتوازي في الكاش والتخزين..."
         )
@@ -3292,7 +3296,7 @@ async def download_song_smart(message, query: str):
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في download_song_smart: {e}")
         try:
-            await message.reply_text(
+            await message.reply(
                 "❌ **خطأ في البحث**\n\n"
                 "حدث خطأ أثناء معالجة طلبك\n"
                 "يرجى المحاولة مرة أخرى"
@@ -3652,16 +3656,20 @@ async def send_local_cached_audio(message, cache_result: Dict, status_msg) -> bo
         
         if file_path and os.path.exists(file_path):
             # إرسال الملف الموجود
-            await message.reply_audio(
-                audio=file_path,
-                caption=f"🎵 **{cache_result.get('title', 'غير محدد')}**\n"
+            await message.reply(
+                file=file_path,
+                message=f"🎵 **{cache_result.get('title', 'غير محدد')}**\n"
                        f"👤 **الفنان:** {cache_result.get('artist', 'غير محدد')}\n"
                        f"⏱️ **المدة:** {cache_result.get('duration', 'غير محدد')}\n"
                        f"📁 **المصدر:** كاش محلي\n"
                        f"🤖 **بواسطة:** ZeMusic Bot",
-                duration=cache_result.get('duration', 0),
-                title=cache_result.get('title', 'غير محدد'),
-                performer=cache_result.get('artist', 'ZeMusic Bot')
+                attributes=[
+                    DocumentAttributeAudio(
+                        duration=cache_result.get('duration', 0),
+                        title=cache_result.get('title', 'غير محدد'),
+                        performer=cache_result.get('artist', 'ZeMusic Bot')
+                    )
+                ]
             )
             
             await status_msg.delete()
@@ -3686,16 +3694,20 @@ async def send_telegram_cached_audio(message, telegram_result: Dict, status_msg)
         
         if file_id:
             # إرسال بـ file_id
-            await message.reply_audio(
-                audio=file_id,
-                caption=f"🎵 **{telegram_result.get('title', 'غير محدد')}**\n"
+            await message.reply(
+                file=file_id,
+                message=f"🎵 **{telegram_result.get('title', 'غير محدد')}**\n"
                        f"👤 **الفنان:** {telegram_result.get('artist', 'غير محدد')}\n"
                        f"⏱️ **المدة:** {telegram_result.get('duration', 'غير محدد')}\n"
                        f"📺 **المصدر:** قناة التخزين\n"
                        f"🤖 **بواسطة:** ZeMusic Bot",
-                duration=telegram_result.get('duration', 0),
-                title=telegram_result.get('title', 'غير محدد'),
-                performer=telegram_result.get('artist', 'ZeMusic Bot')
+                attributes=[
+                    DocumentAttributeAudio(
+                        duration=telegram_result.get('duration', 0),
+                        title=telegram_result.get('title', 'غير محدد'),
+                        performer=telegram_result.get('artist', 'ZeMusic Bot')
+                    )
+                ]
             )
             
             await status_msg.delete()
@@ -3888,16 +3900,20 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                 # إرسال الملف
                 await status_msg.edit("📤 **جاري الإرسال...**")
                 
-                audio_message = await message.reply_audio(
-                    audio=downloaded_file,
-                    caption=f"🎵 **{title}**\n"
+                audio_message = await message.reply(
+                    file=downloaded_file,
+                    message=f"🎵 **{title}**\n"
                            f"👤 **القناة:** {channel}\n"
                            f"⏱️ **المدة:** {duration // 60}:{duration % 60:02d}\n"
                            f"🌐 **المصدر:** YouTube\n"
                            f"🤖 **بواسطة:** ZeMusic Bot",
-                    duration=duration,
-                    title=title,
-                    performer=channel
+                    attributes=[
+                        DocumentAttributeAudio(
+                            duration=duration,
+                            title=title,
+                            performer=channel
+                        )
+                    ]
                 )
                 
                 # حفظ في الكاش للاستخدام المستقبلي
@@ -3948,16 +3964,20 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                     if downloaded_file:
                         await status_msg.edit("📤 **جاري الإرسال...**")
                         
-                        audio_message = await message.reply_audio(
-                            audio=downloaded_file,
-                            caption=f"🎵 **{title}**\n"
+                        audio_message = await message.reply(
+                            file=downloaded_file,
+                            message=f"🎵 **{title}**\n"
                                    f"👤 **القناة:** {channel}\n"
                                    f"⏱️ **المدة:** {duration // 60}:{duration % 60:02d}\n"
                                    f"🌐 **المصدر:** YouTube (بديل)\n"
                                    f"🤖 **بواسطة:** ZeMusic Bot",
-                            duration=duration,
-                            title=title,
-                            performer=channel
+                            attributes=[
+                                DocumentAttributeAudio(
+                                    duration=duration,
+                                    title=title,
+                                    performer=channel
+                                )
+                            ]
                         )
                         
                         # حفظ في الكاش
