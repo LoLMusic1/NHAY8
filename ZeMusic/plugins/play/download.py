@@ -1791,7 +1791,7 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # البحث الذكي باستخدام LIKE لكل كلمة مفتاحية مع تحسينات
+        # البحث الذكي المحسن مع معالجة الاختلافات في الكتابة العربية
         search_conditions = []
         search_params = []
         
@@ -1799,9 +1799,26 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
         search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ?)")
         search_params.extend([f"%{normalized_query}%", f"%{normalized_query}%"])
         
-        # ثم البحث بالكلمات المفردة
+        # معالجة الاختلافات الشائعة في الكتابة العربية
+        arabic_variants = {
+            'وحشتني': ['وحشتني', 'وحشتيني', 'وحشني', 'وحشتنى'],
+            'احبك': ['احبك', 'أحبك', 'احبّك', 'أحبّك'],
+            'حبيبي': ['حبيبي', 'حبيبى'],
+            'عليك': ['عليك', 'عليكي'],
+            'انت': ['انت', 'أنت', 'إنت']
+        }
+        
+        # البحث بالمتغيرات العربية
+        for original_word in search_keywords:
+            if len(original_word) > 2:
+                variants = arabic_variants.get(original_word, [original_word])
+                for variant in variants:
+                    search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)")
+                    search_params.extend([f"%{variant}%", f"%{variant}%", f"%{variant}%"])
+        
+        # البحث العام بالكلمات المفردة (احتياطي)
         for keyword in search_keywords:
-            if len(keyword) > 2:  # تجاهل الكلمات القصيرة جداً
+            if len(keyword) > 2:
                 search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)")
                 search_params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
         
@@ -1873,7 +1890,8 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
 async def send_cached_from_database(event, status_msg, db_result: Dict, bot_client):
     """إرسال الملف من قاعدة البيانات باستخدام file_id"""
     try:
-        await status_msg.edit("📤 **إرسال من الكاش...**")
+        LOGGER(__name__).info(f"📤 محاولة إرسال من قاعدة البيانات: {db_result.get('title', 'Unknown')}")
+        await status_msg.edit("📤 **إرسال من الكاش المحلي...**")
         
         # تحضير التسمية التوضيحية
         duration = db_result.get('duration', 0)
@@ -1881,8 +1899,10 @@ async def send_cached_from_database(event, status_msg, db_result: Dict, bot_clie
         
         user_caption = f"✦ @{config.BOT_USERNAME}"
         
+        LOGGER(__name__).info(f"📋 معلومات الإرسال: file_id={db_result['file_id'][:20]}..., duration={duration}")
+        
         # إرسال الملف باستخدام file_id
-        await event.respond(
+        sent_message = await event.respond(
             user_caption,
             file=db_result['file_id'],
             attributes=[
@@ -1895,11 +1915,47 @@ async def send_cached_from_database(event, status_msg, db_result: Dict, bot_clie
         )
         
         await status_msg.delete()
-        LOGGER(__name__).info(f"✅ تم إرسال الملف من قاعدة البيانات (مرات الوصول: {db_result.get('access_count', 1)})")
+        LOGGER(__name__).info(f"✅ تم إرسال الملف من قاعدة البيانات بنجاح: {sent_message.id}")
+        return True
         
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في إرسال الملف من قاعدة البيانات: {e}")
-        await status_msg.edit("❌ **خطأ في إرسال الملف من الكاش**")
+        await status_msg.edit("❌ **خطأ في إرسال الملف من الكاش - جاري التحميل من يوتيوب...**")
+        return False
+
+async def send_cached_from_telegram(event, status_msg, cache_result: Dict, bot_client):
+    """إرسال الملف من التخزين الذكي (قناة التخزين)"""
+    try:
+        LOGGER(__name__).info(f"📤 محاولة إرسال من التخزين الذكي: {cache_result.get('title', 'Unknown')}")
+        await status_msg.edit("📤 **إرسال من التخزين الذكي...**")
+        
+        # تحضير التسمية التوضيحية
+        duration = cache_result.get('duration', 0)
+        user_caption = f"✦ @{config.BOT_USERNAME}"
+        
+        LOGGER(__name__).info(f"📋 معلومات الإرسال: file_id={cache_result['file_id'][:20]}..., duration={duration}")
+        
+        # إرسال الملف باستخدام file_id
+        sent_message = await event.respond(
+            user_caption,
+            file=cache_result['file_id'],
+            attributes=[
+                DocumentAttributeAudio(
+                    duration=duration,
+                    title=cache_result.get('title', 'Unknown')[:60],
+                    performer=cache_result.get('uploader', 'Unknown')[:40]
+                )
+            ]
+        )
+        
+        await status_msg.delete()
+        LOGGER(__name__).info(f"✅ تم إرسال الملف من التخزين الذكي بنجاح: {sent_message.id}")
+        return True
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في إرسال الملف من التخزين الذكي: {e}")
+        await status_msg.edit("❌ **خطأ في إرسال الملف من التخزين - جاري التحميل من يوتيوب...**")
+        return False
 
 async def save_to_database_cache(file_id: str, file_unique_id: str, message_id: int, result: Dict, query: str) -> bool:
     """حفظ معلومات الملف في قاعدة البيانات الذكية"""
@@ -1968,15 +2024,30 @@ async def search_in_telegram_cache(query: str, bot_client) -> Optional[Dict]:
             conn = sqlite3.connect(DB_FILE)
             cursor = conn.cursor()
             
-            # بحث متقدم بالكلمات المفتاحية
+            # بحث متقدم بالكلمات المفتاحية مع معالجة الاختلافات العربية
             search_conditions = []
             search_params = []
             
-            for keyword in search_keywords:
-                search_conditions.append(
-                    "(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)"
-                )
-                search_params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+            # إضافة البحث الدقيق أولاً
+            search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ?)")
+            search_params.extend([f"%{normalized_query}%", f"%{normalized_query}%"])
+            
+            # معالجة الاختلافات الشائعة في الكتابة العربية
+            arabic_variants = {
+                'وحشتني': ['وحشتني', 'وحشتيني', 'وحشني', 'وحشتنى'],
+                'احبك': ['احبك', 'أحبك', 'احبّك', 'أحبّك'],
+                'حبيبي': ['حبيبي', 'حبيبى'],
+                'عليك': ['عليك', 'عليكي'],
+                'انت': ['انت', 'أنت', 'إنت']
+            }
+            
+            # البحث بالمتغيرات العربية
+            for original_word in search_keywords:
+                if len(original_word) > 2:
+                    variants = arabic_variants.get(original_word, [original_word])
+                    for variant in variants:
+                        search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)")
+                        search_params.extend([f"%{variant}%", f"%{variant}%", f"%{variant}%"])
             
             # استعلام محسن مع ترتيب ذكي
             query_sql = f"""
@@ -3064,12 +3135,18 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
                 
                 if search_source == 'database':
                     await status_msg.edit(f"✅ **تم العثور في الكاش المحلي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
-                    await send_cached_from_database(event, status_msg, parallel_result, event.client)
-                    return
+                    success = await send_cached_from_database(event, status_msg, parallel_result, event.client)
+                    if success:
+                        return  # نجح الإرسال من الكاش
+                    else:
+                        LOGGER(__name__).warning("⚠️ فشل الإرسال من الكاش - سيتم التحميل من يوتيوب")
                 elif search_source == 'smart_cache':
                     await status_msg.edit(f"✅ **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
-                    await send_cached_from_telegram(event, status_msg, parallel_result, event.client)
-                    return
+                    success = await send_cached_from_telegram(event, status_msg, parallel_result, event.client)
+                    if success:
+                        return  # نجح الإرسال من التخزين الذكي
+                    else:
+                        LOGGER(__name__).warning("⚠️ فشل الإرسال من التخزين الذكي - سيتم التحميل من يوتيوب")
             else:
                 # لم يتم العثور في الكاش - إظهار رسالة واضحة
                 await status_msg.edit("❌ **لم يتم العثور في الكاش**\n\n🔍 **جاري البحث والتحميل من يوتيوب...**")
