@@ -1786,18 +1786,24 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
         normalized_query = normalize_search_text(query)
         search_keywords = normalized_query.split()
         
-        LOGGER(__name__).info(f"🗄️ البحث في قاعدة البيانات: {normalized_query}")
+        LOGGER(__name__).info(f"🗄️ البحث في قاعدة البيانات: '{normalized_query}' (كلمات: {search_keywords})")
         
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # البحث باستخدام LIKE لكل كلمة مفتاحية
+        # البحث الذكي باستخدام LIKE لكل كلمة مفتاحية مع تحسينات
         search_conditions = []
         search_params = []
         
+        # إضافة البحث الدقيق أولاً
+        search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ?)")
+        search_params.extend([f"%{normalized_query}%", f"%{normalized_query}%"])
+        
+        # ثم البحث بالكلمات المفردة
         for keyword in search_keywords:
-            search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)")
-            search_params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+            if len(keyword) > 2:  # تجاهل الكلمات القصيرة جداً
+                search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)")
+                search_params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
         
         # استعلام البحث مع ترتيب حسب الشعبية وآخر وصول
         query_sql = f"""
@@ -1812,6 +1818,8 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
         
         cursor.execute(query_sql, search_params)
         results = cursor.fetchall()
+        
+        LOGGER(__name__).info(f"🔍 تم العثور على {len(results)} نتيجة في قاعدة البيانات")
         
         if results:
             # اختيار أفضل نتيجة
@@ -3038,6 +3046,10 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
         # متغير لرسالة الحالة (سيتم إنشاؤه لاحقاً عند الحاجة)
         status_msg = None
         
+        # إظهار رسالة البحث في الكاش أولاً
+        if not status_msg:
+            status_msg = await event.reply("🔍 **جاري البحث في الكاش والتخزين الذكي...**")
+        
         # البحث المتوازي المحسن بدون حدود
         try:
             parallel_result = await parallel_search_with_monitoring(query, event.client)
@@ -3051,21 +3063,20 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
                 await update_performance_stats(True, time.time() - start_time, from_cache=True)
                 
                 if search_source == 'database':
-                    if not status_msg:
-                        status_msg = await event.reply(f"📤 **تم العثور في الكاش الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
-                    else:
-                        await status_msg.edit(f"📤 **تم العثور في الكاش الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
+                    await status_msg.edit(f"✅ **تم العثور في الكاش المحلي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
                     await send_cached_from_database(event, status_msg, parallel_result, event.client)
                     return
                 elif search_source == 'smart_cache':
-                    if not status_msg:
-                        status_msg = await event.reply(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
-                    else:
-                        await status_msg.edit(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
+                    await status_msg.edit(f"✅ **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
                     await send_cached_from_telegram(event, status_msg, parallel_result, event.client)
                     return
+            else:
+                # لم يتم العثور في الكاش - إظهار رسالة واضحة
+                await status_msg.edit("❌ **لم يتم العثور في الكاش**\n\n🔍 **جاري البحث والتحميل من يوتيوب...**")
+                
         except Exception as e:
             LOGGER(__name__).warning(f"⚠️ خطأ في البحث المتوازي: {e}")
+            await status_msg.edit("⚠️ **خطأ في البحث بالكاش**\n\n🔍 **جاري البحث والتحميل من يوتيوب...**")
             
         # البديل: استخدام النظام الذكي المطور
         try:
@@ -3077,9 +3088,9 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
         
         # إذا لم يجد في التخزين، ابدأ التحميل الذكي
         if not status_msg:
-            status_msg = await event.reply("🔍 **جاري البحث في يوتيوب...**")
+            status_msg = await event.reply("🔍 **جاري البحث والتحميل من يوتيوب...**")
         else:
-            await status_msg.edit("🔍 **جاري البحث في يوتيوب...**")
+            await status_msg.edit("🔍 **جاري البحث والتحميل من يوتيوب...**")
         
         # تحديث المرحلة
         if task_id in active_downloads:
