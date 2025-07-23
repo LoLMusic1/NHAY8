@@ -2,171 +2,149 @@
 # -*- coding: utf-8 -*-
 
 """
-🎵 ZeMusic Bot v3.0 - Enhanced Database Manager
+🗄️ Database Manager - ZeMusic Bot v3.0
 تاريخ الإنشاء: 2025-01-28
 
-نظام إدارة قاعدة بيانات محسن مع دعم SQLite و PostgreSQL
+مدير قاعدة البيانات المتقدم مع دعم SQLite و MongoDB
 """
 
-import asyncio
-import logging
-import json
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Union
-from dataclasses import dataclass, asdict
-from pathlib import Path
 import sqlite3
-import aiosqlite
-
-try:
-    import asyncpg
-    POSTGRESQL_AVAILABLE = True
-except ImportError:
-    POSTGRESQL_AVAILABLE = False
-
-try:
-    import redis.asyncio as redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
+import json
+import asyncio
+import threading
+import time
+import logging
+from typing import Dict, List, Union, Optional, Any
+from contextlib import contextmanager
+from dataclasses import dataclass, asdict, field
+from datetime import datetime, timedelta
 
 from ..config import config
 
 logger = logging.getLogger(__name__)
 
-# ============================================
-# نماذج البيانات
-# ============================================
+@dataclass
+class ChatSettings:
+    """إعدادات المجموعة"""
+    chat_id: int
+    language: str = "ar"
+    play_mode: str = "Direct"
+    play_type: str = "Everyone"
+    assistant_id: Optional[int] = None
+    auto_end: bool = False
+    auth_enabled: bool = False
+    welcome_enabled: bool = False
+    log_enabled: bool = False
+    search_enabled: bool = True
+    upvote_count: int = 3
+    loop_mode: int = 0
+    skip_mode: str = "Admin"
+    allow_nonadmin: bool = False
+    connected_channel: Optional[int] = None
+    force_channels: List[int] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 @dataclass
 class UserData:
-    """نموذج بيانات المستخدم"""
+    """بيانات المستخدم"""
     user_id: int
-    username: str = ""
     first_name: str = ""
-    last_name: str = ""
-    language: str = "ar"
+    username: Optional[str] = None
+    join_date: str = field(default_factory=lambda: datetime.now().isoformat())
     is_banned: bool = False
     is_sudo: bool = False
-    join_date: datetime = None
-    last_activity: datetime = None
+    language: str = "ar"
     total_plays: int = 0
-    
-    def __post_init__(self):
-        if self.join_date is None:
-            self.join_date = datetime.now()
-        if self.last_activity is None:
-            self.last_activity = datetime.now()
+    last_activity: str = field(default_factory=lambda: datetime.now().isoformat())
 
 @dataclass
 class ChatData:
-    """نموذج بيانات المحادثة"""
+    """بيانات المجموعة"""
     chat_id: int
-    chat_type: str = "group"
-    title: str = ""
-    username: str = ""
-    language: str = "ar"
-    is_banned: bool = False
-    join_date: datetime = None
-    last_activity: datetime = None
+    chat_title: str = ""
+    chat_type: str = ""
+    join_date: str = field(default_factory=lambda: datetime.now().isoformat())
+    is_blacklisted: bool = False
+    member_count: int = 0
     total_plays: int = 0
-    settings: Dict[str, Any] = None
-    
-    def __post_init__(self):
-        if self.join_date is None:
-            self.join_date = datetime.now()
-        if self.last_activity is None:
-            self.last_activity = datetime.now()
-        if self.settings is None:
-            self.settings = {}
+    last_activity: str = field(default_factory=lambda: datetime.now().isoformat())
 
 @dataclass
 class AssistantData:
-    """نموذج بيانات الحساب المساعد"""
+    """بيانات الحساب المساعد"""
     assistant_id: int
     session_string: str
-    name: str = ""
-    username: str = ""
-    phone: str = ""
+    name: str
+    phone: Optional[str] = None
     is_active: bool = True
-    is_connected: bool = False
-    created_date: datetime = None
-    last_used: datetime = None
+    added_date: str = field(default_factory=lambda: datetime.now().isoformat())
+    last_used: str = field(default_factory=lambda: datetime.now().isoformat())
     total_calls: int = 0
-    active_calls: int = 0
-    
-    def __post_init__(self):
-        if self.created_date is None:
-            self.created_date = datetime.now()
+    total_errors: int = 0
 
 @dataclass
 class PlayHistory:
-    """نموذج سجل التشغيل"""
-    id: int = None
+    """تاريخ التشغيل"""
+    id: Optional[int] = None
     chat_id: int = 0
     user_id: int = 0
-    title: str = ""
-    url: str = ""
+    song_title: str = ""
+    song_url: str = ""
     duration: int = 0
-    platform: str = "youtube"
-    played_at: datetime = None
-    
-    def __post_init__(self):
-        if self.played_at is None:
-            self.played_at = datetime.now()
-
-# ============================================
-# مدير قاعدة البيانات
-# ============================================
+    platform: str = ""
+    played_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 class DatabaseManager:
-    """مدير قاعدة البيانات المحسن"""
+    """مدير قاعدة البيانات المتقدم"""
     
-    def __init__(self):
+    def __init__(self, db_path: str = None):
         """تهيئة مدير قاعدة البيانات"""
-        self.db_url = config.database.database_url
-        self.is_sqlite = config.database.is_sqlite
-        self.is_postgresql = config.database.is_postgresql
+        self.db_path = db_path or config.database.path
+        self._lock = threading.Lock()
+        self._connection_pool = {}
         
-        # اتصال قاعدة البيانات
-        self.connection = None
-        self.connection_pool = None
-        
-        # ذاكرة التخزين المؤقت
+        # كاش في الذاكرة للبيانات المتكررة
         self.cache_enabled = config.database.enable_cache
-        self.cache: Dict[str, Any] = {}
-        self.cache_ttl: Dict[str, datetime] = {}
+        self.cache_ttl = config.database.cache_ttl
         
-        # Redis للتخزين المؤقت المتقدم
-        self.redis_client = None
-        if config.performance.enable_redis and REDIS_AVAILABLE:
-            self.redis_enabled = True
+        if self.cache_enabled:
+            self.cache = {
+                'settings': {},
+                'users': {},
+                'chats': {},
+                'assistants': {},
+                'temp': {},
+                'timestamps': {}
+            }
         else:
-            self.redis_enabled = False
-    
+            self.cache = {}
+        
+        # إحصائيات قاعدة البيانات
+        self.stats = {
+            'queries_executed': 0,
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'errors_count': 0,
+            'last_backup': None
+        }
+        
     async def initialize(self) -> bool:
         """تهيئة قاعدة البيانات"""
         try:
-            logger.info("🗃️ تهيئة قاعدة البيانات...")
+            logger.info("🗄️ تهيئة قاعدة البيانات...")
             
-            # إنشاء مجلد قاعدة البيانات للـ SQLite
-            if self.is_sqlite:
-                db_path = Path(self.db_url.replace("sqlite:///", ""))
-                db_path.parent.mkdir(exist_ok=True)
-            
-            # الاتصال بقاعدة البيانات
-            if not await self._connect():
-                return False
+            # إنشاء مجلد قاعدة البيانات
+            import os
+            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
             
             # إنشاء الجداول
             await self._create_tables()
             
-            # تهيئة Redis إذا كان مفعلاً
-            if self.redis_enabled:
-                await self._init_redis()
-            
             # بدء مهام الصيانة
-            asyncio.create_task(self._maintenance_tasks())
+            asyncio.create_task(self._cleanup_cache())
+            asyncio.create_task(self._backup_scheduler())
+            asyncio.create_task(self._statistics_updater())
             
             logger.info("✅ تم تهيئة قاعدة البيانات بنجاح")
             return True
@@ -175,622 +153,730 @@ class DatabaseManager:
             logger.error(f"❌ فشل في تهيئة قاعدة البيانات: {e}")
             return False
     
-    async def _connect(self) -> bool:
-        """الاتصال بقاعدة البيانات"""
+    @contextmanager
+    def _get_connection(self):
+        """الحصول على اتصال قاعدة البيانات"""
+        conn = None
         try:
-            if self.is_sqlite:
-                # SQLite
-                self.connection = await aiosqlite.connect(
-                    self.db_url.replace("sqlite:///", "")
-                )
-                await self.connection.execute("PRAGMA foreign_keys = ON")
-                await self.connection.execute("PRAGMA journal_mode = WAL")
-                
-            elif self.is_postgresql and POSTGRESQL_AVAILABLE:
-                # PostgreSQL
-                self.connection_pool = await asyncpg.create_pool(
-                    self.db_url,
-                    min_size=1,
-                    max_size=config.database.connection_pool_size
-                )
-                
-            else:
-                logger.error("❌ نوع قاعدة البيانات غير مدعوم")
-                return False
-            
-            logger.info(f"✅ تم الاتصال بقاعدة البيانات ({self._get_db_type()})")
-            return True
-            
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA journal_mode = WAL")
+            yield conn
         except Exception as e:
-            logger.error(f"❌ فشل في الاتصال بقاعدة البيانات: {e}")
-            return False
-    
-    async def _init_redis(self):
-        """تهيئة Redis للتخزين المؤقت"""
-        try:
-            self.redis_client = redis.from_url(
-                config.performance.redis_url,
-                decode_responses=True
-            )
-            await self.redis_client.ping()
-            logger.info("✅ تم الاتصال بـ Redis")
-            
-        except Exception as e:
-            logger.warning(f"⚠️ فشل في الاتصال بـ Redis: {e}")
-            self.redis_enabled = False
+            if conn:
+                conn.rollback()
+            raise e
+        finally:
+            if conn:
+                conn.close()
     
     async def _create_tables(self):
         """إنشاء جداول قاعدة البيانات"""
-        
-        # جدول المستخدمين
-        users_table = """
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT DEFAULT '',
-            first_name TEXT DEFAULT '',
-            last_name TEXT DEFAULT '',
-            language TEXT DEFAULT 'ar',
-            is_banned BOOLEAN DEFAULT FALSE,
-            is_sudo BOOLEAN DEFAULT FALSE,
-            join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            total_plays INTEGER DEFAULT 0
-        )
-        """
-        
-        # جدول المحادثات
-        chats_table = """
-        CREATE TABLE IF NOT EXISTS chats (
-            chat_id INTEGER PRIMARY KEY,
-            chat_type TEXT DEFAULT 'group',
-            title TEXT DEFAULT '',
-            username TEXT DEFAULT '',
-            language TEXT DEFAULT 'ar',
-            is_banned BOOLEAN DEFAULT FALSE,
-            join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            total_plays INTEGER DEFAULT 0,
-            settings TEXT DEFAULT '{}'
-        )
-        """
-        
-        # جدول الحسابات المساعدة
-        assistants_table = """
-        CREATE TABLE IF NOT EXISTS assistants (
-            assistant_id INTEGER PRIMARY KEY,
-            session_string TEXT NOT NULL,
-            name TEXT DEFAULT '',
-            username TEXT DEFAULT '',
-            phone TEXT DEFAULT '',
-            is_active BOOLEAN DEFAULT TRUE,
-            is_connected BOOLEAN DEFAULT FALSE,
-            created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_used TIMESTAMP,
-            total_calls INTEGER DEFAULT 0,
-            active_calls INTEGER DEFAULT 0
-        )
-        """
-        
-        # جدول سجل التشغيل
-        play_history_table = """
-        CREATE TABLE IF NOT EXISTS play_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chat_id INTEGER,
-            user_id INTEGER,
-            title TEXT DEFAULT '',
-            url TEXT DEFAULT '',
-            duration INTEGER DEFAULT 0,
-            platform TEXT DEFAULT 'youtube',
-            played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-        
-        # جدول الإحصائيات
-        stats_table = """
-        CREATE TABLE IF NOT EXISTS stats (
-            key TEXT PRIMARY KEY,
-            value TEXT DEFAULT '0',
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-        
-        tables = [
-            users_table, chats_table, assistants_table,
-            play_history_table, stats_table
-        ]
-        
-        try:
-            for table_sql in tables:
-                await self._execute(table_sql)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # جدول إعدادات المجموعات
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chat_settings (
+                    chat_id INTEGER PRIMARY KEY,
+                    language TEXT DEFAULT 'ar',
+                    play_mode TEXT DEFAULT 'Direct',
+                    play_type TEXT DEFAULT 'Everyone',
+                    assistant_id INTEGER DEFAULT NULL,
+                    auto_end BOOLEAN DEFAULT 0,
+                    auth_enabled BOOLEAN DEFAULT 0,
+                    welcome_enabled BOOLEAN DEFAULT 0,
+                    log_enabled BOOLEAN DEFAULT 0,
+                    search_enabled BOOLEAN DEFAULT 1,
+                    upvote_count INTEGER DEFAULT 3,
+                    loop_mode INTEGER DEFAULT 0,
+                    skip_mode TEXT DEFAULT 'Admin',
+                    allow_nonadmin BOOLEAN DEFAULT 0,
+                    connected_channel INTEGER DEFAULT NULL,
+                    force_channels TEXT DEFAULT '[]',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # جدول بيانات المستخدمين
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    first_name TEXT DEFAULT '',
+                    username TEXT DEFAULT NULL,
+                    join_date TEXT DEFAULT CURRENT_TIMESTAMP,
+                    is_banned BOOLEAN DEFAULT 0,
+                    is_sudo BOOLEAN DEFAULT 0,
+                    language TEXT DEFAULT 'ar',
+                    total_plays INTEGER DEFAULT 0,
+                    last_activity TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # جدول بيانات المجموعات
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chats (
+                    chat_id INTEGER PRIMARY KEY,
+                    chat_title TEXT DEFAULT '',
+                    chat_type TEXT DEFAULT '',
+                    join_date TEXT DEFAULT CURRENT_TIMESTAMP,
+                    is_blacklisted BOOLEAN DEFAULT 0,
+                    member_count INTEGER DEFAULT 0,
+                    total_plays INTEGER DEFAULT 0,
+                    last_activity TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # جدول الحسابات المساعدة
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS assistants (
+                    assistant_id INTEGER PRIMARY KEY,
+                    session_string TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    phone TEXT DEFAULT NULL,
+                    is_active BOOLEAN DEFAULT 1,
+                    added_date TEXT DEFAULT CURRENT_TIMESTAMP,
+                    last_used TEXT DEFAULT CURRENT_TIMESTAMP,
+                    total_calls INTEGER DEFAULT 0,
+                    total_errors INTEGER DEFAULT 0
+                )
+            ''')
+            
+            # جدول تاريخ التشغيل
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS play_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    song_title TEXT NOT NULL,
+                    song_url TEXT DEFAULT '',
+                    duration INTEGER DEFAULT 0,
+                    platform TEXT DEFAULT '',
+                    played_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (chat_id) REFERENCES chats(chat_id),
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            ''')
+            
+            # جدول المستخدمين المصرح لهم
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS auth_users (
+                    chat_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    added_by INTEGER NOT NULL,
+                    added_date TEXT DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (chat_id, user_id),
+                    FOREIGN KEY (chat_id) REFERENCES chats(chat_id),
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            ''')
+            
+            # جدول الحالات المؤقتة
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS temp_states (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    expires_at TEXT DEFAULT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             
             # إنشاء فهارس للأداء
-            indexes = [
-                "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
-                "CREATE INDEX IF NOT EXISTS idx_chats_title ON chats(title)",
-                "CREATE INDEX IF NOT EXISTS idx_assistants_active ON assistants(is_active)",
-                "CREATE INDEX IF NOT EXISTS idx_play_history_chat ON play_history(chat_id)",
-                "CREATE INDEX IF NOT EXISTS idx_play_history_date ON play_history(played_at)"
-            ]
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_play_history_chat ON play_history(chat_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_play_history_user ON play_history(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_play_history_date ON play_history(played_at)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_auth_users_chat ON auth_users(chat_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_activity ON users(last_activity)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_chats_activity ON chats(last_activity)')
             
-            for index_sql in indexes:
-                await self._execute(index_sql)
-            
-            logger.info("✅ تم إنشاء جداول قاعدة البيانات")
-            
-        except Exception as e:
-            logger.error(f"❌ فشل في إنشاء الجداول: {e}")
-            raise
+            conn.commit()
+            self.stats['queries_executed'] += 8
     
-    async def _execute(self, query: str, params: tuple = None) -> Any:
-        """تنفيذ استعلام قاعدة البيانات"""
+    # ==================== إدارة إعدادات المجموعات ====================
+    
+    async def get_chat_settings(self, chat_id: int) -> ChatSettings:
+        """الحصول على إعدادات المجموعة"""
         try:
-            if self.is_sqlite:
-                if params:
-                    cursor = await self.connection.execute(query, params)
-                else:
-                    cursor = await self.connection.execute(query)
-                await self.connection.commit()
-                return cursor
+            # التحقق من الكاش
+            cache_key = f"settings_{chat_id}"
+            if self.cache_enabled and self._is_cache_valid(cache_key):
+                self.stats['cache_hits'] += 1
+                return self.cache['settings'][chat_id]
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT * FROM chat_settings WHERE chat_id = ?',
+                    (chat_id,)
+                )
+                row = cursor.fetchone()
                 
-            elif self.is_postgresql:
-                async with self.connection_pool.acquire() as conn:
-                    if params:
-                        return await conn.execute(query, *params)
-                    else:
-                        return await conn.execute(query)
-                        
-        except Exception as e:
-            logger.error(f"❌ فشل في تنفيذ الاستعلام: {e}")
-            raise
-    
-    async def _fetch_one(self, query: str, params: tuple = None) -> Optional[Dict]:
-        """جلب سجل واحد"""
-        try:
-            if self.is_sqlite:
-                self.connection.row_factory = aiosqlite.Row
-                if params:
-                    cursor = await self.connection.execute(query, params)
+                if row:
+                    settings = ChatSettings(
+                        chat_id=row['chat_id'],
+                        language=row['language'],
+                        play_mode=row['play_mode'],
+                        play_type=row['play_type'],
+                        assistant_id=row['assistant_id'],
+                        auto_end=bool(row['auto_end']),
+                        auth_enabled=bool(row['auth_enabled']),
+                        welcome_enabled=bool(row['welcome_enabled']),
+                        log_enabled=bool(row['log_enabled']),
+                        search_enabled=bool(row['search_enabled']),
+                        upvote_count=row['upvote_count'],
+                        loop_mode=row['loop_mode'],
+                        skip_mode=row['skip_mode'],
+                        allow_nonadmin=bool(row['allow_nonadmin']),
+                        connected_channel=row['connected_channel'],
+                        force_channels=json.loads(row['force_channels']),
+                        created_at=row['created_at'],
+                        updated_at=row['updated_at']
+                    )
                 else:
-                    cursor = await self.connection.execute(query)
-                row = await cursor.fetchone()
-                return dict(row) if row else None
+                    # إنشاء إعدادات افتراضية
+                    settings = ChatSettings(chat_id=chat_id)
+                    await self._insert_default_chat_settings(chat_id)
                 
-            elif self.is_postgresql:
-                async with self.connection_pool.acquire() as conn:
-                    if params:
-                        row = await conn.fetchrow(query, *params)
-                    else:
-                        row = await conn.fetchrow(query)
-                    return dict(row) if row else None
-                    
-        except Exception as e:
-            logger.error(f"❌ فشل في جلب السجل: {e}")
-            return None
-    
-    async def _fetch_all(self, query: str, params: tuple = None) -> List[Dict]:
-        """جلب جميع السجلات"""
-        try:
-            if self.is_sqlite:
-                self.connection.row_factory = aiosqlite.Row
-                if params:
-                    cursor = await self.connection.execute(query, params)
-                else:
-                    cursor = await self.connection.execute(query)
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
+                # حفظ في الكاش
+                if self.cache_enabled:
+                    self.cache['settings'][chat_id] = settings
+                    self.cache['timestamps'][cache_key] = time.time()
+                    self.stats['cache_misses'] += 1
                 
-            elif self.is_postgresql:
-                async with self.connection_pool.acquire() as conn:
-                    if params:
-                        rows = await conn.fetch(query, *params)
-                    else:
-                        rows = await conn.fetch(query)
-                    return [dict(row) for row in rows]
-                    
+                self.stats['queries_executed'] += 1
+                return settings
+                
         except Exception as e:
-            logger.error(f"❌ فشل في جلب السجلات: {e}")
-            return []
+            logger.error(f"❌ خطأ في جلب إعدادات المجموعة {chat_id}: {e}")
+            self.stats['errors_count'] += 1
+            return ChatSettings(chat_id=chat_id)
     
-    # ============================================
-    # وظائف المستخدمين
-    # ============================================
-    
-    async def add_user(self, user_data: UserData) -> bool:
-        """إضافة مستخدم جديد"""
+    async def update_chat_setting(self, chat_id: int, **kwargs) -> bool:
+        """تحديث إعدادات المجموعة"""
         try:
-            query = """
-            INSERT OR REPLACE INTO users 
-            (user_id, username, first_name, last_name, language, is_banned, is_sudo, join_date, last_activity, total_plays)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            params = (
-                user_data.user_id, user_data.username, user_data.first_name,
-                user_data.last_name, user_data.language, user_data.is_banned,
-                user_data.is_sudo, user_data.join_date, user_data.last_activity,
-                user_data.total_plays
-            )
+            if not kwargs:
+                return True
             
-            await self._execute(query, params)
+            # إضافة وقت التحديث
+            kwargs['updated_at'] = datetime.now().isoformat()
+            
+            # بناء استعلام التحديث
+            set_clause = ', '.join(f"{key} = ?" for key in kwargs.keys())
+            values = list(kwargs.values()) + [chat_id]
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    f'UPDATE chat_settings SET {set_clause} WHERE chat_id = ?',
+                    values
+                )
+                
+                if cursor.rowcount == 0:
+                    # إنشاء إعدادات جديدة إذا لم تكن موجودة
+                    await self._insert_default_chat_settings(chat_id)
+                    cursor.execute(
+                        f'UPDATE chat_settings SET {set_clause} WHERE chat_id = ?',
+                        values
+                    )
+                
+                conn.commit()
             
             # تحديث الكاش
-            if self.cache_enabled:
-                self._set_cache(f"user:{user_data.user_id}", user_data)
+            if self.cache_enabled and chat_id in self.cache['settings']:
+                settings = self.cache['settings'][chat_id]
+                for key, value in kwargs.items():
+                    if hasattr(settings, key):
+                        setattr(settings, key, value)
             
+            self.stats['queries_executed'] += 1
             return True
             
         except Exception as e:
-            logger.error(f"❌ فشل في إضافة المستخدم {user_data.user_id}: {e}")
+            logger.error(f"❌ خطأ في تحديث إعدادات المجموعة {chat_id}: {e}")
+            self.stats['errors_count'] += 1
             return False
     
-    async def get_user(self, user_id: int) -> Optional[UserData]:
+    async def _insert_default_chat_settings(self, chat_id: int):
+        """إدراج إعدادات افتراضية للمجموعة"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'INSERT OR IGNORE INTO chat_settings (chat_id) VALUES (?)',
+                (chat_id,)
+            )
+            conn.commit()
+    
+    # ==================== إدارة المستخدمين ====================
+    
+    async def add_served_user(self, user_id: int, first_name: str = "", username: str = None) -> bool:
+        """إضافة مستخدم للخدمة"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    '''INSERT OR REPLACE INTO users 
+                       (user_id, first_name, username, last_activity) 
+                       VALUES (?, ?, ?, ?)''',
+                    (user_id, first_name, username, datetime.now().isoformat())
+                )
+                conn.commit()
+            
+            self.stats['queries_executed'] += 1
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في إضافة المستخدم {user_id}: {e}")
+            self.stats['errors_count'] += 1
+            return False
+    
+    async def get_user_data(self, user_id: int) -> Optional[UserData]:
         """الحصول على بيانات المستخدم"""
         try:
-            # البحث في الكاش أولاً
-            if self.cache_enabled:
-                cached = self._get_cache(f"user:{user_id}")
-                if cached:
-                    return cached
-            
-            query = "SELECT * FROM users WHERE user_id = ?"
-            row = await self._fetch_one(query, (user_id,))
-            
-            if row:
-                user_data = UserData(**row)
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+                row = cursor.fetchone()
                 
-                # حفظ في الكاش
-                if self.cache_enabled:
-                    self._set_cache(f"user:{user_id}", user_data)
+                if row:
+                    return UserData(
+                        user_id=row['user_id'],
+                        first_name=row['first_name'],
+                        username=row['username'],
+                        join_date=row['join_date'],
+                        is_banned=bool(row['is_banned']),
+                        is_sudo=bool(row['is_sudo']),
+                        language=row['language'],
+                        total_plays=row['total_plays'],
+                        last_activity=row['last_activity']
+                    )
+                return None
                 
-                return user_data
-            
-            return None
-            
         except Exception as e:
-            logger.error(f"❌ فشل في جلب بيانات المستخدم {user_id}: {e}")
+            logger.error(f"❌ خطأ في جلب بيانات المستخدم {user_id}: {e}")
             return None
     
-    async def update_user_activity(self, user_id: int) -> bool:
-        """تحديث نشاط المستخدم"""
+    async def ban_user(self, user_id: int) -> bool:
+        """حظر مستخدم"""
+        return await self._update_user_field(user_id, 'is_banned', True)
+    
+    async def unban_user(self, user_id: int) -> bool:
+        """إلغاء حظر مستخدم"""
+        return await self._update_user_field(user_id, 'is_banned', False)
+    
+    async def is_banned_user(self, user_id: int) -> bool:
+        """التحقق من حظر المستخدم"""
         try:
-            query = "UPDATE users SET last_activity = ? WHERE user_id = ?"
-            await self._execute(query, (datetime.now(), user_id))
+            user_data = await self.get_user_data(user_id)
+            return user_data.is_banned if user_data else False
+        except Exception:
+            return False
+    
+    # ==================== إدارة المجموعات ====================
+    
+    async def add_served_chat(self, chat_id: int, chat_title: str = "", chat_type: str = "") -> bool:
+        """إضافة مجموعة للخدمة"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    '''INSERT OR REPLACE INTO chats 
+                       (chat_id, chat_title, chat_type, last_activity) 
+                       VALUES (?, ?, ?, ?)''',
+                    (chat_id, chat_title, chat_type, datetime.now().isoformat())
+                )
+                conn.commit()
             
-            # تحديث الكاش
-            if self.cache_enabled:
-                self._invalidate_cache(f"user:{user_id}")
-            
+            self.stats['queries_executed'] += 1
             return True
             
         except Exception as e:
-            logger.error(f"❌ فشل في تحديث نشاط المستخدم {user_id}: {e}")
+            logger.error(f"❌ خطأ في إضافة المجموعة {chat_id}: {e}")
+            self.stats['errors_count'] += 1
             return False
     
-    # ============================================
-    # وظائف المحادثات
-    # ============================================
+    async def blacklist_chat(self, chat_id: int) -> bool:
+        """إضافة مجموعة للقائمة السوداء"""
+        return await self._update_chat_field(chat_id, 'is_blacklisted', True)
     
-    async def add_chat(self, chat_data: ChatData) -> bool:
-        """إضافة محادثة جديدة"""
+    async def whitelist_chat(self, chat_id: int) -> bool:
+        """إزالة مجموعة من القائمة السوداء"""
+        return await self._update_chat_field(chat_id, 'is_blacklisted', False)
+    
+    async def is_blacklisted_chat(self, chat_id: int) -> bool:
+        """التحقق من وجود المجموعة في القائمة السوداء"""
         try:
-            query = """
-            INSERT OR REPLACE INTO chats 
-            (chat_id, chat_type, title, username, language, is_banned, join_date, last_activity, total_plays, settings)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            params = (
-                chat_data.chat_id, chat_data.chat_type, chat_data.title,
-                chat_data.username, chat_data.language, chat_data.is_banned,
-                chat_data.join_date, chat_data.last_activity, chat_data.total_plays,
-                json.dumps(chat_data.settings)
-            )
-            
-            await self._execute(query, params)
-            
-            # تحديث الكاش
-            if self.cache_enabled:
-                self._set_cache(f"chat:{chat_data.chat_id}", chat_data)
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ فشل في إضافة المحادثة {chat_data.chat_id}: {e}")
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT is_blacklisted FROM chats WHERE chat_id = ?',
+                    (chat_id,)
+                )
+                row = cursor.fetchone()
+                return bool(row['is_blacklisted']) if row else False
+        except Exception:
             return False
     
-    async def get_chat(self, chat_id: int) -> Optional[ChatData]:
-        """الحصول على بيانات المحادثة"""
-        try:
-            # البحث في الكاش أولاً
-            if self.cache_enabled:
-                cached = self._get_cache(f"chat:{chat_id}")
-                if cached:
-                    return cached
-            
-            query = "SELECT * FROM chats WHERE chat_id = ?"
-            row = await self._fetch_one(query, (chat_id,))
-            
-            if row:
-                # تحويل settings من JSON
-                if row['settings']:
-                    row['settings'] = json.loads(row['settings'])
-                else:
-                    row['settings'] = {}
-                
-                chat_data = ChatData(**row)
-                
-                # حفظ في الكاش
-                if self.cache_enabled:
-                    self._set_cache(f"chat:{chat_id}", chat_data)
-                
-                return chat_data
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"❌ فشل في جلب بيانات المحادثة {chat_id}: {e}")
-            return None
-    
-    # ============================================
-    # وظائف الحسابات المساعدة
-    # ============================================
+    # ==================== إدارة الحسابات المساعدة ====================
     
     async def add_assistant(self, assistant_data: AssistantData) -> bool:
         """إضافة حساب مساعد"""
         try:
-            query = """
-            INSERT OR REPLACE INTO assistants 
-            (assistant_id, session_string, name, username, phone, is_active, is_connected, created_date, last_used, total_calls, active_calls)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            params = (
-                assistant_data.assistant_id, assistant_data.session_string,
-                assistant_data.name, assistant_data.username, assistant_data.phone,
-                assistant_data.is_active, assistant_data.is_connected,
-                assistant_data.created_date, assistant_data.last_used,
-                assistant_data.total_calls, assistant_data.active_calls
-            )
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    '''INSERT OR REPLACE INTO assistants 
+                       (assistant_id, session_string, name, phone, is_active) 
+                       VALUES (?, ?, ?, ?, ?)''',
+                    (assistant_data.assistant_id, assistant_data.session_string,
+                     assistant_data.name, assistant_data.phone, assistant_data.is_active)
+                )
+                conn.commit()
             
-            await self._execute(query, params)
-            
-            # تحديث الكاش
-            if self.cache_enabled:
-                self._invalidate_cache("assistants:all")
-            
+            self.stats['queries_executed'] += 1
             return True
             
         except Exception as e:
-            logger.error(f"❌ فشل في إضافة الحساب المساعد {assistant_data.assistant_id}: {e}")
+            logger.error(f"❌ خطأ في إضافة المساعد {assistant_data.assistant_id}: {e}")
+            self.stats['errors_count'] += 1
             return False
     
     async def get_all_assistants(self) -> List[AssistantData]:
         """الحصول على جميع الحسابات المساعدة"""
         try:
-            # البحث في الكاش أولاً
-            if self.cache_enabled:
-                cached = self._get_cache("assistants:all")
-                if cached:
-                    return cached
-            
-            query = "SELECT * FROM assistants WHERE is_active = TRUE ORDER BY assistant_id"
-            rows = await self._fetch_all(query)
-            
-            assistants = [AssistantData(**row) for row in rows]
-            
-            # حفظ في الكاش
-            if self.cache_enabled:
-                self._set_cache("assistants:all", assistants, ttl_minutes=5)
-            
-            return assistants
-            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT * FROM assistants WHERE is_active = 1')
+                rows = cursor.fetchall()
+                
+                return [
+                    AssistantData(
+                        assistant_id=row['assistant_id'],
+                        session_string=row['session_string'],
+                        name=row['name'],
+                        phone=row['phone'],
+                        is_active=bool(row['is_active']),
+                        added_date=row['added_date'],
+                        last_used=row['last_used'],
+                        total_calls=row['total_calls'],
+                        total_errors=row['total_errors']
+                    )
+                    for row in rows
+                ]
+                
         except Exception as e:
-            logger.error(f"❌ فشل في جلب الحسابات المساعدة: {e}")
+            logger.error(f"❌ خطأ في جلب الحسابات المساعدة: {e}")
             return []
     
-    async def update_assistant_status(self, assistant_id: int, is_connected: bool, active_calls: int = None) -> bool:
-        """تحديث حالة الحساب المساعد"""
+    # ==================== تاريخ التشغيل ====================
+    
+    async def add_play_history(self, history: PlayHistory) -> bool:
+        """إضافة سجل تشغيل"""
         try:
-            if active_calls is not None:
-                query = "UPDATE assistants SET is_connected = ?, active_calls = ?, last_used = ? WHERE assistant_id = ?"
-                params = (is_connected, active_calls, datetime.now(), assistant_id)
-            else:
-                query = "UPDATE assistants SET is_connected = ?, last_used = ? WHERE assistant_id = ?"
-                params = (is_connected, datetime.now(), assistant_id)
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    '''INSERT INTO play_history 
+                       (chat_id, user_id, song_title, song_url, duration, platform) 
+                       VALUES (?, ?, ?, ?, ?, ?)''',
+                    (history.chat_id, history.user_id, history.song_title,
+                     history.song_url, history.duration, history.platform)
+                )
+                conn.commit()
             
-            await self._execute(query, params)
+            # تحديث إحصائيات المستخدم والمجموعة
+            await self._update_user_field(history.user_id, 'total_plays', 
+                                        f'total_plays + 1', is_expression=True)
+            await self._update_chat_field(history.chat_id, 'total_plays', 
+                                        f'total_plays + 1', is_expression=True)
             
-            # تحديث الكاش
-            if self.cache_enabled:
-                self._invalidate_cache("assistants:all")
+            self.stats['queries_executed'] += 3
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في إضافة سجل التشغيل: {e}")
+            self.stats['errors_count'] += 1
+            return False
+    
+    # ==================== الحالات المؤقتة ====================
+    
+    async def set_temp_state(self, key: str, value: Any, expires_in: int = None) -> bool:
+        """تعيين حالة مؤقتة"""
+        try:
+            expires_at = None
+            if expires_in:
+                expires_at = (datetime.now() + timedelta(seconds=expires_in)).isoformat()
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    '''INSERT OR REPLACE INTO temp_states (key, value, expires_at) 
+                       VALUES (?, ?, ?)''',
+                    (key, json.dumps(value), expires_at)
+                )
+                conn.commit()
+            
+            self.stats['queries_executed'] += 1
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تعيين الحالة المؤقتة {key}: {e}")
+            return False
+    
+    async def get_temp_state(self, key: str, default: Any = None) -> Any:
+        """الحصول على حالة مؤقتة"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT value, expires_at FROM temp_states WHERE key = ?',
+                    (key,)
+                )
+                row = cursor.fetchone()
+                
+                if row:
+                    # التحقق من انتهاء الصلاحية
+                    if row['expires_at']:
+                        expires_at = datetime.fromisoformat(row['expires_at'])
+                        if datetime.now() > expires_at:
+                            await self.delete_temp_state(key)
+                            return default
+                    
+                    return json.loads(row['value'])
+                
+                return default
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في جلب الحالة المؤقتة {key}: {e}")
+            return default
+    
+    async def delete_temp_state(self, key: str) -> bool:
+        """حذف حالة مؤقتة"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM temp_states WHERE key = ?', (key,))
+                conn.commit()
             
             return True
             
         except Exception as e:
-            logger.error(f"❌ فشل في تحديث حالة الحساب المساعد {assistant_id}: {e}")
+            logger.error(f"❌ خطأ في حذف الحالة المؤقتة {key}: {e}")
             return False
     
-    # ============================================
-    # وظائف الإحصائيات
-    # ============================================
+    # ==================== وظائف مساعدة ====================
     
-    async def get_stats(self) -> Dict[str, Any]:
-        """الحصول على إحصائيات البوت"""
+    async def _update_user_field(self, user_id: int, field: str, value: Any, is_expression: bool = False) -> bool:
+        """تحديث حقل في جدول المستخدمين"""
         try:
-            stats = {}
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                if is_expression:
+                    cursor.execute(
+                        f'UPDATE users SET {field} = {value}, last_activity = ? WHERE user_id = ?',
+                        (datetime.now().isoformat(), user_id)
+                    )
+                else:
+                    cursor.execute(
+                        f'UPDATE users SET {field} = ?, last_activity = ? WHERE user_id = ?',
+                        (value, datetime.now().isoformat(), user_id)
+                    )
+                conn.commit()
             
-            # إحصائيات المستخدمين
-            users_count = await self._fetch_one("SELECT COUNT(*) as count FROM users")
-            stats['users'] = users_count['count'] if users_count else 0
-            
-            # إحصائيات المحادثات
-            chats_count = await self._fetch_one("SELECT COUNT(*) as count FROM chats")
-            stats['chats'] = chats_count['count'] if chats_count else 0
-            
-            # إحصائيات الحسابات المساعدة
-            assistants_count = await self._fetch_one("SELECT COUNT(*) as count FROM assistants WHERE is_active = TRUE")
-            stats['assistants'] = assistants_count['count'] if assistants_count else 0
-            
-            # الحسابات المتصلة
-            connected_assistants = await self._fetch_one("SELECT COUNT(*) as count FROM assistants WHERE is_connected = TRUE")
-            stats['connected_assistants'] = connected_assistants['count'] if connected_assistants else 0
-            
-            # إجمالي التشغيلات
-            total_plays = await self._fetch_one("SELECT COUNT(*) as count FROM play_history")
-            stats['total_plays'] = total_plays['count'] if total_plays else 0
-            
-            # التشغيلات اليوم
-            today_plays = await self._fetch_one(
-                "SELECT COUNT(*) as count FROM play_history WHERE DATE(played_at) = DATE('now')"
-            )
-            stats['plays_today'] = today_plays['count'] if today_plays else 0
-            
-            return stats
+            return True
             
         except Exception as e:
-            logger.error(f"❌ فشل في جلب الإحصائيات: {e}")
-            return {}
+            logger.error(f"❌ خطأ في تحديث حقل المستخدم {field}: {e}")
+            return False
     
-    # ============================================
-    # وظائف التخزين المؤقت
-    # ============================================
-    
-    def _set_cache(self, key: str, value: Any, ttl_minutes: int = 15):
-        """حفظ في الكاش"""
-        if not self.cache_enabled:
-            return
-        
-        self.cache[key] = value
-        self.cache_ttl[key] = datetime.now() + timedelta(minutes=ttl_minutes)
-    
-    def _get_cache(self, key: str) -> Optional[Any]:
-        """جلب من الكاش"""
-        if not self.cache_enabled:
-            return None
-        
-        if key in self.cache:
-            # فحص انتهاء الصلاحية
-            if key in self.cache_ttl and datetime.now() > self.cache_ttl[key]:
-                self._invalidate_cache(key)
-                return None
+    async def _update_chat_field(self, chat_id: int, field: str, value: Any, is_expression: bool = False) -> bool:
+        """تحديث حقل في جدول المجموعات"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                if is_expression:
+                    cursor.execute(
+                        f'UPDATE chats SET {field} = {value}, last_activity = ? WHERE chat_id = ?',
+                        (datetime.now().isoformat(), chat_id)
+                    )
+                else:
+                    cursor.execute(
+                        f'UPDATE chats SET {field} = ?, last_activity = ? WHERE chat_id = ?',
+                        (value, datetime.now().isoformat(), chat_id)
+                    )
+                conn.commit()
             
-            return self.cache[key]
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تحديث حقل المجموعة {field}: {e}")
+            return False
+    
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """التحقق من صحة الكاش"""
+        if not self.cache_enabled or cache_key not in self.cache['timestamps']:
+            return False
         
-        return None
+        timestamp = self.cache['timestamps'][cache_key]
+        return time.time() - timestamp < self.cache_ttl
     
-    def _invalidate_cache(self, key: str):
-        """إلغاء الكاش"""
-        if key in self.cache:
-            del self.cache[key]
-        if key in self.cache_ttl:
-            del self.cache_ttl[key]
+    # ==================== مهام الصيانة ====================
     
-    def _clear_cache(self):
-        """مسح جميع الكاش"""
-        self.cache.clear()
-        self.cache_ttl.clear()
+    async def _cleanup_cache(self):
+        """تنظيف الكاش المنتهي الصلاحية"""
+        while True:
+            try:
+                await asyncio.sleep(300)  # كل 5 دقائق
+                
+                if not self.cache_enabled:
+                    continue
+                
+                current_time = time.time()
+                expired_keys = []
+                
+                for key, timestamp in self.cache['timestamps'].items():
+                    if current_time - timestamp > self.cache_ttl:
+                        expired_keys.append(key)
+                
+                # إزالة الكاش المنتهي الصلاحية
+                for key in expired_keys:
+                    cache_type = key.split('_')[0]
+                    if cache_type in self.cache:
+                        item_id = int(key.split('_')[1])
+                        if item_id in self.cache[cache_type]:
+                            del self.cache[cache_type][item_id]
+                    del self.cache['timestamps'][key]
+                
+                if expired_keys:
+                    logger.info(f"🧹 تم تنظيف {len(expired_keys)} عنصر من الكاش")
+                
+            except Exception as e:
+                logger.error(f"❌ خطأ في تنظيف الكاش: {e}")
     
-    # ============================================
-    # مهام الصيانة
-    # ============================================
+    async def _backup_scheduler(self):
+        """جدولة النسخ الاحتياطية"""
+        while True:
+            try:
+                await asyncio.sleep(86400)  # كل 24 ساعة
+                await self.create_backup()
+                
+            except Exception as e:
+                logger.error(f"❌ خطأ في جدولة النسخ الاحتياطي: {e}")
     
-    async def _maintenance_tasks(self):
-        """مهام الصيانة الدورية"""
+    async def _statistics_updater(self):
+        """تحديث الإحصائيات"""
         while True:
             try:
                 await asyncio.sleep(3600)  # كل ساعة
                 
-                # تنظيف الكاش المنتهي الصلاحية
-                await self._cleanup_expired_cache()
+                # تنظيف الحالات المؤقتة المنتهية الصلاحية
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        'DELETE FROM temp_states WHERE expires_at IS NOT NULL AND expires_at < ?',
+                        (datetime.now().isoformat(),)
+                    )
+                    deleted_count = cursor.rowcount
+                    conn.commit()
                 
-                # النسخ الاحتياطي التلقائي
-                if config.database.auto_backup:
-                    await self._create_backup()
+                if deleted_count > 0:
+                    logger.info(f"🗑️ تم حذف {deleted_count} حالة مؤقتة منتهية الصلاحية")
                 
             except Exception as e:
-                logger.error(f"❌ خطأ في مهام الصيانة: {e}")
+                logger.error(f"❌ خطأ في تحديث الإحصائيات: {e}")
     
-    async def _cleanup_expired_cache(self):
-        """تنظيف الكاش المنتهي الصلاحية"""
-        if not self.cache_enabled:
-            return
-        
-        now = datetime.now()
-        expired_keys = [
-            key for key, expire_time in self.cache_ttl.items()
-            if now > expire_time
-        ]
-        
-        for key in expired_keys:
-            self._invalidate_cache(key)
-        
-        if expired_keys:
-            logger.info(f"🧹 تم تنظيف {len(expired_keys)} عنصر من الكاش")
+    # ==================== إدارة النسخ الاحتياطية ====================
     
-    async def _create_backup(self):
+    async def create_backup(self) -> bool:
         """إنشاء نسخة احتياطية"""
         try:
-            if self.is_sqlite:
-                import shutil
-                backup_dir = Path("backups")
-                backup_dir.mkdir(exist_ok=True)
-                
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                backup_file = backup_dir / f"zemusic_backup_{timestamp}.db"
-                
-                db_file = Path(self.db_url.replace("sqlite:///", ""))
-                shutil.copy2(db_file, backup_file)
-                
-                logger.info(f"💾 تم إنشاء نسخة احتياطية: {backup_file}")
-                
-                # حذف النسخ القديمة
-                await self._cleanup_old_backups()
-                
+            import shutil
+            backup_path = f"{self.db_path}.backup.{int(time.time())}"
+            shutil.copy2(self.db_path, backup_path)
+            
+            self.stats['last_backup'] = datetime.now().isoformat()
+            logger.info(f"💾 تم إنشاء نسخة احتياطية: {backup_path}")
+            return True
+            
         except Exception as e:
             logger.error(f"❌ فشل في إنشاء النسخة الاحتياطية: {e}")
+            return False
     
-    async def _cleanup_old_backups(self):
-        """حذف النسخ الاحتياطية القديمة"""
+    # ==================== الإحصائيات ====================
+    
+    async def get_statistics(self) -> Dict[str, Any]:
+        """الحصول على إحصائيات قاعدة البيانات"""
         try:
-            backup_dir = Path("backups")
-            if not backup_dir.exists():
-                return
-            
-            backups = list(backup_dir.glob("zemusic_backup_*.db"))
-            backups.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-            
-            # الاحتفاظ بآخر N نسخة
-            keep_count = config.database.backup_keep_count
-            if len(backups) > keep_count:
-                for backup in backups[keep_count:]:
-                    backup.unlink()
-                    logger.info(f"🗑️ تم حذف النسخة الاحتياطية القديمة: {backup}")
-                    
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # إحصائيات المستخدمين
+                cursor.execute('SELECT COUNT(*) FROM users')
+                total_users = cursor.fetchone()[0]
+                
+                cursor.execute('SELECT COUNT(*) FROM users WHERE is_banned = 0')
+                active_users = cursor.fetchone()[0]
+                
+                # إحصائيات المجموعات
+                cursor.execute('SELECT COUNT(*) FROM chats')
+                total_chats = cursor.fetchone()[0]
+                
+                cursor.execute('SELECT COUNT(*) FROM chats WHERE is_blacklisted = 0')
+                active_chats = cursor.fetchone()[0]
+                
+                # إحصائيات التشغيل
+                cursor.execute('SELECT COUNT(*) FROM play_history')
+                total_plays = cursor.fetchone()[0]
+                
+                cursor.execute('SELECT COUNT(*) FROM play_history WHERE played_at >= datetime("now", "-1 day")')
+                plays_today = cursor.fetchone()[0]
+                
+                # إحصائيات الحسابات المساعدة
+                cursor.execute('SELECT COUNT(*) FROM assistants WHERE is_active = 1')
+                active_assistants = cursor.fetchone()[0]
+                
+                return {
+                    'database': {
+                        **self.stats,
+                        'cache_enabled': self.cache_enabled,
+                        'cache_size': len(self.cache.get('timestamps', {}))
+                    },
+                    'users': {
+                        'total': total_users,
+                        'active': active_users,
+                        'banned': total_users - active_users
+                    },
+                    'chats': {
+                        'total': total_chats,
+                        'active': active_chats,
+                        'blacklisted': total_chats - active_chats
+                    },
+                    'plays': {
+                        'total': total_plays,
+                        'today': plays_today
+                    },
+                    'assistants': {
+                        'active': active_assistants
+                    }
+                }
+                
         except Exception as e:
-            logger.error(f"❌ فشل في تنظيف النسخ الاحتياطية: {e}")
+            logger.error(f"❌ خطأ في جلب الإحصائيات: {e}")
+            return {}
     
-    def _get_db_type(self) -> str:
-        """الحصول على نوع قاعدة البيانات"""
-        if self.is_sqlite:
-            return "SQLite"
-        elif self.is_postgresql:
-            return "PostgreSQL"
-        else:
-            return "Unknown"
-    
-    async def close(self):
-        """إغلاق الاتصالات"""
+    async def health_check(self) -> bool:
+        """فحص صحة قاعدة البيانات"""
         try:
-            if self.connection:
-                await self.connection.close()
-                
-            if self.connection_pool:
-                await self.connection_pool.close()
-                
-            if self.redis_client:
-                await self.redis_client.close()
-                
-            logger.info("✅ تم إغلاق اتصالات قاعدة البيانات")
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT 1')
+                cursor.fetchone()
+            return True
             
         except Exception as e:
-            logger.error(f"❌ خطأ في إغلاق قاعدة البيانات: {e}")
+            logger.error(f"❌ فشل فحص صحة قاعدة البيانات: {e}")
+            return False
 
 # إنشاء مثيل عام لمدير قاعدة البيانات
 db = DatabaseManager()
