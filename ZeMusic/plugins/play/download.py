@@ -57,7 +57,7 @@ import config
 from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.logging import LOGGER
 from ZeMusic.utils.database import is_search_enabled, is_search_enabled1
-from ZeMusic.utils.monitoring import PerformanceMonitor
+# from ZeMusic.utils.monitoring import PerformanceMonitor
 
 # --- إعدادات النظام الذكي ---
 REQUEST_TIMEOUT = 8
@@ -291,7 +291,7 @@ class HyperSpeedDownloader:
             'ytdlp_no_cookies': {'weight': 70, 'active': True, 'avg_time': 6.0},
             'youtube_search': {'weight': 60, 'active': True, 'avg_time': 3.5}
         }
-        self.monitor = PerformanceMonitor()
+        # self.monitor = PerformanceMonitor()
         self.active_tasks = set()
         self.cache_hits = 0
         self.cache_misses = 0
