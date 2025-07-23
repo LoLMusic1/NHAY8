@@ -1862,8 +1862,8 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
             all_content_words = title_words | artist_words
             match_ratio = len(query_words & all_content_words) / len(query_words) if query_words else 0
             
-            # التحقق من الحد الأدنى للتطابق (60% على الأقل)
-            MIN_MATCH_RATIO = 0.6
+            # التحقق من الحد الأدنى للتطابق (80% على الأقل)
+            MIN_MATCH_RATIO = 0.8
             if match_ratio < MIN_MATCH_RATIO:
                 LOGGER(__name__).info(f"❌ نسبة التطابق منخفضة جداً: {match_ratio:.1%} (الحد الأدنى: {MIN_MATCH_RATIO:.1%})")
                 conn.close()
@@ -2148,7 +2148,7 @@ async def search_in_telegram_cache(query: str, bot_client) -> Optional[Dict]:
                     popularity_bonus = min(result[9] / 10, 0.1)  # أقصى بونص 10%
                     composite_score += popularity_bonus
                     
-                    if composite_score > best_score and composite_score > 0.4:  # حد أدنى 40%
+                    if composite_score > best_score and composite_score > 0.8:  # حد أدنى 80%
                         best_score = composite_score
                         best_match = result
                 
@@ -2163,7 +2163,7 @@ async def search_in_telegram_cache(query: str, bot_client) -> Optional[Dict]:
                     """, (best_match[0],))
                     conn.commit()
                     
-                    LOGGER(__name__).info(f"✅ مطابقة ذكية في قاعدة البيانات: {best_score:.1%}")
+                    LOGGER(__name__).info(f"✅ مطابقة قوية في التخزين الذكي: {best_score:.1%}")
                     
                     conn.close()
                     return {
@@ -2182,6 +2182,10 @@ async def search_in_telegram_cache(query: str, bot_client) -> Optional[Dict]:
                     }
             
             conn.close()
+            
+            # إذا لم نجد مطابقة قوية
+            if not best_match:
+                LOGGER(__name__).info("❌ لم يتم العثور على مطابقة قوية في التخزين الذكي (الحد الأدنى: 80%)")
             
         except Exception as db_error:
             LOGGER(__name__).warning(f"⚠️ خطأ في البحث بقاعدة البيانات: {db_error}")
