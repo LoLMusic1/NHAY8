@@ -888,8 +888,13 @@ class HyperSpeedDownloader:
             # إعداد محاولات التحميل مع الكوكيز المختلفة
             ydl_configs = []
             
-            # إضافة محاولات مع كل ملف كوكيز مع التدوير
-            for i, cookie_file in enumerate(cookies_files[:5], 1):  # أول 5 ملفات كوكيز
+            # إضافة محاولات مع كل ملف كوكيز مع التوزيع الديناميكي
+            distribution = calculate_cookies_distribution(len(cookies_files))
+            primary_count = distribution['primary']
+            
+            LOGGER(__name__).info(f"🍪 التوزيع الديناميكي: أساسي={primary_count}, ثانوي={distribution['secondary']}, متبقي={distribution['remaining']}")
+            
+            for i, cookie_file in enumerate(cookies_files[:primary_count], 1):
                 ydl_configs.append({
                     'format': 'bestaudio/best',
                     'outtmpl': str(temp_dir / f'{video_id}_cookie_{i}.%(ext)s'),
@@ -900,7 +905,8 @@ class HyperSpeedDownloader:
                     'retries': 1,
                     'cookiefile': cookie_file,
                     'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    '_cookie_file': cookie_file  # تتبع ملف الكوكيز
+                    '_cookie_file': cookie_file,  # تتبع ملف الكوكيز
+                    '_cookie_index': i  # رقم الكوكيز
                 })
             
             # إضافة محاولات بدون كوكيز مع user agents مختلفة
@@ -1210,12 +1216,45 @@ def cleanup_blocked_cookies():
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في تنظيف الكوكيز: {e}")
 
+def calculate_cookies_distribution(total_count: int) -> Dict[str, int]:
+    """حساب توزيع الكوكيز بشكل ديناميكي"""
+    if total_count == 0:
+        return {'primary': 0, 'secondary': 0, 'remaining': 0}
+    
+    # توزيع ذكي حسب العدد الإجمالي
+    if total_count <= 5:
+        # عدد قليل: استخدم الكل في المرحلة الأساسية
+        return {'primary': total_count, 'secondary': 0, 'remaining': 0}
+    
+    elif total_count <= 10:
+        # عدد متوسط: قسم بين أساسي وثانوي
+        primary = total_count // 2
+        secondary = total_count - primary
+        return {'primary': primary, 'secondary': secondary, 'remaining': 0}
+    
+    elif total_count <= 20:
+        # عدد كبير: توزيع متوازن
+        primary = max(4, total_count // 3)
+        secondary = max(3, total_count // 4)
+        remaining = total_count - primary - secondary
+        return {'primary': primary, 'secondary': secondary, 'remaining': remaining}
+    
+    else:
+        # عدد كبير جداً: توزيع محدود لتجنب الإفراط
+        primary = min(8, max(5, total_count // 4))
+        secondary = min(6, max(4, total_count // 5))
+        remaining = min(10, total_count - primary - secondary)
+        return {'primary': primary, 'secondary': secondary, 'remaining': remaining}
+
 def get_cookies_statistics():
-    """إحصائيات استخدام الكوكيز"""
+    """إحصائيات استخدام الكوكيز مع التوزيع الديناميكي"""
     try:
         total_cookies = len(glob.glob("cookies/cookies*.txt"))
         available_cookies = len(get_available_cookies())
         blocked_cookies = len(BLOCKED_COOKIES)
+        
+        # حساب التوزيع الديناميكي
+        distribution = calculate_cookies_distribution(available_cookies)
         
         # أكثر الكوكيز استخداماً
         most_used = max(COOKIES_USAGE_COUNT.items(), key=lambda x: x[1]) if COOKIES_USAGE_COUNT else ("لا يوجد", 0)
@@ -1224,6 +1263,7 @@ def get_cookies_statistics():
             'total': total_cookies,
             'available': available_cookies, 
             'blocked': blocked_cookies,
+            'distribution': distribution,
             'most_used_file': os.path.basename(most_used[0]) if most_used[0] != "لا يوجد" else "لا يوجد",
             'most_used_count': most_used[1],
             'usage_distribution': dict(COOKIES_USAGE_COUNT)
@@ -1918,9 +1958,24 @@ async def try_alternative_downloads(video_id: str, title: str) -> Optional[Dict]
         if api_result and api_result.get('success'):
             return api_result
         
-        # محاولة 2: تدوير الكوكيز الذكي
+        # محاولة 2: تدوير الكوكيز الذكي (الدفعة الثانية)
         cookies_files = get_available_cookies()
-        for i, cookie_file in enumerate(cookies_files[5:10], 1):  # الملفات 6-10
+        
+        # حساب التوزيع الديناميكي
+        distribution = calculate_cookies_distribution(len(cookies_files))
+        primary_count = distribution['primary']
+        secondary_count = distribution['secondary']
+        
+        if secondary_count == 0:
+            LOGGER(__name__).info("⚠️ لا توجد كوكيز ثانوية - تخطي هذه المرحلة")
+            return None
+        
+        start_index = primary_count
+        end_index = primary_count + secondary_count
+        
+        LOGGER(__name__).info(f"🔄 استخدام {secondary_count} كوكيز ثانوي من المؤشر {start_index} إلى {end_index}")
+        
+        for i, cookie_file in enumerate(cookies_files[start_index:end_index], start_index + 1):
             try:
                 LOGGER(__name__).info(f"🍪 محاولة كوكيز بديل #{i}: {os.path.basename(cookie_file)}")
                 
@@ -1981,10 +2036,26 @@ async def try_alternative_downloads(video_id: str, title: str) -> Optional[Dict]
 async def force_download_any_way(video_id: str, title: str) -> Optional[Dict]:
     """محاولة تحميل قسري بجميع الطرق المتاحة"""
     try:
-        # محاولة جميع ملفات الكوكيز المتبقية
+        # محاولة جميع ملفات الكوكيز المتبقية (الدفعة الأخيرة)
         cookies_files = get_available_cookies()
         
-        for i, cookie_file in enumerate(cookies_files[10:], 1):  # الملفات المتبقية
+        # حساب التوزيع الديناميكي
+        distribution = calculate_cookies_distribution(len(cookies_files))
+        primary_count = distribution['primary']
+        secondary_count = distribution['secondary']
+        remaining_count = distribution['remaining']
+        
+        if remaining_count == 0:
+            LOGGER(__name__).info("⚠️ لا توجد كوكيز متبقية للمحاولة القسرية")
+            return None
+        
+        start_index = primary_count + secondary_count
+        end_index = start_index + remaining_count
+        remaining_files = cookies_files[start_index:end_index]
+        
+        LOGGER(__name__).info(f"🚀 محاولة قسرية مع {len(remaining_files)} ملف كوكيز متبقي (من {start_index} إلى {end_index})")
+        
+        for i, cookie_file in enumerate(remaining_files, start_index + 1):
             try:
                 LOGGER(__name__).info(f"🚀 محاولة قسرية #{i}: {os.path.basename(cookie_file)}")
                 
@@ -2085,6 +2156,11 @@ async def smart_download_handler(event):
         
         # تنظيف دوري للكوكيز المحظورة
         cleanup_blocked_cookies()
+        
+        # عرض إحصائيات الكوكيز الديناميكية
+        stats = get_cookies_statistics()
+        if stats:
+            LOGGER(__name__).info(f"📊 كوكيز: {stats['available']}/{stats['total']} متاح | توزيع: أساسي={stats['distribution']['primary']}, ثانوي={stats['distribution']['secondary']}, متبقي={stats['distribution']['remaining']}")
         
         chat_id = event.chat_id
         if chat_id > 0:  # محادثة خاصة
