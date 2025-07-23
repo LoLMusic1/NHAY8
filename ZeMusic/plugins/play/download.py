@@ -1123,22 +1123,22 @@ from collections import defaultdict, deque
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-# حدود الموارد للحمولة العالية
-MAX_CONCURRENT_DOWNLOADS = 50  # أقصى تحميلات متوازية
-MAX_CONCURRENT_SEARCHES = 100  # أقصى عمليات بحث متوازية
-MAX_QUEUE_SIZE = 1000  # حد أقصى لطابور الانتظار
-RATE_LIMIT_WINDOW = 60  # نافزة زمنية بالثواني
-MAX_REQUESTS_PER_WINDOW = 500  # أقصى طلبات في النافزة
+# إعدادات الحمولة العالية (لا نهائية)
+MAX_CONCURRENT_DOWNLOADS = float('inf')  # لا حد أقصى للتحميلات
+MAX_CONCURRENT_SEARCHES = float('inf')   # لا حد أقصى للبحث
+MAX_QUEUE_SIZE = float('inf')           # لا حد أقصى للطابور
+RATE_LIMIT_WINDOW = 60                  # نافزة زمنية بالثواني
+MAX_REQUESTS_PER_WINDOW = 1000          # حد مرن للطلبات (مضاعف)
 
-# أدوات إدارة الموارد
-download_semaphore = Semaphore(MAX_CONCURRENT_DOWNLOADS)
-search_semaphore = Semaphore(MAX_CONCURRENT_SEARCHES)
-thread_pool = ThreadPoolExecutor(max_workers=20)
+# أدوات إدارة الموارد (بدون حدود)
+# download_semaphore = None  # إزالة التحديد
+# search_semaphore = None    # إزالة التحديد
+thread_pool = ThreadPoolExecutor(max_workers=100)  # زيادة عدد الخيوط
 
-# تتبع معدل الطلبات
+# تتبع معدل الطلبات (مرن)
 request_times = defaultdict(lambda: deque(maxlen=MAX_REQUESTS_PER_WINDOW))
 active_downloads = {}
-download_queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
+# download_queue = asyncio.Queue()  # طابور بلا حدود (لن نحتاجه)
 
 # إحصائيات الأداء
 PERFORMANCE_STATS = {
@@ -1154,7 +1154,7 @@ PERFORMANCE_STATS = {
 }
 
 async def check_rate_limit(user_id: int) -> bool:
-    """فحص معدل الطلبات للمستخدم"""
+    """فحص معدل الطلبات للمستخدم (مرن)"""
     current_time = time.time()
     user_requests = request_times[user_id]
     
@@ -1162,14 +1162,18 @@ async def check_rate_limit(user_id: int) -> bool:
     while user_requests and current_time - user_requests[0] > RATE_LIMIT_WINDOW:
         user_requests.popleft()
     
-    # فحص الحد الأقصى
+    # فحص مرن - تحذير فقط عند تجاوز الحد المقترح
     if len(user_requests) >= MAX_REQUESTS_PER_WINDOW:
         PERFORMANCE_STATS['rate_limited'] += 1
-        return False
+        # تسجيل تحذير لكن السماح بالمتابعة
+        LOGGER(__name__).warning(f"⚠️ المستخدم {user_id} تجاوز الحد المقترح: {len(user_requests)} طلب في {RATE_LIMIT_WINDOW}s")
+        
+        # السماح بالمتابعة للحمولة العالية
+        # return False  # معطل - لا حدود صارمة
     
     # إضافة الطلب الحالي
     user_requests.append(current_time)
-    return True
+    return True  # السماح دائماً
 
 async def update_performance_stats(success: bool, response_time: float, from_cache: bool = False):
     """تحديث إحصائيات الأداء"""
@@ -1194,7 +1198,7 @@ async def update_performance_stats(success: bool, response_time: float, from_cac
     if current_concurrent > PERFORMANCE_STATS['peak_concurrent']:
         PERFORMANCE_STATS['peak_concurrent'] = current_concurrent
     
-    PERFORMANCE_STATS['queue_size'] = download_queue.qsize()
+    PERFORMANCE_STATS['queue_size'] = 0  # لا يوجد طابور - معالجة فورية
 
 def log_performance_stats():
     """تسجيل إحصائيات الأداء"""
@@ -1211,77 +1215,27 @@ def log_performance_stats():
         f"طابور: {stats['queue_size']}"
     )
 
-async def manage_download_queue():
-    """إدارة طابور التحميلات"""
-    while True:
-        try:
-            # معالجة عناصر الطابور
-            if not download_queue.empty():
-                download_task = await download_queue.get()
-                
-                # تشغيل التحميل
-                asyncio.create_task(process_download_task(download_task))
-                download_queue.task_done()
-            
-            await asyncio.sleep(0.1)  # فترة انتظار قصيرة
-            
-        except Exception as e:
-            LOGGER(__name__).error(f"❌ خطأ في إدارة طابور التحميل: {e}")
-            await asyncio.sleep(1)
-
-async def process_download_task(task_data):
-    """معالجة مهمة تحميل واحدة"""
-    async with download_semaphore:
-        try:
-            user_id = task_data.get('user_id')
-            query = task_data.get('query')
-            event = task_data.get('event')
-            
-            # تسجيل بداية المهمة
-            task_id = f"{user_id}_{int(time.time())}"
-            active_downloads[task_id] = {
-                'user_id': user_id,
-                'query': query,
-                'start_time': time.time()
-            }
-            
-            # تنفيذ المهمة
-            await execute_download_task(task_data)
-            
-        except Exception as e:
-            LOGGER(__name__).error(f"❌ خطأ في معالجة مهمة التحميل: {e}")
-        finally:
-            # تنظيف المهمة
-            if task_id in active_downloads:
-                del active_downloads[task_id]
-
-async def execute_download_task(task_data):
-    """تنفيذ مهمة التحميل الفعلية"""
+async def process_unlimited_download(event, user_id: int, start_time: float):
+    """معالجة التحميل بدون حدود"""
     try:
-        event = task_data['event']
-        user_id = task_data['user_id']
-        start_time = task_data['start_time']
+        # تسجيل بداية المهمة
+        task_id = f"{user_id}_{int(time.time() * 1000)}"  # دقة أعلى
+        active_downloads[task_id] = {
+            'user_id': user_id,
+            'start_time': start_time,
+            'task_id': task_id
+        }
         
-        # استخراج الاستعلام
-        match = event.pattern_match
-        if not match:
-            return
-        
-        query = match.group(2) if match.group(2) else ""
-        if not query:
-            await event.reply("📝 **الاستخدام:** `بحث اسم الأغنية`")
-            await update_performance_stats(False, time.time() - start_time)
-            return
-        
-        # تحديث بيانات المهمة
-        task_data['query'] = query
-        
-        # تنفيذ البحث والتحميل العادي
-        await process_normal_download(event, query, user_id, start_time)
+        # تنفيذ البحث والتحميل مباشرة
+        await process_normal_download(event, None, user_id, start_time)
         
     except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في تنفيذ مهمة التحميل: {e}")
-        await update_performance_stats(False, time.time() - task_data['start_time'])
+        LOGGER(__name__).error(f"❌ خطأ في معالجة التحميل اللامحدود: {e}")
+        await update_performance_stats(False, time.time() - start_time)
+    finally:
+        # تنظيف المهمة
+        if task_id in active_downloads:
+            del active_downloads[task_id]
 
 async def process_normal_download(event, query: str, user_id: int, start_time: float):
     """معالجة التحميل العادي مع إدارة الموارد"""
@@ -1307,34 +1261,33 @@ async def process_normal_download(event, query: str, user_id: int, start_time: f
         # إرسال رسالة الحالة
         status_msg = await event.reply("🔍 **جاري البحث في التخزين الذكي...**")
         
-        # البحث المتوازي مع Semaphore
-        async with search_semaphore:
-            parallel_result = await parallel_search_with_monitoring(query, bot_client)
-            
-            if parallel_result and parallel_result.get('success'):
-                search_source = parallel_result.get('search_source', 'unknown')
-                search_time = parallel_result.get('search_time', 0)
-                
-                # تحديث الإحصائيات
-                await update_performance_stats(True, time.time() - start_time, from_cache=True)
-                
-                if search_source == 'database':
-                    await status_msg.edit(f"📤 **تم العثور في الكاش ({search_time:.2f}s) - جاري الإرسال...**")
-                    await send_cached_from_database(event, status_msg, parallel_result, bot_client)
-                    return
-                elif search_source == 'smart_cache':
-                    await status_msg.edit(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s) - جاري الإرسال...**")
-                    await send_cached_audio(event, status_msg, parallel_result, bot_client)
-                    return
-            
-            # إذا لم يجد في التخزين، ابدأ التحميل العادي
-            await status_msg.edit("🔍 **لم يوجد في التخزين - جاري البحث في يوتيوب...**")
-            
-            # هنا يتم استدعاء باقي منطق التحميل العادي الموجود
-            # (سيتم ربطه مع الكود الموجود)
+        # البحث المتوازي بدون حدود
+        parallel_result = await parallel_search_with_monitoring(query, bot_client)
+        
+        if parallel_result and parallel_result.get('success'):
+            search_source = parallel_result.get('search_source', 'unknown')
+            search_time = parallel_result.get('search_time', 0)
             
             # تحديث الإحصائيات
-            await update_performance_stats(True, time.time() - start_time)
+            await update_performance_stats(True, time.time() - start_time, from_cache=True)
+            
+            if search_source == 'database':
+                await status_msg.edit(f"📤 **تم العثور في الكاش ({search_time:.2f}s) - جاري الإرسال...**")
+                await send_cached_from_database(event, status_msg, parallel_result, bot_client)
+                return
+            elif search_source == 'smart_cache':
+                await status_msg.edit(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s) - جاري الإرسال...**")
+                await send_cached_audio(event, status_msg, parallel_result, bot_client)
+                return
+        
+        # إذا لم يجد في التخزين، ابدأ التحميل العادي
+        await status_msg.edit("🔍 **لم يوجد في التخزين - جاري البحث في يوتيوب...**")
+        
+        # هنا يتم استدعاء باقي منطق التحميل العادي الموجود
+        # (سيتم ربطه مع الكود الموجود)
+        
+        # تحديث الإحصائيات
+        await update_performance_stats(True, time.time() - start_time)
             
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في المعالجة العادية: {e}")
@@ -2495,10 +2448,8 @@ async def smart_download_handler(event):
     user_id = event.sender_id
     
     try:
-        # فحص معدل الطلبات
-        if not await check_rate_limit(user_id):
-            await event.reply("⏰ **تم تجاوز الحد المسموح من الطلبات**\n\n⚠️ يرجى الانتظار قليلاً قبل المحاولة مرة أخرى")
-            return
+        # تتبع معدل الطلبات (للإحصائيات فقط)
+        await check_rate_limit(user_id)  # لا يوقف العملية
         
         # تهيئة قاعدة البيانات إذا لم تكن مهيأة
         await ensure_database_initialized()
@@ -2522,44 +2473,17 @@ async def smart_download_handler(event):
                 await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
                 return
                 
-        # فحص حالة النظام
-        if len(active_downloads) >= MAX_CONCURRENT_DOWNLOADS:
-            if download_queue.full():
-                await event.reply("🚫 **النظام مشغول حالياً**\n\n⚠️ تم الوصول للحد الأقصى من الطلبات، يرجى المحاولة لاحقاً")
-                return
-            else:
-                await event.reply("⏳ **تم إضافتك لطابور الانتظار**\n\n📊 موقعك في الطابور: " + str(download_queue.qsize() + 1))
-                
-                # إضافة للطابور
-                await download_queue.put({
-                    'user_id': user_id,
-                    'event': event,
-                    'query': None,  # سيتم استخراجه لاحقاً
-                    'start_time': start_time
-                })
-                return
+        # معالجة فورية بدون حدود
+        LOGGER(__name__).info(f"🚀 معالجة فورية للمستخدم {user_id} - العمليات النشطة: {len(active_downloads)}")
         
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في فحص الحمولة: {e}")
         await update_performance_stats(False, time.time() - start_time)
         return
     
-    # تنفيذ المعالجة العادية للطلبات المباشرة
-    await process_normal_download(event, None, user_id, start_time)
-
-# بدء مهمة إدارة الطابور في الخلفية
-async def start_queue_manager():
-    """بدء مدير طابور التحميلات"""
-    asyncio.create_task(manage_download_queue())
-    LOGGER(__name__).info("🚀 تم بدء مدير طابور التحميلات للحمولة العالية")
-
-# تشغيل مدير الطابور عند تحميل الوحدة
-try:
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        asyncio.create_task(manage_download_queue())
-except:
-    pass
+    # تنفيذ المعالجة الفورية بدون حدود
+    # إنشاء مهمة منفصلة لكل طلب
+    asyncio.create_task(process_unlimited_download(event, user_id, start_time))
     
     # استخراج الاستعلام من pattern
     match = event.pattern_match
