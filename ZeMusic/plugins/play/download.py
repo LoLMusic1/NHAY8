@@ -1862,7 +1862,14 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
             all_content_words = title_words | artist_words
             match_ratio = len(query_words & all_content_words) / len(query_words) if query_words else 0
             
-            LOGGER(__name__).info(f"✅ تم العثور على مطابقة في قاعدة البيانات: {match_ratio:.1%}")
+            # التحقق من الحد الأدنى للتطابق (60% على الأقل)
+            MIN_MATCH_RATIO = 0.6
+            if match_ratio < MIN_MATCH_RATIO:
+                LOGGER(__name__).info(f"❌ نسبة التطابق منخفضة جداً: {match_ratio:.1%} (الحد الأدنى: {MIN_MATCH_RATIO:.1%})")
+                conn.close()
+                return None
+            
+            LOGGER(__name__).info(f"✅ تم العثور على مطابقة قوية في قاعدة البيانات: {match_ratio:.1%}")
             
             return {
                 'success': True,
