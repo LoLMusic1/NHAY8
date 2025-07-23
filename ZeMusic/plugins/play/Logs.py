@@ -30,5 +30,5 @@ async def on_left_chat_member(client: Client, message: Message):
 
         
         await new_message(LOG_ID, rirurubye, reply_markup)
-        await userbot.one.start()
-        await userbot.one.leave_chat(chat_id)
+        # await userbot.one.start()  # معطل - userbot غير موجود
+        # await userbot.one.leave_chat(chat_id)  # معطل - userbot غير موجود
