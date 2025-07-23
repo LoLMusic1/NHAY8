@@ -2,27 +2,52 @@
 # -*- coding: utf-8 -*-
 
 """
-🎵 ZeMusic Bot v3.0 - Enhanced Utils Module
+🎵 ZeMusic Bot v3.0 - Utils Module
 تاريخ الإنشاء: 2025-01-28
-النسخة: 3.0.0 - Enhanced Edition
 
-الأدوات المساعدة المحسنة
+مجموعة الأدوات المساعدة للبوت
 """
 
-from .formatters import format_duration, format_file_size, format_number
-from .keyboards import create_music_keyboard, create_queue_keyboard
-from .decorators import command_security_check, rate_limit
-from .helpers import is_url, extract_text_from_message, clean_filename
+from .formatters import *
+from .database import *
+from .call_utils import *
+from .thumbnails import *
+from .extraction import *
+from .logger import *
+from .pastebin import *
+from .sys import *
+from .exceptions import *
 
 __all__ = [
+    # Formatters
     'format_duration',
-    'format_file_size', 
+    'format_file_size',
     'format_number',
-    'create_music_keyboard',
-    'create_queue_keyboard',
-    'command_security_check',
-    'rate_limit',
-    'is_url',
-    'extract_text_from_message',
-    'clean_filename'
+    'format_percentage',
+    'format_time_ago',
+    'convert_bytes',
+    'get_readable_time',
+    'seconds_to_min',
+    'time_to_seconds',
+    'speed_converter',
+    'check_duration',
+    
+    # Database utilities
+    'is_active_chat',
+    'is_welcome_enabled',
+    'is_search_enabled',
+    'get_assistant_number',
+    
+    # Call utilities
+    'AdvancedCallAnalyzer',
+    'CallStatistics',
+    'generate_call_report',
+    
+    # Other utilities
+    'generate_thumbnail',
+    'extract_info',
+    'setup_logging',
+    'upload_to_pastebin',
+    'get_system_info',
+    'MusicException'
 ]
