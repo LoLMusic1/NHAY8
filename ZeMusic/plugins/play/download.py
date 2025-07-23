@@ -3007,12 +3007,12 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
         
         LOGGER(__name__).info(f"🎵 معالجة متوازية محسنة: {query} | المستخدم: {user_id} | المهمة: {task_id}")
         
-        # إرسال رسالة حالة محسنة
-        status_msg = await event.reply("⚡ **النظام الذكي المحسن**\n\n🔍 **جاري البحث الذكي الخارق...**")
-        
         # تحديث المرحلة
         if task_id in active_downloads:
             active_downloads[task_id]['phase'] = 'intelligent_search'
+        
+        # متغير لرسالة الحالة (سيتم إنشاؤه لاحقاً عند الحاجة)
+        status_msg = None
         
         # البحث المتوازي المحسن بدون حدود
         try:
@@ -3027,11 +3027,17 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
                 await update_performance_stats(True, time.time() - start_time, from_cache=True)
                 
                 if search_source == 'database':
-                    await status_msg.edit(f"📤 **تم العثور في الكاش الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
+                    if not status_msg:
+                        status_msg = await event.reply(f"📤 **تم العثور في الكاش الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
+                    else:
+                        await status_msg.edit(f"📤 **تم العثور في الكاش الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
                     await send_cached_from_database(event, status_msg, parallel_result, event.client)
                     return
                 elif search_source == 'smart_cache':
-                    await status_msg.edit(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
+                    if not status_msg:
+                        status_msg = await event.reply(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
+                    else:
+                        await status_msg.edit(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
                     await send_cached_from_telegram(event, status_msg, parallel_result, event.client)
                     return
         except Exception as e:
@@ -3046,7 +3052,10 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
             LOGGER(__name__).error(f"❌ فشل النظام الذكي المطور: {e}")
         
         # إذا لم يجد في التخزين، ابدأ التحميل الذكي
-        await status_msg.edit("🔍 **لم يوجد في التخزين - جاري البحث الذكي في يوتيوب...**")
+        if not status_msg:
+            status_msg = await event.reply("🔍 **جاري البحث في يوتيوب...**")
+        else:
+            await status_msg.edit("🔍 **جاري البحث في يوتيوب...**")
         
         # تحديث المرحلة
         if task_id in active_downloads:
@@ -3237,11 +3246,8 @@ async def download_song_smart(message, query: str):
     3. انتقال متسلسل للطرق الأخرى إذا لم يوجد
     """
     try:
-        # رسالة الحالة
-        status_msg = await message.reply(
-            "⚡ **النظام الذكي المتوازي**\n\n"
-            "🔍 جاري البحث المتوازي في الكاش والتخزين..."
-        )
+        # متغير لرسالة الحالة (سيتم إنشاؤه عند الحاجة)
+        status_msg = None
         
         LOGGER(__name__).info(f"🎵 بدء البحث المتوازي للاستعلام: {query}")
         
@@ -3251,7 +3257,10 @@ async def download_song_smart(message, query: str):
         # فحص النتائج المتوازية
         if cache_result:
             LOGGER(__name__).info("✅ تم العثور على المقطع في الكاش المحلي")
-            await status_msg.edit("📁 **تم العثور في الكاش!**\n📤 جاري الإرسال...")
+            if not status_msg:
+                status_msg = await message.reply("📁 **تم العثور في الكاش!**\n📤 جاري الإرسال...")
+            else:
+                await status_msg.edit("📁 **تم العثور في الكاش!**\n📤 جاري الإرسال...")
             
             success = await send_local_cached_audio(message, cache_result, status_msg)
             if success:
@@ -3259,7 +3268,10 @@ async def download_song_smart(message, query: str):
                 
         elif telegram_result:
             LOGGER(__name__).info("✅ تم العثور على المقطع في قناة التخزين")
-            await status_msg.edit("📺 **تم العثور في قناة التخزين!**\n📤 جاري الإرسال...")
+            if not status_msg:
+                status_msg = await message.reply("📺 **تم العثور في قناة التخزين!**\n📤 جاري الإرسال...")
+            else:
+                await status_msg.edit("📺 **تم العثور في قناة التخزين!**\n📤 جاري الإرسال...")
             
             success = await send_telegram_cached_audio(message, telegram_result, status_msg)
             if success:
@@ -3267,19 +3279,31 @@ async def download_song_smart(message, query: str):
         
         # المرحلة 2: لم يتم العثور على المقطع - الانتقال للبحث الخارجي
         LOGGER(__name__).info("🔍 لم يتم العثور في الكاش - بدء البحث الخارجي")
-        await status_msg.edit("🌐 **لم يتم العثور في الكاش**\n🔍 جاري البحث في YouTube...")
+        if not status_msg:
+            status_msg = await message.reply("🔍 **جاري البحث في YouTube...**")
+        else:
+            await status_msg.edit("🔍 **جاري البحث في YouTube...**")
         
         # البحث المتسلسل في الطرق الخارجية
         video_info = await sequential_external_search(query)
         
         if not video_info:
-            await status_msg.edit(
-                "❌ **لم يتم العثور على نتائج**\n\n"
-                "💡 **جرب:**\n"
-                "• كلمات مختلفة\n"
-                "• اسم الفنان\n"
-                "• جزء من كلمات الأغنية"
-            )
+            if not status_msg:
+                status_msg = await message.reply(
+                    "❌ **لم يتم العثور على نتائج**\n\n"
+                    "💡 **جرب:**\n"
+                    "• كلمات مختلفة\n"
+                    "• اسم الفنان\n"
+                    "• جزء من كلمات الأغنية"
+                )
+            else:
+                await status_msg.edit(
+                    "❌ **لم يتم العثور على نتائج**\n\n"
+                    "💡 **جرب:**\n"
+                    "• كلمات مختلفة\n"
+                    "• اسم الفنان\n"
+                    "• جزء من كلمات الأغنية"
+                )
             return
         
         # المرحلة 3: التحميل الذكي مع cookies
@@ -3287,11 +3311,18 @@ async def download_song_smart(message, query: str):
         success = await smart_download_and_send(message, video_info, status_msg)
         
         if not success:
-            await status_msg.edit(
-                "❌ **فشل التحميل**\n\n"
-                "حدث خطأ أثناء تحميل المقطع\n"
-                "يرجى المحاولة مرة أخرى لاحقاً"
-            )
+            if not status_msg:
+                status_msg = await message.reply(
+                    "❌ **فشل التحميل**\n\n"
+                    "حدث خطأ أثناء تحميل المقطع\n"
+                    "يرجى المحاولة مرة أخرى لاحقاً"
+                )
+            else:
+                await status_msg.edit(
+                    "❌ **فشل التحميل**\n\n"
+                    "حدث خطأ أثناء تحميل المقطع\n"
+                    "يرجى المحاولة مرة أخرى لاحقاً"
+                )
         
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في download_song_smart: {e}")
