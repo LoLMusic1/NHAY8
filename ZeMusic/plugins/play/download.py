@@ -287,26 +287,14 @@ class ConnectionManager:
 #                 نظام التحميل الذكي الخارق
 # ================================================================
 class HyperSpeedDownloader:
-    """نسخة متطورة من نظام التحميل مع إدارة متقدمة للموارد"""
+    """نسخة مبسطة من نظام التحميل"""
     
     def __init__(self):
-        self.conn_manager = ConnectionManager()
-        self.method_performance = {
-            'cache': {'weight': 1000, 'active': True, 'avg_time': 0.001},
-            'youtube_api': {'weight': 100, 'active': True, 'avg_time': 1.5},
-            'invidious': {'weight': 90, 'active': True, 'avg_time': 2.5},
-            'ytdlp_cookies': {'weight': 85, 'active': True, 'avg_time': 4.0},
-            'ytdlp_no_cookies': {'weight': 70, 'active': True, 'avg_time': 6.0},
-            'youtube_search': {'weight': 60, 'active': True, 'avg_time': 3.5}
-        }
-        # self.monitor = PerformanceMonitor()
-        self.active_tasks = set()
-        self.cache_hits = 0
-        self.cache_misses = 0
-        self.last_health_check = time.time()
+        self.downloads_folder = "downloads"
+        os.makedirs(self.downloads_folder, exist_ok=True)
         
         # تسجيل بدء التشغيل
-        LOGGER(__name__).info("🚀 بدء تشغيل نظام التحميل المتطور V2")
+        LOGGER(__name__).info("🚀 بدء تشغيل نظام التحميل المبسط")
     
     async def health_check(self):
         """فحص صحة النظام بشكل دوري"""
@@ -879,57 +867,57 @@ class HyperSpeedDownloader:
             self.active_tasks.discard(task_id)
     
     async def direct_ytdlp_download(self, video_id: str, title: str = "Unknown") -> Optional[Dict]:
-        """تحميل مباشر باستخدام yt-dlp مع cookies"""
+        """تحميل مباشر مبسط باستخدام yt-dlp"""
         if not yt_dlp:
+            LOGGER(__name__).error("yt-dlp غير متاح")
             return None
             
-        task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
-        self.active_tasks.add(task_id)
         start_time = time.time()
+        LOGGER(__name__).info(f"🔄 بدء تحميل: {video_id}")
         
         try:
-            # إنشاء مجلد مؤقت
-            temp_dir = Path("downloads/temp")
+            # إنشاء مجلد التحميل
+            temp_dir = Path(self.downloads_folder)
             temp_dir.mkdir(parents=True, exist_ok=True)
             
-            # إعداد yt-dlp
-            try:
-                from ZeMusic.core.cookies_manager import cookies_manager
-                best_cookie = await cookies_manager.get_next_cookie()
-            except:
-                best_cookie = None
-            
             ydl_opts = {
-                'format': 'bestaudio[ext=m4a]/best[ext=m4a]/bestaudio/best',
+                'format': 'bestaudio/best',
                 'outtmpl': str(temp_dir / f'{video_id}.%(ext)s'),
                 'quiet': True,
                 'no_warnings': True,
-                'extract_flat': False,
-                'writethumbnail': False,
                 'noplaylist': True,
-                'socket_timeout': REQUEST_TIMEOUT,
-                'retries': 3,
-                'fragment_retries': 5,
-                'skip_unavailable_fragments': True,
+                'socket_timeout': 15,
+                'retries': 2,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'referer': 'https://www.youtube.com/',
+                'headers': {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-us,en;q=0.5',
+                    'Sec-Fetch-Mode': 'navigate',
+                },
+                'extractor_args': {
+                    'youtube': {
+                        'skip': ['hls', 'dash'],
+                        'player_skip': ['js'],
+                    }
+                }
             }
             
-            # إضافة cookies إذا كانت متاحة
-            if best_cookie:
-                ydl_opts['cookiefile'] = best_cookie
+            LOGGER(__name__).info(f"🔄 تحميل من: https://www.youtube.com/watch?v={video_id}")
             
-            loop = asyncio.get_running_loop()
-            info = await loop.run_in_executor(
-                self.conn_manager.executor_pool,
-                lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(
+            # تحميل مباشر
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(
                     f"https://www.youtube.com/watch?v={video_id}",
                     download=True
                 )
-            )
             
             if info:
                 # البحث عن الملف المحمل
+                LOGGER(__name__).info(f"✅ تم التحميل بنجاح: {info.get('title', title)}")
                 for file_path in temp_dir.glob(f"{video_id}.*"):
-                    if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4']:
+                    if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4', '.opus']:
+                        LOGGER(__name__).info(f"📁 ملف محمل: {file_path}")
                         return {
                             'success': True,
                             'file_path': str(file_path),
@@ -939,14 +927,12 @@ class HyperSpeedDownloader:
                             'elapsed': time.time() - start_time
                         }
             
+            LOGGER(__name__).error("❌ لم يتم العثور على ملف محمل")
             return None
             
         except Exception as e:
-            LOGGER(__name__).error(f"خطأ في التحميل المباشر: {e}")
-            self.monitor.log_error('direct_download')
+            LOGGER(__name__).error(f"❌ خطأ في التحميل المباشر: {e}")
             return None
-        finally:
-            self.active_tasks.discard(task_id)
 
     async def download_without_cookies(self, video_info: Dict) -> Optional[Dict]:
         """تحميل بدون كوكيز - نسخة مبسطة وسريعة"""
@@ -1159,8 +1145,10 @@ async def smart_download_handler(event):
         
         # محاولة التحميل
         await status_msg.edit("🔄 **جاري تحميل الملف الصوتي...**")
+        LOGGER(__name__).info(f"🔄 بدء التحميل للفيديو: {video_id}")
         download_result = await downloader.direct_ytdlp_download(video_id, video_info.get('title', 'Unknown'))
         
+        LOGGER(__name__).info(f"📊 نتيجة التحميل: {download_result}")
         if download_result and download_result.get('success'):
             # التحميل نجح - إرسال الملف
             audio_file = download_result.get('file_path')
@@ -1193,10 +1181,14 @@ async def smart_download_handler(event):
                 await remove_temp_files(audio_file)
                 return
         
-        # التحميل فشل - محاولة النظام الخارق
+        # التحميل فشل - محاولة بديلة
         try:
-            await status_msg.edit("🔄 **تفعيل النظام الخارق...**")
-            result = await downloader.hyper_download(query)
+            await status_msg.edit("🔄 **محاولة طريقة بديلة...**")
+            LOGGER(__name__).info("🔄 محاولة تحميل بديلة")
+            
+            # إنشاء رابط مباشر للتحميل
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            result = await simple_download(video_url, video_info.get('title', 'Unknown'))
             
             if result:
                 audio_file = result['audio_path']
