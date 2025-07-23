@@ -266,7 +266,7 @@ class TelethonCommandHandler:
             )
             
             # في حالة عدم وجود نص مخصص، استخدم الافتراضي
-            if not hasattr(config, 'FORCE_SUB_TEXT'):
+            if not hasattr(config, 'FORCE_SUB_TEXT') or not config.FORCE_SUB_TEXT:
                 subscription_text = f"""
 🔒 **عذراً، يجب الاشتراك أولاً!**
 

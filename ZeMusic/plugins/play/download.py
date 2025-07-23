@@ -2449,22 +2449,34 @@ async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: s
 #{query_normalized.replace(' ', '_')[:30]} #هاش_{search_hash}"""
         
         try:
-            # إرسال الملف مع البيانات المفصلة
-            sent_message = await bot_client.send_file(
-                cache_channel,
-                file_path,
-                caption=cache_text,
-                thumb=thumb_path,  # إضافة الصورة المصغرة
-                attributes=[
-                    DocumentAttributeAudio(
-                        duration=duration,
-                        title=title[:64],  # حد تيليجرام
-                        performer=uploader[:64]  # حد تيليجرام
+            # رفع الملف في الخلفية لتحسين السرعة
+            import asyncio
+            
+            async def upload_to_storage():
+                try:
+                    sent_message = await bot_client.send_file(
+                        cache_channel,
+                        file_path,
+                        caption=cache_text,
+                        thumb=thumb_path,
+                        attributes=[
+                            DocumentAttributeAudio(
+                                duration=duration,
+                                title=title[:64],
+                                performer=uploader[:64]
+                            )
+                        ],
+                        supports_streaming=True,
+                        force_document=False
                     )
-                ],
-                supports_streaming=True,
-                force_document=False  # إرسال كملف صوتي وليس مستند
-            )
+                    return sent_message
+                except Exception as e:
+                    LOGGER(__name__).warning(f"⚠️ فشل رفع الملف لقناة التخزين: {e}")
+                    return None
+            
+            # تشغيل الرفع في الخلفية
+            upload_task = asyncio.create_task(upload_to_storage())
+            sent_message = await upload_task
             
             if thumb_path:
                 LOGGER(__name__).info(f"✅ تم رفع الملف مع الصورة المصغرة لقناة التخزين: {title[:30]}")
@@ -2486,19 +2498,25 @@ async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: s
                     'upload_time': datetime.now().isoformat()
                 }
                 
-                # حفظ في قاعدة البيانات مع البيانات المحسنة
-                success = await save_to_database_cache_enhanced(
-                    sent_message.file.id,
-                    getattr(sent_message.file, 'unique_id', None),
-                    sent_message.id,
-                    enhanced_info,
-                    query
-                )
+                # حفظ في قاعدة البيانات في الخلفية لتحسين السرعة
+                async def save_to_db():
+                    try:
+                        success = await save_to_database_cache_enhanced(
+                            sent_message.file.id,
+                            getattr(sent_message.file, 'unique_id', None),
+                            sent_message.id,
+                            enhanced_info,
+                            query
+                        )
+                        if success:
+                            LOGGER(__name__).info(f"💾 تم حفظ البيانات المحسنة في قاعدة البيانات")
+                        else:
+                            LOGGER(__name__).warning(f"⚠️ فشل حفظ البيانات في قاعدة البيانات")
+                    except Exception as e:
+                        LOGGER(__name__).warning(f"⚠️ خطأ في حفظ قاعدة البيانات: {e}")
                 
-                if success:
-                    LOGGER(__name__).info(f"💾 تم حفظ البيانات المحسنة في قاعدة البيانات")
-                else:
-                    LOGGER(__name__).warning(f"⚠️ فشل حفظ البيانات في قاعدة البيانات")
+                # تشغيل الحفظ في الخلفية
+                asyncio.create_task(save_to_db())
             
             LOGGER(__name__).info(f"🎯 تم حفظ الملف بنجاح مع فهرسة شاملة: {os.path.basename(file_path)}")
             return True
@@ -2673,13 +2691,16 @@ async def download_with_api_info(video_id: str, snippet: dict, fallback_title: s
         best_cookie = cookies_files[0] if cookies_files else None
         
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'bestaudio[filesize<30M]/best[filesize<30M]',  # حد أقصى للحجم
             'outtmpl': str(downloads_dir / f'{video_id}_api.%(ext)s'),
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
-            'socket_timeout': 20,
-            'retries': 2,
+            'socket_timeout': 15,  # تقليل الوقت المسموح
+            'retries': 1,  # تقليل المحاولات
+            'concurrent_fragment_downloads': 4,  # تحميل متوازي
+            'http_chunk_size': 10485760,  # 10MB chunks
+            'prefer_ffmpeg': True,  # استخدام ffmpeg للسرعة
         }
         
         if best_cookie:
@@ -2934,14 +2955,16 @@ async def try_alternative_downloads(video_id: str, title: str) -> Optional[Dict]
                 
                 downloads_dir = Path("downloads")
                 ydl_opts = {
-                    'format': 'bestaudio/best',
+                    'format': 'bestaudio[filesize<25M]/best[filesize<25M]',
                     'outtmpl': str(downloads_dir / f'{video_id}_alt_{i}.%(ext)s'),
                     'quiet': True,
                     'no_warnings': True,
                     'noplaylist': True,
                     'cookiefile': cookie_file,
-                    'socket_timeout': 20,
+                    'socket_timeout': 12,  # تسريع الاتصال
                     'retries': 1,
+                    'concurrent_fragment_downloads': 4,
+                    'http_chunk_size': 8388608,  # 8MB chunks
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -3014,15 +3037,17 @@ async def force_download_any_way(video_id: str, title: str) -> Optional[Dict]:
                 
                 downloads_dir = Path("downloads")
                 ydl_opts = {
-                    'format': 'worst/bestaudio/best',  # أي جودة متاحة
+                    'format': 'bestaudio[filesize<25M]/best[filesize<25M]',  # حد أقصى للحجم
                     'outtmpl': str(downloads_dir / f'{video_id}_force_{i}.%(ext)s'),
                     'quiet': True,
                     'no_warnings': True,
                     'noplaylist': True,
                     'cookiefile': cookie_file,
-                    'socket_timeout': 30,
-                    'retries': 3,
+                    'socket_timeout': 12,  # تسريع الاتصال
+                    'retries': 1,  # تقليل المحاولات
                     'ignore_errors': True,
+                    'concurrent_fragment_downloads': 4,
+                    'http_chunk_size': 8388608,  # 8MB chunks
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
