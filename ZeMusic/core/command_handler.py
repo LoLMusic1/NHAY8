@@ -114,7 +114,7 @@ class TelethonCommandHandler:
                 should_check_subscription = True
             elif is_group_or_channel:
                 is_bot_command = text.startswith('/')
-                is_bot_mention = f"@{telethon_manager.bot_client.me.username}" in text if telethon_manager.bot_client else False
+                is_bot_mention = f"@{config.BOT_USERNAME}" in text if config.BOT_USERNAME else False
                 is_reply_to_bot = message.reply_to_msg_id and hasattr(message.reply_to, 'sender_id') and message.reply_to.sender_id == int(config.BOT_ID)
                 
                 bot_keywords = [
@@ -144,6 +144,35 @@ class TelethonCommandHandler:
                 command = text.split()[0].lower()
                 if command in self.commands:
                     await self.commands[command](mock_update)
+                    return
+            
+            # معالجة أوامر التشغيل المباشرة
+            play_commands = ['play', 'تشغيل', 'شغل', 'vplay', 'cplay']
+            first_word = text.split()[0].lower() if text.split() else ""
+            
+            if any(cmd in first_word for cmd in play_commands) or text.startswith('/play') or text.startswith('/تشغيل') or text.startswith('/شغل'):
+                try:
+                    # استخراج الاستعلام
+                    if text.startswith('/'):
+                        parts = text.split(None, 1)
+                        query = parts[1] if len(parts) > 1 else ""
+                    else:
+                        # إزالة كلمة الأمر والحصول على الاستعلام
+                        parts = text.split(None, 1)
+                        query = parts[1] if len(parts) > 1 else ""
+                    
+                    if query.strip():
+                        LOGGER(__name__).info(f"🎵 معالجة أمر تشغيل: {query}")
+                        from ZeMusic.plugins.play.download import download_song_smart
+                        await download_song_smart(mock_update, query)
+                        return
+                    else:
+                        await event.respond("❌ يرجى كتابة اسم الأغنية بعد الأمر")
+                        return
+                        
+                except Exception as e:
+                    LOGGER(__name__).error(f"❌ خطأ في معالجة أمر التشغيل: {e}")
+                    await event.respond("❌ حدث خطأ في معالجة طلبك")
                     return
             
             # معالجة الرسائل العادية
@@ -237,7 +266,7 @@ class TelethonCommandHandler:
             )
             
             # في حالة عدم وجود نص مخصص، استخدم الافتراضي
-            if not hasattr(config, 'FORCE_SUB_TEXT'):
+            if not hasattr(config, 'FORCE_SUB_TEXT') or not config.FORCE_SUB_TEXT:
                 subscription_text = f"""
 🔒 **عذراً، يجب الاشتراك أولاً!**
 

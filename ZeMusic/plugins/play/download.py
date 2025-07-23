@@ -18,9 +18,13 @@ import time
 import sqlite3
 import hashlib
 import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Dict, Optional, List, Tuple
 from itertools import cycle
+from collections import defaultdict, deque
+from asyncio import Semaphore
+import threading
 import aiohttp
 import aiofiles
 from telethon.tl.types import DocumentAttributeAudio
@@ -29,10 +33,54 @@ import uvloop
 import psutil
 import random
 import string
+import atexit
 from contextlib import asynccontextmanager
 import orjson
 
 # تطبيق UVLoop لتحسين أداء asyncio
+
+def get_audio_duration(file_path: str) -> int:
+    """الحصول على مدة الملف الصوتي بالثواني"""
+    try:
+        if not os.path.exists(file_path):
+            return 0
+            
+        # محاولة استخدام yt-dlp للحصول على المعلومات
+        if yt_dlp:
+            try:
+                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                    info = ydl.extract_info(file_path, download=False)
+                    duration = info.get('duration', 0)
+                    if duration and duration > 0:
+                        return int(duration)
+            except:
+                pass
+        
+        # محاولة استخدام ffprobe
+        try:
+            import subprocess
+            result = subprocess.run([
+                'ffprobe', '-v', 'quiet', '-show_entries', 
+                'format=duration', '-of', 'csv=p=0', file_path
+            ], capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                return int(float(result.stdout.strip()))
+        except:
+            pass
+            
+        # تقدير تقريبي بناءً على حجم الملف (للملفات الصوتية)
+        try:
+            file_size = os.path.getsize(file_path)
+            # تقدير: 128kbps = 16KB/s تقريباً
+            estimated_duration = file_size // 16000
+            return max(1, estimated_duration)
+        except:
+            return 0
+            
+    except Exception as e:
+        LOGGER.warning(f"⚠️ خطأ في الحصول على مدة الصوت: {e}")
+        return 0
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 # استيراد المكتبات مع معالجة الأخطاء
@@ -43,12 +91,10 @@ except ImportError:
     
 try:
     from youtube_search import YoutubeSearch
+    YOUTUBE_SEARCH_AVAILABLE = True
 except ImportError:
-    try:
-        from youtubesearchpython import VideosSearch
-        YoutubeSearch = VideosSearch
-    except ImportError:
-        YoutubeSearch = None
+    YoutubeSearch = None
+    YOUTUBE_SEARCH_AVAILABLE = False
 
 # استيراد Telethon
 from telethon import events
@@ -68,6 +114,20 @@ MAX_WORKERS = min(200, (psutil.cpu_count() * 10))  # ديناميكي حسب ا�
 
 # قناة التخزين الذكي (يوزر أو ID)
 SMART_CACHE_CHANNEL = config.CACHE_CHANNEL_ID
+DATABASE_PATH = "zemusic.db"
+DB_FILE = DATABASE_PATH  # توحيد أسماء قواعد البيانات
+
+def normalize_arabic_text(text: str) -> str:
+    """تطبيع النص العربي للبحث المحسن"""
+    if not text:
+        return ""
+    
+    # إزالة التشكيل والرموز الخاصة
+    import re
+    text = re.sub(r'[\u064B-\u065F\u0670\u0640]', '', text)  # إزالة التشكيل
+    text = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', text)  # الاحتفاظ بالعربية والإنجليزية فقط
+    text = re.sub(r'\s+', ' ', text).strip()  # إزالة المسافات الزائدة
+    return text
 
 # إعدادات العرض
 channel = getattr(config, 'STORE_LINK', '')
@@ -140,7 +200,7 @@ def get_ytdlp_opts(cookies_file=None) -> Dict:
 os.makedirs("downloads", exist_ok=True)
 
 # --- قاعدة البيانات للفهرسة الذكية ---
-DB_FILE = "smart_cache.db"
+# DB_FILE تم تعريفه في الأعلى
 
 async def init_database():
     """تهيئة قاعدة البيانات بشكل غير متزامن"""
@@ -279,10 +339,16 @@ class ConnectionManager:
     
     async def close(self):
         """إغلاق جميع الموارد"""
-        for session in self._session_pool:
-            await session.close()
-        self._executor_pool.shutdown(wait=True)
-        LOGGER(__name__).info("🔌 تم إغلاق جميع موارد الاتصال")
+        try:
+            if self._session_pool:
+                for session in self._session_pool:
+                    if session and not session.closed:
+                        await session.close()
+            if self._executor_pool:
+                self._executor_pool.shutdown(wait=True)
+            LOGGER(__name__).info("🔌 تم إغلاق جميع موارد الاتصال")
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إغلاق الموارد: {e}")
 
 # ================================================================
 #                 نظام التحميل الذكي الخارق
@@ -294,8 +360,72 @@ class HyperSpeedDownloader:
         self.downloads_folder = "downloads"
         os.makedirs(self.downloads_folder, exist_ok=True)
         
+        # إعداد المتغيرات المطلوبة
+        self.cache_hits = 0
+        self.cache_misses = 0
+        self.active_tasks = set()
+        self.last_health_check = time.time()
+        
+        # إعداد إحصائيات الأداء
+        self.method_performance = {
+            'youtube_api': {'avg_time': 0},
+            'invidious': {'avg_time': 0},
+            'youtube_search': {'avg_time': 0},
+            'ytdlp_cookies': {'avg_time': 0},
+            'ytdlp_no_cookies': {'avg_time': 0}
+        }
+        
+        # إعداد مدير الاتصالات
+        try:
+            self.conn_manager = ConnectionManager()
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في تهيئة مدير الاتصالات: {e}")
+            self.conn_manager = None
+        
         # تسجيل بدء التشغيل
-        LOGGER(__name__).info("🚀 بدء تشغيل نظام التحميل المبسط")
+        LOGGER(__name__).info("🚀 بدء تشغيل نظام التحميل المحسن")
+    
+    async def search_in_smart_cache(self, query: str) -> Optional[Dict]:
+        """البحث في التخزين الذكي مع آلية متقدمة"""
+        try:
+            # البحث في قاعدة البيانات أولاً
+            normalized_query = normalize_arabic_text(query)
+            
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # البحث بالعنوان والفنان
+            cursor.execute("""
+                SELECT video_id, title, artist, duration, file_path, thumb, message_id, keywords
+                FROM cached_audio 
+                WHERE LOWER(title) LIKE ? OR LOWER(artist) LIKE ? OR LOWER(keywords) LIKE ?
+                ORDER BY created_at DESC LIMIT 5
+            """, (f'%{normalized_query.lower()}%', f'%{normalized_query.lower()}%', f'%{normalized_query.lower()}%'))
+            
+            results = cursor.fetchall()
+            conn.close()
+            
+            if results:
+                result = results[0]  # أخذ أول نتيجة
+                self.cache_hits += 1
+                return {
+                    "video_id": result[0],
+                    "title": result[1],
+                    "artist": result[2],
+                    "duration": result[3],
+                    "file_path": result[4],
+                    "thumb": result[5],
+                    "message_id": result[6],
+                    "source": "smart_cache"
+                }
+            
+            self.cache_misses += 1
+            return None
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في البحث السريع: {e}")
+            self.cache_misses += 1
+            return None
     
     async def health_check(self):
         """فحص صحة النظام بشكل دوري"""
@@ -417,7 +547,7 @@ class HyperSpeedDownloader:
             self.cache_misses += 1
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في البحث السريع: {e}")
-            self.monitor.log_error('cache_search')
+            # self.monitor.log_error('cache_search')
         
         return None
     
@@ -430,8 +560,9 @@ class HyperSpeedDownloader:
         start_time = time.time()
         
         try:
-            for _ in range(len(YT_API_KEYS)):
+            for attempt in range(len(YT_API_KEYS)):
                 key = next(API_KEYS_CYCLE)
+                LOGGER(__name__).info(f"🔑 محاولة YouTube API - المحاولة {attempt + 1}")
                 params = {
                     "part": "snippet",
                     "q": query,
@@ -453,16 +584,22 @@ class HyperSpeedDownloader:
                             continue
                             
                         if resp.status != 200:
+                            error_text = await resp.text()
+                            LOGGER(__name__).warning(f"YouTube API خطأ {resp.status}: {error_text[:100]}")
                             continue
                         
                         data = await resp.json()
                         items = data.get("items", [])
                         if not items:
+                            LOGGER(__name__).warning(f"YouTube API: لا توجد نتائج لـ {query}")
                             continue
                         
                         item = items[0]
                         video_id = item["id"]["videoId"]
                         snippet = item["snippet"]
+                        title = snippet.get("title", "")[:60]
+                        
+                        LOGGER(__name__).info(f"✅ YouTube API نجح: {title[:30]}...")
                         
                         self.method_performance['youtube_api']['avg_time'] = (
                             self.method_performance['youtube_api']['avg_time'] * 0.7 + 
@@ -471,7 +608,7 @@ class HyperSpeedDownloader:
                         
                         return {
                             "video_id": video_id,
-                            "title": snippet.get("title", "")[:60],
+                            "title": title,
                             "artist": snippet.get("channelTitle", "Unknown"),
                             "thumb": snippet.get("thumbnails", {}).get("high", {}).get("url"),
                             "source": "youtube_api"
@@ -482,7 +619,7 @@ class HyperSpeedDownloader:
         
         except Exception as e:
             LOGGER(__name__).warning(f"فشل YouTube API: {e}")
-            self.monitor.log_error('youtube_api')
+            # self.monitor.log_error('youtube_api')
         
         return None
     
@@ -545,7 +682,7 @@ class HyperSpeedDownloader:
         
         except Exception as e:
             LOGGER(__name__).warning(f"فشل Invidious: {e}")
-            self.monitor.log_error('invidious')
+            # self.monitor.log_error('invidious')
         
         return None
     
@@ -557,30 +694,63 @@ class HyperSpeedDownloader:
         start_time = time.time()
             
         try:
-            # استخدام youtube_search مع معالجة محسنة
-            search = YoutubeSearch(query, max_results=1)
-            results = search.result()['result'] if hasattr(search, 'result') else search.to_dict()
-            
-            if not results:
+            # التحقق من توفر مكتبة البحث
+            if not YoutubeSearch:
+                LOGGER(__name__).warning(f"YouTube Search غير متاح")
                 return None
             
-            result = results[0]
+            # استخدام youtube_search
+            LOGGER(__name__).info(f"🔍 بدء البحث في YouTube Search: {query}")
+            search = YoutubeSearch(query, max_results=1)
+            results = search.to_dict()
             
-            # استخراج video_id
-            video_id = result.get('id') or result.get('link', '').split('=')[-1]
+            LOGGER(__name__).info(f"📊 عدد النتائج: {len(results) if results else 0}")
+            
+            if not results:
+                LOGGER(__name__).warning(f"❌ لا توجد نتائج للبحث: {query}")
+                return None
+                
+            result = results[0]
+            LOGGER(__name__).info(f"📝 النتيجة الأولى: {result.get('title', 'Unknown')[:30]}...")
+            
+            # استخراج معرف الفيديو
+            video_id = result.get('id', '')
+            
+            # إذا لم يكن المعرف موجود، حاول استخراجه من الرابط
+            if not video_id:
+                url_suffix = result.get('url_suffix', '')
+                link = result.get('link', '')
+                
+                if url_suffix and 'watch?v=' in url_suffix:
+                    video_id = url_suffix.split('watch?v=')[1].split('&')[0]
+                elif link and 'watch?v=' in link:
+                    video_id = link.split('watch?v=')[1].split('&')[0]
+            
+            LOGGER(__name__).info(f"🔗 URL Suffix: {result.get('url_suffix', 'Unknown')}")
+            LOGGER(__name__).info(f"🆔 معرف الفيديو المستخرج: {video_id}")
+            title = result.get('title', 'Unknown Title')
+            artist = result.get('channel', 'Unknown Artist')
+            duration_text = result.get('duration', '0:00')
+            thumb = result.get('thumbnails', [None])[0] if result.get('thumbnails') else None
+            
+            LOGGER(__name__).info(f"🆔 معرف الفيديو: {video_id}")
+            LOGGER(__name__).info(f"🎵 العنوان: {title[:30]}...")
+            LOGGER(__name__).info(f"🎤 الفنان: {artist[:20]}...")
             
             # معالجة المدة
-            duration = result.get('duration', '0:00')
-            if isinstance(duration, str) and ':' in duration:
-                parts = duration.split(':')
-                if len(parts) == 2:
-                    duration = int(parts[0]) * 60 + int(parts[1])
-                elif len(parts) == 3:
-                    duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                else:
+            duration = 0
+            if isinstance(duration_text, str) and ':' in duration_text:
+                try:
+                    parts = duration_text.split(':')
+                    if len(parts) == 2:
+                        duration = int(parts[0]) * 60 + int(parts[1])
+                    elif len(parts) == 3:
+                        duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                except (ValueError, IndexError):
                     duration = 0
-            else:
-                duration = int(duration)
+            
+            if not video_id:
+                return None
             
             self.method_performance['youtube_search']['avg_time'] = (
                 self.method_performance['youtube_search']['avg_time'] * 0.7 + 
@@ -589,17 +759,20 @@ class HyperSpeedDownloader:
             
             return {
                 "video_id": video_id,
-                "title": result.get("title", "Unknown Title")[:60],
-                "artist": result.get("channel", {}).get("name", "Unknown Artist") if isinstance(result.get("channel"), dict) else result.get("channel", "Unknown Artist"),
+                "title": title[:60],
+                "artist": artist[:40] if artist else "Unknown Artist",
                 "duration": duration,
-                "thumb": result.get("thumbnails", [None])[0] if result.get("thumbnails") else None,
+                "thumb": thumb,
                 "link": f"https://youtube.com/watch?v={video_id}",
                 "source": "youtube_search"
             }
             
         except Exception as e:
             LOGGER(__name__).warning(f"فشل YouTube Search: {e}")
-            self.monitor.log_error('youtube_search')
+            try:
+                self.monitor.log_error('youtube_search')
+            except:
+                pass
             return None
     
     async def download_with_ytdlp(self, video_info: Dict) -> Optional[Dict]:
@@ -800,24 +973,52 @@ class HyperSpeedDownloader:
             await self.health_check()
             
             # خطوة 1: البحث الفوري في الكاش
-            cached_result = await self.lightning_search_cache(query)
+            cached_result = await self.search_in_smart_cache(query)
             if cached_result:
                 LOGGER(__name__).info(f"⚡ كاش فوري: {query} ({time.time() - start_time:.3f}s)")
-                return cached_result
+                # تحويل النتيجة إلى التنسيق المطلوب
+                return {
+                    'audio_path': cached_result.get('file_path'),
+                    'title': cached_result.get('title', 'Unknown'),
+                    'artist': cached_result.get('artist', 'Unknown'),
+                    'duration': cached_result.get('duration', 0),
+                    'source': 'smart_cache',
+                    'cached': True
+                }
             
             # خطوة 2: البحث عن معلومات الفيديو بالتوازي
             search_methods = []
             
+            # إضافة طرق البحث بترتيب الأولوية
+            
+            # أولوية 1: YouTube Search (الأكثر موثوقية)
+            try:
+                if YoutubeSearch:
+                    search_methods.append(self.youtube_search_simple(query))
+                    LOGGER(__name__).info(f"🔍 إضافة YouTube Search للبحث")
+            except Exception as e:
+                LOGGER(__name__).warning(f"⚠️ فشل في إضافة YouTube Search: {e}")
+            
+            # أولوية 2: YouTube API (إذا كان متاحاً)
             if API_KEYS_CYCLE:
                 search_methods.append(self.youtube_api_search(query))
+                LOGGER(__name__).info(f"🔍 إضافة YouTube API للبحث")
+            
+            # أولوية 3: Invidious (كبديل)
             if INVIDIOUS_CYCLE:
                 search_methods.append(self.invidious_search(query))
-            if YoutubeSearch:
-                search_methods.append(self.youtube_search_simple(query))
+                LOGGER(__name__).info(f"🔍 إضافة Invidious للبحث")
+            
+            if not search_methods:
+                LOGGER(__name__).error(f"❌ لا توجد طرق بحث متاحة!")
+                return None
+            
+            LOGGER(__name__).info(f"🚀 بدء البحث بـ {len(search_methods)} طريقة")
             
             # تشغيل جميع عمليات البحث بالتوازي
+            search_tasks = [asyncio.create_task(method) for method in search_methods]
             done, pending = await asyncio.wait(
-                search_methods,
+                search_tasks,
                 timeout=REQUEST_TIMEOUT * 1.5,
                 return_when=asyncio.FIRST_COMPLETED
             )
@@ -829,25 +1030,41 @@ class HyperSpeedDownloader:
             # أخذ أول نتيجة ناجحة
             video_info = None
             for task in done:
-                result = task.result()
-                if result:
-                    video_info = result
-                    break
+                try:
+                    result = task.result()
+                    if result:
+                        video_info = result
+                        LOGGER(__name__).info(f"✅ نجح البحث: {result.get('title', 'Unknown')} من {result.get('source', 'Unknown')}")
+                        break
+                except Exception as e:
+                    LOGGER(__name__).warning(f"⚠️ فشلت إحدى طرق البحث: {e}")
             
             if not video_info:
+                LOGGER(__name__).error(f"❌ فشل جميع طرق البحث لـ: {query}")
                 return None
             
             # خطوة 3: تحميل الصوت
+            LOGGER(__name__).info(f"🎵 بدء تحميل الصوت: {video_info.get('title', 'Unknown')}")
             audio_info = await self.download_with_ytdlp(video_info)
             if not audio_info:
+                LOGGER(__name__).warning(f"⚠️ فشل التحميل الأساسي، جاري المحاولة الاحتياطية...")
                 # محاولة نسخة احتياطية
                 audio_info = await self.download_without_cookies(video_info)
                 if not audio_info:
+                    LOGGER(__name__).error(f"❌ فشل جميع طرق التحميل لـ: {video_info.get('title', 'Unknown')}")
                     return None
+                else:
+                    LOGGER(__name__).info(f"✅ نجح التحميل الاحتياطي: {audio_info.get('title', 'Unknown')}")
+            else:
+                LOGGER(__name__).info(f"✅ نجح التحميل الأساسي: {audio_info.get('title', 'Unknown')}")
             
             # خطوة 4: حفظ في التخزين الذكي (في الخلفية)
             if SMART_CACHE_CHANNEL:
-                asyncio.create_task(self.cache_to_channel(audio_info, query))
+                try:
+                    # سيتم الحفظ في دالة send_audio_file
+                    pass
+                except Exception as cache_error:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في حفظ التخزين: {cache_error}")
             
             LOGGER(__name__).info(f"✅ تحميل جديد: {query} ({time.time() - start_time:.3f}s)")
             
@@ -862,7 +1079,7 @@ class HyperSpeedDownloader:
             
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في التحميل الخارق: {e}")
-            self.monitor.log_error('hyper_download')
+            # self.monitor.log_error('hyper_download')
             return None
         finally:
             self.active_tasks.discard(task_id)
@@ -1093,7 +1310,7 @@ class HyperSpeedDownloader:
                         
         except Exception as e:
             LOGGER(__name__).error(f"فشل التحميل بدون كوكيز: {e}")
-            self.monitor.log_error('fallback_download')
+            # self.monitor.log_error('fallback_download')
         finally:
             self.active_tasks.discard(task_id)
             
@@ -1117,16 +1334,11 @@ PARALLEL_SEARCH_STATS = {
 }
 
 # نظام إدارة الحمولة العالية
-import asyncio
-from asyncio import Semaphore
-from collections import defaultdict, deque
-import threading
-from concurrent.futures import ThreadPoolExecutor
 
-# إعدادات الحمولة العالية (لا نهائية)
-MAX_CONCURRENT_DOWNLOADS = float('inf')  # لا حد أقصى للتحميلات
-MAX_CONCURRENT_SEARCHES = float('inf')   # لا حد أقصى للبحث
-MAX_QUEUE_SIZE = float('inf')           # لا حد أقصى للطابور
+# إعدادات الحمولة العالية (محسنة للأداء)
+MAX_CONCURRENT_DOWNLOADS = 20          # حد معقول للتحميلات المتوازية
+MAX_CONCURRENT_SEARCHES = 30           # حد معقول للبحث المتوازي
+MAX_QUEUE_SIZE = float('inf')          # لا حد أقصى للطابور
 RATE_LIMIT_WINDOW = 60                  # نافزة زمنية بالثواني
 MAX_REQUESTS_PER_WINDOW = 1000          # حد مرن للطلبات (مضاعف)
 
@@ -1339,6 +1551,7 @@ def get_available_cookies():
     """الحصول على قائمة ملفات الكوكيز المتاحة مع تدوير ذكي"""
     try:
         import glob
+        import os
         cookies_pattern = "cookies/cookies*.txt"
         all_cookies_files = glob.glob(cookies_pattern)
         
@@ -1419,6 +1632,7 @@ def get_next_cookie_with_rotation():
 def cleanup_blocked_cookies():
     """تنظيف دوري للكوكيز المحظورة"""
     try:
+        import glob
         # إذا تم حظر أكثر من 70% من الكوكيز، اعد تعيين النظام
         total_cookies = len(glob.glob("cookies/cookies*.txt"))
         blocked_count = len(BLOCKED_COOKIES)
@@ -1479,6 +1693,7 @@ def calculate_cookies_distribution(total_count: int) -> Dict[str, int]:
 def get_cookies_statistics():
     """إحصائيات استخدام الكوكيز مع التوزيع الديناميكي"""
     try:
+        import glob
         total_cookies = len(glob.glob("cookies/cookies*.txt"))
         available_cookies = len(get_available_cookies())
         blocked_cookies = len(BLOCKED_COOKIES)
@@ -1513,7 +1728,7 @@ async def parallel_search_with_monitoring(query: str, bot_client) -> Optional[Di
         
         # إنشاء مهام متوازية مع تتبع الوقت
         db_task = asyncio.create_task(search_in_database_cache(query))
-        cache_task = asyncio.create_task(search_in_smart_cache(query, bot_client))
+        cache_task = asyncio.create_task(search_in_telegram_cache(query, bot_client))
         
         # تسجيل بدء المهام
         db_start = time.time()
@@ -1614,18 +1829,41 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
         normalized_query = normalize_search_text(query)
         search_keywords = normalized_query.split()
         
-        LOGGER(__name__).info(f"🗄️ البحث في قاعدة البيانات: {normalized_query}")
+        LOGGER(__name__).info(f"🗄️ البحث في قاعدة البيانات: '{normalized_query}' (كلمات: {search_keywords})")
         
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # البحث باستخدام LIKE لكل كلمة مفتاحية
+        # البحث الذكي المحسن مع معالجة الاختلافات في الكتابة العربية
         search_conditions = []
         search_params = []
         
+        # إضافة البحث الدقيق أولاً
+        search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ?)")
+        search_params.extend([f"%{normalized_query}%", f"%{normalized_query}%"])
+        
+        # معالجة الاختلافات الشائعة في الكتابة العربية
+        arabic_variants = {
+            'وحشتني': ['وحشتني', 'وحشتيني', 'وحشني', 'وحشتنى'],
+            'احبك': ['احبك', 'أحبك', 'احبّك', 'أحبّك'],
+            'حبيبي': ['حبيبي', 'حبيبى'],
+            'عليك': ['عليك', 'عليكي'],
+            'انت': ['انت', 'أنت', 'إنت']
+        }
+        
+        # البحث بالمتغيرات العربية
+        for original_word in search_keywords:
+            if len(original_word) > 2:
+                variants = arabic_variants.get(original_word, [original_word])
+                for variant in variants:
+                    search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)")
+                    search_params.extend([f"%{variant}%", f"%{variant}%", f"%{variant}%"])
+        
+        # البحث العام بالكلمات المفردة (احتياطي)
         for keyword in search_keywords:
-            search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)")
-            search_params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+            if len(keyword) > 2:
+                search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)")
+                search_params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
         
         # استعلام البحث مع ترتيب حسب الشعبية وآخر وصول
         query_sql = f"""
@@ -1640,6 +1878,8 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
         
         cursor.execute(query_sql, search_params)
         results = cursor.fetchall()
+        
+        LOGGER(__name__).info(f"🔍 تم العثور على {len(results)} نتيجة في قاعدة البيانات")
         
         if results:
             # اختيار أفضل نتيجة
@@ -1665,7 +1905,14 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
             all_content_words = title_words | artist_words
             match_ratio = len(query_words & all_content_words) / len(query_words) if query_words else 0
             
-            LOGGER(__name__).info(f"✅ تم العثور على مطابقة في قاعدة البيانات: {match_ratio:.1%}")
+            # التحقق من الحد الأدنى للتطابق (80% على الأقل)
+            MIN_MATCH_RATIO = 0.8
+            if match_ratio < MIN_MATCH_RATIO:
+                LOGGER(__name__).info(f"❌ نسبة التطابق منخفضة جداً: {match_ratio:.1%} (الحد الأدنى: {MIN_MATCH_RATIO:.1%})")
+                conn.close()
+                return None
+            
+            LOGGER(__name__).info(f"✅ تم العثور على مطابقة قوية في قاعدة البيانات: {match_ratio:.1%}")
             
             return {
                 'success': True,
@@ -1693,23 +1940,44 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
 async def send_cached_from_database(event, status_msg, db_result: Dict, bot_client):
     """إرسال الملف من قاعدة البيانات باستخدام file_id"""
     try:
-        await status_msg.edit("📤 **إرسال من الكاش...**")
+        import config
+        
+        LOGGER(__name__).info(f"📤 محاولة إرسال من قاعدة البيانات: {db_result.get('title', 'Unknown')}")
+        await status_msg.edit("📤 **إرسال من الكاش المحلي...**")
         
         # تحضير التسمية التوضيحية
         duration = db_result.get('duration', 0)
         duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
         
-        user_caption = f"""🎵 **{db_result.get('title', 'مقطع صوتي')[:60]}**
-🎤 **{db_result.get('uploader', 'غير معروف')[:40]}**
-⏱️ **{duration_str}** | ⚡ **من الكاش السريع**
-
-💾 **تطابق:** {db_result.get('match_ratio', 0):.1%} | 📊 **مرات الوصول:** {db_result.get('access_count', 1)}
-💡 **مُحمّل بواسطة:** ZeMusic Bot"""
+        user_caption = f"✦ @{config.BOT_USERNAME}"
         
-        # إرسال الملف باستخدام file_id
-        await event.respond(
+        # محاولة تحميل الصورة المصغرة إذا كانت متاحة
+        thumb_path = None
+        try:
+            title = db_result.get('title', 'Unknown')
+            # البحث عن الصورة المصغرة في قناة التخزين
+            if 'message_id' in db_result and bot_client:
+                try:
+                    if hasattr(config, 'CACHE_CHANNEL_ID') and config.CACHE_CHANNEL_ID:
+                        # الحصول على الرسالة من قناة التخزين للحصول على الصورة المصغرة
+                        channel_msg = await bot_client.get_messages(config.CACHE_CHANNEL_ID, ids=db_result['message_id'])
+                        if channel_msg and channel_msg.media and hasattr(channel_msg.media, 'document'):
+                            # استخراج الصورة المصغرة من الملف
+                            if hasattr(channel_msg.media.document, 'thumbs') and channel_msg.media.document.thumbs:
+                                thumb_path = channel_msg.media.document.thumbs[0]
+                                LOGGER(__name__).info(f"📸 تم العثور على الصورة المصغرة من قناة التخزين")
+                except Exception as thumb_error:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في الحصول على الصورة المصغرة: {thumb_error}")
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في معالجة الصورة المصغرة: {e}")
+        
+        LOGGER(__name__).info(f"📋 معلومات الإرسال: file_id={db_result['file_id'][:20]}..., duration={duration}")
+        
+        # إرسال الملف كرد على رسالة المستخدم
+        sent_message = await event.reply(
             user_caption,
             file=db_result['file_id'],
+            thumb=thumb_path,
             attributes=[
                 DocumentAttributeAudio(
                     duration=duration,
@@ -1720,11 +1988,68 @@ async def send_cached_from_database(event, status_msg, db_result: Dict, bot_clie
         )
         
         await status_msg.delete()
-        LOGGER(__name__).info(f"✅ تم إرسال الملف من قاعدة البيانات (مرات الوصول: {db_result.get('access_count', 1)})")
+        LOGGER(__name__).info(f"✅ تم إرسال الملف من قاعدة البيانات كرد بنجاح: {sent_message.id}")
+        return True
         
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في إرسال الملف من قاعدة البيانات: {e}")
-        await status_msg.edit("❌ **خطأ في إرسال الملف من الكاش**")
+        # إزالة الرسالة المزعجة - الانتقال مباشرة للتحميل
+        return False
+
+async def send_cached_from_telegram(event, status_msg, cache_result: Dict, bot_client):
+    """إرسال الملف من التخزين الذكي (قناة التخزين)"""
+    try:
+        import config
+        
+        LOGGER(__name__).info(f"📤 محاولة إرسال من التخزين الذكي: {cache_result.get('title', 'Unknown')}")
+        await status_msg.edit("📤 **إرسال من التخزين الذكي...**")
+        
+        # تحضير التسمية التوضيحية
+        duration = cache_result.get('duration', 0)
+        user_caption = f"✦ @{config.BOT_USERNAME}"
+        
+        # محاولة الحصول على الصورة المصغرة من قناة التخزين
+        thumb_path = None
+        try:
+            if 'message_id' in cache_result and bot_client:
+                try:
+                    if hasattr(config, 'CACHE_CHANNEL_ID') and config.CACHE_CHANNEL_ID:
+                        # الحصول على الرسالة من قناة التخزين للحصول على الصورة المصغرة
+                        channel_msg = await bot_client.get_messages(config.CACHE_CHANNEL_ID, ids=cache_result['message_id'])
+                        if channel_msg and channel_msg.media and hasattr(channel_msg.media, 'document'):
+                            # استخراج الصورة المصغرة من الملف
+                            if hasattr(channel_msg.media.document, 'thumbs') and channel_msg.media.document.thumbs:
+                                thumb_path = channel_msg.media.document.thumbs[0]
+                                LOGGER(__name__).info(f"📸 تم العثور على الصورة المصغرة من قناة التخزين")
+                except Exception as thumb_error:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في الحصول على الصورة المصغرة: {thumb_error}")
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في معالجة الصورة المصغرة: {e}")
+        
+        LOGGER(__name__).info(f"📋 معلومات الإرسال: file_id={cache_result['file_id'][:20]}..., duration={duration}")
+        
+        # إرسال الملف كرد على رسالة المستخدم
+        sent_message = await event.reply(
+            user_caption,
+            file=cache_result['file_id'],
+            thumb=thumb_path,
+            attributes=[
+                DocumentAttributeAudio(
+                    duration=duration,
+                    title=cache_result.get('title', 'Unknown')[:60],
+                    performer=cache_result.get('uploader', 'Unknown')[:40]
+                )
+            ]
+        )
+        
+        await status_msg.delete()
+        LOGGER(__name__).info(f"✅ تم إرسال الملف من التخزين الذكي كرد بنجاح: {sent_message.id}")
+        return True
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في إرسال الملف من التخزين الذكي: {e}")
+        # إزالة الرسالة المزعجة - الانتقال مباشرة للتحميل
+        return False
 
 async def save_to_database_cache(file_id: str, file_unique_id: str, message_id: int, result: Dict, query: str) -> bool:
     """حفظ معلومات الملف في قاعدة البيانات الذكية"""
@@ -1772,8 +2097,8 @@ async def save_to_database_cache(file_id: str, file_unique_id: str, message_id: 
 
 # === نظام التخزين الذكي في قناة التيليجرام ===
 
-async def search_in_smart_cache(query: str, bot_client) -> Optional[Dict]:
-    """البحث في قناة التخزين الذكي"""
+async def search_in_telegram_cache(query: str, bot_client) -> Optional[Dict]:
+    """البحث الذكي الخارق في قناة التخزين مع فهرسة متقدمة"""
     try:
         import config
         
@@ -1782,61 +2107,251 @@ async def search_in_smart_cache(query: str, bot_client) -> Optional[Dict]:
             return None
         
         cache_channel = config.CACHE_CHANNEL_ID
-        LOGGER(__name__).info(f"🔍 البحث في التخزين الذكي: {cache_channel}")
+        LOGGER(__name__).info(f"🔍 البحث الذكي الخارق في التخزين: {cache_channel}")
         
         # تنظيف النص للبحث
         normalized_query = normalize_search_text(query)
         search_keywords = normalized_query.split()
         
-        # البحث في الرسائل الأخيرة (آخر 100 رسالة)
-        async for message in bot_client.iter_messages(cache_channel, limit=100):
-            if message.text and message.file:
-                # فحص النص للتطابق
-                message_text = message.text.lower()
+        # الخطوة 1: البحث السريع في قاعدة البيانات أولاً (أسرع)
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            
+            # بحث متقدم بالكلمات المفتاحية مع معالجة الاختلافات العربية
+            search_conditions = []
+            search_params = []
+            
+            # إضافة البحث الدقيق أولاً
+            search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ?)")
+            search_params.extend([f"%{normalized_query}%", f"%{normalized_query}%"])
+            
+            # معالجة الاختلافات الشائعة في الكتابة العربية
+            arabic_variants = {
+                'وحشتني': ['وحشتني', 'وحشتيني', 'وحشني', 'وحشتنى'],
+                'احبك': ['احبك', 'أحبك', 'احبّك', 'أحبّك'],
+                'حبيبي': ['حبيبي', 'حبيبى'],
+                'عليك': ['عليك', 'عليكي'],
+                'انت': ['انت', 'أنت', 'إنت']
+            }
+            
+            # البحث بالمتغيرات العربية
+            for original_word in search_keywords:
+                if len(original_word) > 2:
+                    variants = arabic_variants.get(original_word, [original_word])
+                    for variant in variants:
+                        search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)")
+                        search_params.extend([f"%{variant}%", f"%{variant}%", f"%{variant}%"])
+            
+            # استعلام محسن مع ترتيب ذكي
+            query_sql = f"""
+            SELECT message_id, file_id, file_unique_id, original_title, original_artist, 
+                   duration, file_size, access_count, last_accessed, popularity_rank,
+                   title_normalized, artist_normalized, keywords_vector
+            FROM channel_index 
+            WHERE ({' OR '.join(search_conditions)})
+            ORDER BY 
+                -- أولوية للمطابقة الكاملة
+                CASE WHEN title_normalized LIKE '%{normalized_query}%' THEN 1 ELSE 2 END,
+                -- ثم حسب الشعبية
+                popularity_rank DESC, 
+                access_count DESC, 
+                last_accessed DESC
+            LIMIT 10
+            """
+            
+            cursor.execute(query_sql, search_params)
+            db_results = cursor.fetchall()
+            
+            if db_results:
+                # حساب نسبة التطابق لكل نتيجة
+                best_match = None
+                best_score = 0
                 
-                # حساب نسبة التطابق
-                match_count = sum(1 for keyword in search_keywords if keyword in message_text)
-                match_ratio = match_count / len(search_keywords) if search_keywords else 0
+                for result in db_results:
+                    # حساب درجة التطابق المتقدمة
+                    title_words = set(result[10].split())  # title_normalized
+                    artist_words = set(result[11].split())  # artist_normalized
+                    keywords_words = set(result[12].split())  # keywords_vector
+                    query_words = set(search_keywords)
+                    
+                    # حساب التطابق المتعدد المستويات
+                    title_match = len(query_words & title_words) / len(query_words) if query_words else 0
+                    artist_match = len(query_words & artist_words) / len(query_words) if query_words else 0
+                    keywords_match = len(query_words & keywords_words) / len(query_words) if query_words else 0
+                    
+                    # درجة مركبة مع أوزان
+                    composite_score = (
+                        title_match * 0.5 +      # وزن العنوان 50%
+                        artist_match * 0.3 +     # وزن الفنان 30%
+                        keywords_match * 0.2     # وزن الكلمات المفتاحية 20%
+                    )
+                    
+                    # إضافة بونص للشعبية
+                    popularity_bonus = min(result[9] / 10, 0.1)  # أقصى بونص 10%
+                    composite_score += popularity_bonus
+                    
+                    if composite_score > best_score and composite_score > 0.8:  # حد أدنى 80%
+                        best_score = composite_score
+                        best_match = result
                 
-                # إذا كان التطابق أكثر من 60%
-                if match_ratio >= 0.6:
-                    LOGGER(__name__).info(f"✅ تم العثور على مطابقة في التخزين: {match_ratio:.1%}")
+                if best_match:
+                    # تحديث إحصائيات الوصول
+                    cursor.execute("""
+                        UPDATE channel_index 
+                        SET access_count = access_count + 1, 
+                            last_accessed = CURRENT_TIMESTAMP,
+                            popularity_rank = popularity_rank + 0.1
+                        WHERE message_id = ?
+                    """, (best_match[0],))
+                    conn.commit()
                     
-                    # استخراج معلومات من النص
-                    title = extract_title_from_cache_text(message.text)
-                    duration = extract_duration_from_cache_text(message.text)
-                    uploader = extract_uploader_from_cache_text(message.text)
+                    LOGGER(__name__).info(f"✅ مطابقة قوية في التخزين الذكي: {best_score:.1%}")
                     
+                    conn.close()
                     return {
                         'success': True,
                         'cached': True,
-                        'message_id': message.id,
-                        'file_id': message.file.id,
-                        'title': title,
-                        'duration': duration,
-                        'uploader': uploader,
-                        'match_ratio': match_ratio,
-                        'original_message': message
+                        'from_database': True,
+                        'message_id': best_match[0],
+                        'file_id': best_match[1],
+                        'file_unique_id': best_match[2],
+                        'title': best_match[3],
+                        'uploader': best_match[4],
+                        'duration': best_match[5],
+                        'file_size': best_match[6],
+                        'access_count': best_match[7] + 1,
+                        'match_ratio': best_score
                     }
+            
+            conn.close()
+            
+            # إذا لم نجد مطابقة قوية
+            if not best_match:
+                LOGGER(__name__).info("❌ لم يتم العثور على مطابقة قوية في التخزين الذكي (الحد الأدنى: 80%)")
+            
+        except Exception as db_error:
+            LOGGER(__name__).warning(f"⚠️ خطأ في البحث بقاعدة البيانات: {db_error}")
         
-        LOGGER(__name__).info("❌ لم يتم العثور على مطابقة في التخزين")
+        # الخطوة 2: البحث المتقدم في رسائل القناة معطل (قيود API للبوتات)
+        LOGGER(__name__).info("⚠️ البحث في التخزين الذكي معطل مؤقتاً (قيود API للبوتات)")
+        return None  # تعطيل البحث في التخزين الذكي
+        
+        # زيادة عدد الرسائل المفحوصة إلى 500 رسالة مع تحسين الأداء
+        search_limit = 500
+        batch_size = 50  # معالجة على دفعات لتحسين الأداء
+        
+        best_matches = []
+        processed_count = 0
+        
+        # معالجة الرسائل على دفعات
+        async for message in bot_client.iter_messages(cache_channel, limit=search_limit):
+            if not (message.text and message.file):
+                continue
+                
+            processed_count += 1
+            
+            # تحليل النص المتقدم
+            message_text = message.text.lower()
+            
+            # استخراج المعلومات من النص
+            title = extract_title_from_cache_text(message.text)
+            uploader = extract_uploader_from_cache_text(message.text)
+            duration = extract_duration_from_cache_text(message.text)
+            
+            # تطبيع المعلومات المستخرجة
+            title_normalized = normalize_search_text(title)
+            uploader_normalized = normalize_search_text(uploader)
+            
+            # حساب التطابق المتقدم
+            title_words = set(title_normalized.split())
+            uploader_words = set(uploader_normalized.split())
+            message_words = set(normalize_search_text(message_text).split())
+            query_words = set(search_keywords)
+            
+            # حساب درجات التطابق
+            title_match = len(query_words & title_words) / len(query_words) if query_words else 0
+            uploader_match = len(query_words & uploader_words) / len(query_words) if query_words else 0
+            message_match = len(query_words & message_words) / len(query_words) if query_words else 0
+            
+            # درجة مركبة محسنة
+            composite_score = (
+                title_match * 0.4 +        # وزن العنوان 40%
+                uploader_match * 0.3 +     # وزن الفنان 30%
+                message_match * 0.3        # وزن النص الكامل 30%
+            )
+            
+            # إضافة بونص للرسائل الحديثة
+            age_bonus = min((search_limit - processed_count) / search_limit * 0.1, 0.1)
+            composite_score += age_bonus
+            
+            if composite_score > 0.5:  # حد أدنى 50% للتطابق
+                best_matches.append({
+                    'score': composite_score,
+                    'message': message,
+                    'title': title,
+                    'uploader': uploader,
+                    'duration': duration,
+                    'message_id': message.id,
+                    'file_id': message.file.id
+                })
+            
+            # معالجة على دفعات لتحسين الأداء
+            if processed_count % batch_size == 0:
+                # ترتيب أفضل النتائج حتى الآن
+                best_matches = sorted(best_matches, key=lambda x: x['score'], reverse=True)[:5]
+                LOGGER(__name__).info(f"🔄 تم معالجة {processed_count} رسالة، أفضل تطابق: {best_matches[0]['score']:.1%}" if best_matches else f"🔄 تم معالجة {processed_count} رسالة")
+        
+        # اختيار أفضل نتيجة
+        if best_matches:
+            best_matches = sorted(best_matches, key=lambda x: x['score'], reverse=True)
+            best_result = best_matches[0]
+            
+            LOGGER(__name__).info(f"✅ أفضل مطابقة في القناة: {best_result['score']:.1%} من {processed_count} رسالة")
+            
+            # حفظ النتيجة في قاعدة البيانات للمرات القادمة
+            try:
+                file_info = {
+                    'title': best_result['title'],
+                    'uploader': best_result['uploader'],
+                    'duration': best_result['duration'],
+                    'file_size': best_result['message'].file.size if best_result['message'].file.size else 0
+                }
+                
+                await save_to_database_cache(
+                    best_result['file_id'],
+                    best_result['message'].file.unique_id,
+                    best_result['message_id'],
+                    file_info,
+                    query
+                )
+                LOGGER(__name__).info("💾 تم حفظ النتيجة في قاعدة البيانات للبحث السريع مستقبلاً")
+                
+            except Exception as save_error:
+                LOGGER(__name__).warning(f"⚠️ خطأ في حفظ النتيجة: {save_error}")
+            
+            return {
+                'success': True,
+                'cached': True,
+                'message_id': best_result['message_id'],
+                'file_id': best_result['file_id'],
+                'title': best_result['title'],
+                'duration': best_result['duration'],
+                'uploader': best_result['uploader'],
+                'match_ratio': best_result['score'],
+                'original_message': best_result['message'],
+                'processed_messages': processed_count
+            }
+        
+        LOGGER(__name__).info(f"❌ لم يتم العثور على مطابقة مناسبة من {processed_count} رسالة")
         return None
         
     except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في البحث بالتخزين الذكي: {e}")
+        LOGGER(__name__).error(f"❌ خطأ في البحث الذكي بالتخزين: {e}")
         return None
 
-def normalize_search_text(text: str) -> str:
-    """تنظيف وتطبيع النص للبحث"""
-    import re
-    
-    # إزالة الرموز الخاصة والأرقام الزائدة
-    text = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', text)
-    
-    # تحويل للأحرف الصغيرة وإزالة المسافات الزائدة
-    text = ' '.join(text.lower().split())
-    
-    return text
+# تم دمج هذه الدالة مع normalize_arabic_text
+normalize_search_text = normalize_arabic_text  # توحيد الدوال
 
 def extract_title_from_cache_text(text: str) -> str:
     """استخراج العنوان من نص التخزين"""
@@ -1897,8 +2412,8 @@ def extract_uploader_from_cache_text(text: str) -> str:
     except:
         return "Unknown Artist"
 
-async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: str) -> bool:
-    """حفظ الملف في قناة التخزين الذكي مع معلومات مفصلة"""
+async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: str, thumb_path: str = None) -> bool:
+    """حفظ الملف في قناة التخزين الذكي مع فهرسة متقدمة وتفصيل شامل"""
     try:
         import config
         import os
@@ -1910,64 +2425,220 @@ async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: s
         
         cache_channel = config.CACHE_CHANNEL_ID
         
-        # تحضير النص المفصل للتخزين
+        # تحضير البيانات المفصلة
         title = result.get('title', 'Unknown')
         uploader = result.get('uploader', 'Unknown')
         duration = result.get('duration', 0)
+        file_size = result.get('file_size', 0)
+        source = result.get('source', 'Unknown')
+        elapsed_time = result.get('elapsed', 0)
+        
+        # تنسيق المدة
         duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
         
-        # إنشاء هاش للبحث السريع
-        search_hash = hash(normalize_search_text(query + " " + title))
+        # تنسيق حجم الملف
+        if file_size > 0:
+            if file_size >= 1024*1024:
+                size_str = f"{file_size/(1024*1024):.1f} MB"
+            else:
+                size_str = f"{file_size/1024:.1f} KB"
+        else:
+            size_str = "غير معروف"
         
-        # النص المفصل للتخزين
-        cache_text = f"""🎵 **{title}**
-🎤 **{uploader}**
-⏱️ **{duration_str}** | 🔢 **{duration}s**
-
-🔍 **كلمات البحث:** {query}
-📊 **هاش البحث:** {abs(search_hash)}
-
-📅 **تاريخ التخزين:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
-🤖 **بواسطة:** ZeMusic Smart Cache System
-
-#تخزين_ذكي #موسيقى #{normalize_search_text(query).replace(' ', '_')}"""
+        # إنشاء هاش متقدم للبحث السريع
+        title_normalized = normalize_search_text(title)
+        uploader_normalized = normalize_search_text(uploader)
+        query_normalized = normalize_search_text(query)
         
-        # إرسال الملف مع النص المفصل
-        sent_message = await bot_client.send_file(
-            cache_channel,
-            file_path,
-            caption=cache_text,
-            attributes=[
-                DocumentAttributeAudio(
-                    duration=duration,
-                    title=title,
-                    performer=uploader
-                )
-            ]
-        )
+        # هاش مركب للبحث السريع
+        search_data = f"{title_normalized}|{uploader_normalized}|{query_normalized}"
+        search_hash = hashlib.md5(search_data.encode()).hexdigest()[:12]
         
-        # حفظ معلومات الملف في قاعدة البيانات أيضاً
-        if sent_message and sent_message.file:
-            file_info = {
-                'title': title,
-                'uploader': uploader,
-                'duration': duration,
-                'file_size': sent_message.file.size if sent_message.file.size else 0
-            }
+        # إنشاء كلمات مفتاحية شاملة
+        all_keywords = set()
+        all_keywords.update(title_normalized.split())
+        all_keywords.update(uploader_normalized.split())
+        all_keywords.update(query_normalized.split())
+        
+        # إضافة كلمات مفتاحية إضافية ذكية
+        if 'حبيبتي' in query_normalized or 'حبيبي' in query_normalized:
+            all_keywords.add('حب')
+            all_keywords.add('رومانسي')
+        if 'اغنية' in query_normalized or 'أغنية' in query_normalized:
+            all_keywords.add('موسيقى')
+            all_keywords.add('غناء')
+        
+        keywords_vector = ' '.join(sorted(all_keywords))
+        
+        # النص المفصل والذكي للتخزين
+        cache_text = f"""🎵 **{title[:80]}**
+🎤 **{uploader[:50]}**
+⏱️ **{duration_str}** ({duration}s) | 📊 **{size_str}**
+
+🔍 **البحث الأصلي:** `{query[:100]}`
+🏷️ **الكلمات المفتاحية:** `{keywords_vector[:200]}`
+🔗 **المصدر:** {source}
+⚡ **وقت التحميل:** {elapsed_time:.1f}s
+
+📊 **هاش البحث:** `{search_hash}`
+📅 **تاريخ التخزين:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🆔 **معرف الملف:** `{os.path.basename(file_path)}`
+
+🤖 **بواسطة:** ZeMusic Smart Cache System V2
+🔄 **للبحث السريع:** استخدم أي من الكلمات أعلاه
+
+#تخزين_ذكي #موسيقى #فهرسة_متقدمة
+#{title_normalized.replace(' ', '_')[:30]} #{uploader_normalized.replace(' ', '_')[:20]}
+#{query_normalized.replace(' ', '_')[:30]} #هاش_{search_hash}"""
+        
+        try:
+            # رفع الملف في الخلفية لتحسين السرعة
+            import asyncio
             
-            await save_to_database_cache(
-                sent_message.file.id,
-                sent_message.file.unique_id,
-                sent_message.id,
-                file_info,
-                query
-            )
+            async def upload_to_storage():
+                try:
+                    sent_message = await bot_client.send_file(
+                        cache_channel,
+                        file_path,
+                        caption=cache_text,
+                        thumb=thumb_path,
+                        attributes=[
+                            DocumentAttributeAudio(
+                                duration=duration,
+                                title=title[:64],
+                                performer=uploader[:64]
+                            )
+                        ],
+                        supports_streaming=True,
+                        force_document=False
+                    )
+                    return sent_message
+                except Exception as e:
+                    LOGGER(__name__).warning(f"⚠️ فشل رفع الملف لقناة التخزين: {e}")
+                    return None
+            
+            # تشغيل الرفع في الخلفية
+            upload_task = asyncio.create_task(upload_to_storage())
+            sent_message = await upload_task
+            
+            if thumb_path:
+                LOGGER(__name__).info(f"✅ تم رفع الملف مع الصورة المصغرة لقناة التخزين: {title[:30]}")
+            else:
+                LOGGER(__name__).info(f"✅ تم رفع الملف لقناة التخزين: {title[:30]}")
+            
+            # حفظ معلومات مفصلة في قاعدة البيانات
+            if sent_message and sent_message.file:
+                # إعداد البيانات المحسنة لقاعدة البيانات
+                enhanced_info = {
+                    'title': title,
+                    'uploader': uploader,
+                    'duration': duration,
+                    'file_size': sent_message.file.size or file_size,
+                    'source': source,
+                    'search_hash': search_hash,
+                    'keywords_vector': keywords_vector,
+                    'original_query': query,
+                    'upload_time': datetime.now().isoformat()
+                }
+                
+                # حفظ في قاعدة البيانات في الخلفية لتحسين السرعة
+                async def save_to_db():
+                    try:
+                        success = await save_to_database_cache_enhanced(
+                            sent_message.file.id,
+                            getattr(sent_message.file, 'unique_id', None),
+                            sent_message.id,
+                            enhanced_info,
+                            query
+                        )
+                        if success:
+                            LOGGER(__name__).info(f"💾 تم حفظ البيانات المحسنة في قاعدة البيانات")
+                        else:
+                            LOGGER(__name__).warning(f"⚠️ فشل حفظ البيانات في قاعدة البيانات")
+                    except Exception as e:
+                        LOGGER(__name__).warning(f"⚠️ خطأ في حفظ قاعدة البيانات: {e}")
+                
+                # تشغيل الحفظ في الخلفية
+                asyncio.create_task(save_to_db())
+            
+            LOGGER(__name__).info(f"🎯 تم حفظ الملف بنجاح مع فهرسة شاملة: {os.path.basename(file_path)}")
+            return True
+            
+        except Exception as upload_error:
+            LOGGER(__name__).error(f"❌ خطأ في رفع الملف: {upload_error}")
+            return False
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في حفظ التخزين الذكي المحسن: {e}")
+        return False
+
+async def save_to_database_cache_enhanced(file_id: str, file_unique_id: str, message_id: int, enhanced_info: Dict, query: str) -> bool:
+    """حفظ معلومات الملف المحسنة في قاعدة البيانات الذكية"""
+    try:
+        # استخراج البيانات المحسنة
+        title = enhanced_info.get('title', 'Unknown')
+        artist = enhanced_info.get('uploader', 'Unknown')
+        duration = enhanced_info.get('duration', 0)
+        file_size = enhanced_info.get('file_size', 0)
+        source = enhanced_info.get('source', 'Unknown')
+        search_hash = enhanced_info.get('search_hash', '')
+        keywords_vector = enhanced_info.get('keywords_vector', '')
+        original_query = enhanced_info.get('original_query', query)
         
-        LOGGER(__name__).info(f"✅ تم حفظ الملف في التخزين الذكي وقاعدة البيانات: {os.path.basename(file_path)}")
+        # تطبيع النصوص
+        title_normalized = normalize_search_text(title)
+        artist_normalized = normalize_search_text(artist)
+        
+        # إنشاء هاش بحث إضافي
+        combined_hash = hashlib.md5((title_normalized + artist_normalized + original_query).encode()).hexdigest()[:16]
+        
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # التحقق من وجود السجل أولاً
+        cursor.execute("SELECT id FROM channel_index WHERE message_id = ? OR search_hash = ?", 
+                      (message_id, search_hash))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # تحديث السجل الموجود
+            cursor.execute("""
+                UPDATE channel_index 
+                SET file_id = ?, file_unique_id = ?, title_normalized = ?, 
+                    artist_normalized = ?, keywords_vector = ?, original_title = ?, 
+                    original_artist = ?, duration = ?, file_size = ?, 
+                    access_count = access_count + 1, popularity_rank = popularity_rank + 0.5,
+                    last_accessed = CURRENT_TIMESTAMP
+                WHERE message_id = ? OR search_hash = ?
+            """, (
+                file_id, file_unique_id, title_normalized, artist_normalized, 
+                keywords_vector, title, artist, duration, file_size, 
+                message_id, search_hash
+            ))
+            LOGGER(__name__).info(f"🔄 تم تحديث السجل الموجود في قاعدة البيانات")
+        else:
+            # إدخال سجل جديد
+            cursor.execute("""
+                INSERT INTO channel_index 
+                (message_id, file_id, file_unique_id, search_hash, title_normalized, 
+                 artist_normalized, keywords_vector, original_title, original_artist, 
+                 duration, file_size, access_count, popularity_rank, phonetic_hash, partial_matches)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1.0, ?, ?)
+            """, (
+                message_id, file_id, file_unique_id, search_hash,
+                title_normalized, artist_normalized, keywords_vector,
+                title, artist, duration, file_size, combined_hash, original_query
+            ))
+            LOGGER(__name__).info(f"➕ تم إضافة سجل جديد لقاعدة البيانات")
+        
+        conn.commit()
+        conn.close()
+        
+        LOGGER(__name__).info(f"✅ تم حفظ البيانات المحسنة: {title[:30]}")
         return True
         
     except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في حفظ التخزين الذكي: {e}")
+        LOGGER(__name__).error(f"❌ خطأ في حفظ قاعدة البيانات المحسنة: {e}")
         return False
 
 async def send_cached_audio(event, status_msg, cache_result: Dict, bot_client):
@@ -1981,12 +2652,7 @@ async def send_cached_audio(event, status_msg, cache_result: Dict, bot_client):
         duration = cache_result.get('duration', 0)
         duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
         
-        user_caption = f"""🎵 **{cache_result.get('title', 'مقطع صوتي')[:60]}**
-🎤 **{cache_result.get('uploader', 'غير معروف')[:40]}**
-⏱️ **{duration_str}** | ⚡ **من التخزين الذكي**
-
-💾 **تطابق:** {cache_result.get('match_ratio', 0):.1%}
-💡 **مُحمّل بواسطة:** ZeMusic Bot"""
+        user_caption = f"✦ @{config.BOT_USERNAME}"
         
         # إرسال الملف للمستخدم
         await event.respond(
@@ -2068,13 +2734,16 @@ async def download_with_api_info(video_id: str, snippet: dict, fallback_title: s
         best_cookie = cookies_files[0] if cookies_files else None
         
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'bestaudio[filesize<30M]/best[filesize<30M]',  # حد أقصى للحجم
             'outtmpl': str(downloads_dir / f'{video_id}_api.%(ext)s'),
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
-            'socket_timeout': 20,
-            'retries': 2,
+            'socket_timeout': 20,  # وقت معقول للاستقرار
+            'retries': 2,  # محاولات معقولة
+            'concurrent_fragment_downloads': 2,  # تحميل متوازي معتدل
+            'http_chunk_size': 5242880,  # 5MB chunks للاستقرار
+            'prefer_ffmpeg': True,  # استخدام ffmpeg للسرعة
         }
         
         if best_cookie:
@@ -2242,16 +2911,25 @@ async def send_audio_file(event, status_msg, audio_file: str, result: dict, quer
         duration = result.get('duration', 0)
         duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
         
-        caption = f"""🎵 **{result.get('title', 'مقطع صوتي')[:60]}**
-🎤 **{result.get('uploader', 'غير معروف')[:40]}**
-⏱️ **{duration_str}** | ⚡ **{result.get('elapsed', 0):.1f}s**
-
-💡 **مُحمّل بواسطة:** ZeMusic Bot"""
+        caption = f"✦ @{config.BOT_USERNAME}"
+        
+        # تحميل الصورة المصغرة إذا كانت متاحة
+        thumb_path = None
+        try:
+            if 'thumbnail' in result and result['thumbnail']:
+                thumb_path = await download_thumbnail(
+                    result['thumbnail'], 
+                    result.get('title', 'Unknown'), 
+                    result.get('id', None)
+                )
+        except Exception as thumb_error:
+            LOGGER(__name__).warning(f"⚠️ خطأ في تحميل الصورة المصغرة: {thumb_error}")
         
         # إرسال الملف الصوتي
         await event.respond(
             caption,
             file=audio_file,
+            thumb=thumb_path,
             attributes=[
                 DocumentAttributeAudio(
                     duration=duration,
@@ -2261,13 +2939,11 @@ async def send_audio_file(event, status_msg, audio_file: str, result: dict, quer
             ]
         )
         
-        await status_msg.delete()
-        
         # حفظ في التخزين الذكي (في الخلفية)
         if query and bot_client:
             try:
-                await status_msg.edit("💾 **جاري الحفظ في التخزين الذكي...**")
-                saved = await save_to_smart_cache(bot_client, audio_file, result, query)
+                LOGGER(__name__).info(f"💾 جاري حفظ المقطع في قناة التخزين...")
+                saved = await save_to_smart_cache(bot_client, audio_file, result, query, thumb_path)
                 if saved:
                     LOGGER(__name__).info(f"✅ تم حفظ المقطع في التخزين الذكي")
                 else:
@@ -2275,8 +2951,18 @@ async def send_audio_file(event, status_msg, audio_file: str, result: dict, quer
             except Exception as cache_error:
                 LOGGER(__name__).error(f"❌ خطأ في حفظ التخزين الذكي: {cache_error}")
         
-        # حذف الملف المؤقت
+        await status_msg.delete()
+        
+        # حذف الملفات المؤقتة
         await remove_temp_files(audio_file)
+        
+        # حذف الصورة المصغرة
+        if thumb_path and os.path.exists(thumb_path):
+            try:
+                os.remove(thumb_path)
+                LOGGER(__name__).debug(f"🗑️ تم حذف الصورة المصغرة: {os.path.basename(thumb_path)}")
+            except Exception as e:
+                LOGGER(__name__).warning(f"⚠️ فشل حذف الصورة المصغرة: {e}")
         
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في إرسال الملف: {e}")
@@ -2312,14 +2998,16 @@ async def try_alternative_downloads(video_id: str, title: str) -> Optional[Dict]
                 
                 downloads_dir = Path("downloads")
                 ydl_opts = {
-                    'format': 'bestaudio/best',
+                    'format': 'bestaudio[filesize<25M]/best[filesize<25M]',
                     'outtmpl': str(downloads_dir / f'{video_id}_alt_{i}.%(ext)s'),
                     'quiet': True,
                     'no_warnings': True,
                     'noplaylist': True,
                     'cookiefile': cookie_file,
-                    'socket_timeout': 20,
-                    'retries': 1,
+                    'socket_timeout': 18,  # وقت معقول للاستقرار
+                    'retries': 2,
+                    'concurrent_fragment_downloads': 2,
+                    'http_chunk_size': 4194304,  # 4MB chunks
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -2392,15 +3080,17 @@ async def force_download_any_way(video_id: str, title: str) -> Optional[Dict]:
                 
                 downloads_dir = Path("downloads")
                 ydl_opts = {
-                    'format': 'worst/bestaudio/best',  # أي جودة متاحة
+                    'format': 'bestaudio[filesize<25M]/best[filesize<25M]',  # حد أقصى للحجم
                     'outtmpl': str(downloads_dir / f'{video_id}_force_{i}.%(ext)s'),
                     'quiet': True,
                     'no_warnings': True,
                     'noplaylist': True,
                     'cookiefile': cookie_file,
-                    'socket_timeout': 30,
-                    'retries': 3,
+                    'socket_timeout': 18,  # وقت معقول
+                    'retries': 2,  # محاولات معقولة
                     'ignore_errors': True,
+                    'concurrent_fragment_downloads': 2,
+                    'http_chunk_size': 4194304,  # 4MB chunks
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -2458,79 +3148,231 @@ async def remove_temp_files(*paths):
             except Exception as e:
                 LOGGER(__name__).warning(f"فشل حذف {path}: {e}")
 
-async def download_thumbnail(url: str, title: str) -> Optional[str]:
+async def download_thumbnail(url: str, title: str, video_id: str = None) -> Optional[str]:
     """تحميل الصورة المصغرة بشكل غير متزامن"""
     if not url:
         return None
     
     try:
-        title_clean = re.sub(r'[\\/*?:"<>|]', "", title)
-        thumb_path = f"downloads/thumb_{title_clean[:20]}.jpg"
+        # استخدام video_id إذا كان متاحاً، وإلا استخدام العنوان المنظف
+        if video_id:
+            thumb_path = f"downloads/thumb_{video_id}.jpg"
+        else:
+            title_clean = re.sub(r'[\\/*?:"<>|]', "", title)
+            thumb_path = f"downloads/thumb_{title_clean[:20]}.jpg"
         
-        session = await downloader.conn_manager.get_session()
-        async with session.get(url) as resp:
-            if resp.status == 200:
-                async with aiofiles.open(thumb_path, mode='wb') as f:
-                    await f.write(await resp.read())
-                return thumb_path
+        # تحقق من وجود الصورة مسبقاً
+        if os.path.exists(thumb_path):
+            return thumb_path
+        
+        LOGGER(__name__).info(f"📸 تحميل الصورة المصغرة: {os.path.basename(thumb_path)}")
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    async with aiofiles.open(thumb_path, mode='wb') as f:
+                        await f.write(await resp.read())
+                    LOGGER(__name__).info(f"✅ تم تحميل الصورة المصغرة: {os.path.basename(thumb_path)}")
+                    return thumb_path
+                else:
+                    LOGGER(__name__).warning(f"⚠️ فشل تحميل الصورة: HTTP {resp.status}")
     except Exception as e:
-        LOGGER(__name__).warning(f"فشل تحميل الصورة: {e}")
+        LOGGER(__name__).warning(f"❌ خطأ في تحميل الصورة المصغرة: {e}")
     
     return None
 
-# --- المعالج الموحد لجميع أنواع المحادثات مع Telethon ---
-async def smart_download_handler(event):
-    """المعالج الذكي للتحميل الفوري المتوازي"""
-    start_time = time.time()
-    user_id = event.sender_id
+async def process_unlimited_download_enhanced(event, user_id: int, start_time: float):
+    """معالجة التحميل المتوازي المحسن مع ذكاء اصطناعي"""
+    task_id = f"{user_id}_{int(time.time() * 1000000)}"  # دقة عالية جداً
     
     try:
-        # تتبع معدل الطلبات (للإحصائيات فقط)
-        await check_rate_limit(user_id)  # لا يوقف العملية
+        # تسجيل بداية المهمة فوراً مع معلومات إضافية
+        active_downloads[task_id] = {
+            'user_id': user_id,
+            'start_time': start_time,
+            'task_id': task_id,
+            'status': 'started_enhanced',
+            'phase': 'initialization'
+        }
         
-        # تهيئة قاعدة البيانات إذا لم تكن مهيأة
-        await ensure_database_initialized()
+        LOGGER(__name__).info(f"🚀 بدء معالجة فورية محسنة للمستخدم {user_id} | المهمة: {task_id}")
         
-        # تنظيف دوري للكوكيز المحظورة (كل 100 طلب)
-        if PERFORMANCE_STATS['total_requests'] % 100 == 0:
-            cleanup_blocked_cookies()
-        
-        # عرض إحصائيات الأداء (كل 50 طلب)
-        if PERFORMANCE_STATS['total_requests'] % 50 == 0:
-            log_performance_stats()
-        
-        # فحص الصلاحيات
-        chat_id = event.chat_id
-        if chat_id > 0:  # محادثة خاصة
-            if not await is_search_enabled1():
-                await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
-                return
-        else:  # مجموعة أو قناة
-            if not await is_search_enabled(chat_id):
-                await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
-                return
-                
-        # معالجة فورية بدون حدود
-        LOGGER(__name__).info(f"🚀 معالجة فورية للمستخدم {user_id} - العمليات النشطة: {len(active_downloads)}")
+        # تنفيذ المعالجة الكاملة المحسنة في مهمة منفصلة - بدون انتظار
+        asyncio.create_task(execute_parallel_download_enhanced(event, user_id, start_time, task_id))
         
     except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في فحص الحمولة: {e}")
+        LOGGER(__name__).error(f"❌ خطأ في معالجة التحميل المتوازي المحسن: {e}")
         await update_performance_stats(False, time.time() - start_time)
-        return
-    
-    # تنفيذ المعالجة الفورية المتوازية - كل طلب يبدأ فوراً
-    # إنشاء مهمة منفصلة لكل طلب بدون انتظار
-    asyncio.create_task(process_unlimited_download(event, user_id, start_time))
-    
-    # تسجيل بدء المهمة فوراً
-    LOGGER(__name__).info(f"⚡ تم إنشاء مهمة متوازية فورية للمستخدم {user_id} - العمليات النشطة: {len(active_downloads) + 1}")
-    
-    # المعالج ينتهي فوراً - المهمة تعمل في الخلفية بشكل مستقل ومتوازي
-    # هذا يضمن أن جميع الطلبات تبدأ في نفس اللحظة بدون انتظار
+    finally:
+        # تنظيف المهمة
+        if task_id in active_downloads:
+            del active_downloads[task_id]
+            LOGGER(__name__).info(f"🧹 تم تنظيف العملية المكتملة: {task_id} - العمليات النشطة: {len(active_downloads)}")
+
+async def execute_parallel_download_enhanced(event, user_id: int, start_time: float, task_id: str):
+    """تنفيذ التحميل المتوازي الكامل مع التحسينات الذكية"""
+    try:
+        # استخراج الاستعلام
+        match = event.pattern_match
+        if not match:
+            await event.reply("❌ **خطأ في تحليل الطلب**")
+            return
+        
+        query = match.group(2) if match.group(2) else ""
+        if not query:
+            await event.reply("📝 **الاستخدام:** `بحث اسم الأغنية`")
+            await update_performance_stats(False, time.time() - start_time)
+            return
+        
+        # تحديث حالة المهمة
+        if task_id in active_downloads:
+            active_downloads[task_id].update({
+                'query': query,
+                'status': 'processing_enhanced',
+                'phase': 'search_preparation'
+            })
+        
+        LOGGER(__name__).info(f"🎵 معالجة متوازية محسنة: {query} | المستخدم: {user_id} | المهمة: {task_id}")
+        
+        # تحديث المرحلة
+        if task_id in active_downloads:
+            active_downloads[task_id]['phase'] = 'intelligent_search'
+        
+        # متغير لرسالة الحالة (سيتم إنشاؤه لاحقاً عند الحاجة)
+        status_msg = None
+        
+        # البحث في الكاش بصمت - بدون رسائل مزعجة
+        # status_msg سيتم إنشاؤه عند الحاجة فقط
+        
+        # البحث المتوازي المحسن بدون حدود
+        try:
+            parallel_result = await parallel_search_with_monitoring(query, event.client)
+            
+            if parallel_result and parallel_result.get('success'):
+                search_source = parallel_result.get('search_source', 'unknown')
+                search_time = parallel_result.get('search_time', 0)
+                processed_msgs = parallel_result.get('processed_messages', 0)
+                
+                # تحديث الإحصائيات
+                await update_performance_stats(True, time.time() - start_time, from_cache=True)
+                
+                if search_source == 'database':
+                    if not status_msg:
+                        status_msg = await event.reply(f"✅ **تم العثور في الكاش المحلي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
+                    else:
+                        await status_msg.edit(f"✅ **تم العثور في الكاش المحلي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
+                    success = await send_cached_from_database(event, status_msg, parallel_result, event.client)
+                    if success:
+                        return  # نجح الإرسال من الكاش
+                    else:
+                        LOGGER(__name__).warning("⚠️ فشل الإرسال من الكاش - سيتم التحميل من يوتيوب")
+                elif search_source == 'smart_cache':
+                    if not status_msg:
+                        status_msg = await event.reply(f"✅ **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
+                    else:
+                        await status_msg.edit(f"✅ **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
+                    success = await send_cached_from_telegram(event, status_msg, parallel_result, event.client)
+                    if success:
+                        return  # نجح الإرسال من التخزين الذكي
+                    else:
+                        LOGGER(__name__).warning("⚠️ فشل الإرسال من التخزين الذكي - سيتم التحميل من يوتيوب")
+            else:
+                # لم يتم العثور في الكاش - الانتقال مباشرة للتحميل بدون إزعاج
+                pass
+                
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في البحث المتوازي: {e}")
+            # إزالة الرسالة المزعجة - الانتقال مباشرة للتحميل
+            
+        # البديل: استخدام النظام الذكي المطور
+        try:
+            LOGGER(__name__).info(f"🔄 استخدام النظام الذكي المطور كبديل: {query}")
+            await download_song_smart(event, query)
+            return
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ فشل النظام الذكي المطور: {e}")
+        
+        # إذا لم يجد في التخزين، ابدأ التحميل الذكي
+        if not status_msg:
+            status_msg = await event.reply("🔍 **جاري البحث والتحميل من يوتيوب...**")
+        else:
+            await status_msg.edit("🔍 **جاري البحث والتحميل من يوتيوب...**")
+        
+        # تحديث المرحلة
+        if task_id in active_downloads:
+            active_downloads[task_id]['phase'] = 'youtube_download'
+        
+        # تنفيذ التحميل الذكي المحسن
+        await process_smart_youtube_download(event, status_msg, query, user_id, start_time, task_id)
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في المعالجة المحسنة: {e}")
+        await update_performance_stats(False, time.time() - start_time)
+        
+        try:
+            await event.reply("❌ **حدث خطأ في معالجة طلبك المحسن**")
+        except:
+            pass
+
+async def process_smart_youtube_download(event, status_msg, query: str, user_id: int, start_time: float, task_id: str):
+    """معالجة التحميل الذكي من يوتيوب مع جميع التحسينات"""
+    try:
+        # تحديث المرحلة
+        if task_id in active_downloads:
+            active_downloads[task_id]['phase'] = 'youtube_search'
+        
+        # البحث المتقدم في يوتيوب
+        await status_msg.edit("🔍 **البحث المتقدم في يوتيوب...**")
+        
+        # محاولة النظام المختلط أولاً (API + yt-dlp)
+        try:
+            from ZeMusic.plugins.play.youtube_api_downloader import search_and_download_hybrid
+            hybrid_result = await search_and_download_hybrid(query)
+            
+            if hybrid_result and hybrid_result.get('success'):
+                LOGGER(__name__).info(f"✅ نجح التحميل المختلط: {hybrid_result['title']}")
+                result = {
+                    'audio_path': hybrid_result['file_path'],
+                    'title': hybrid_result['title'],
+                    'duration': hybrid_result['duration'],
+                    'uploader': hybrid_result['uploader'],
+                    'video_id': hybrid_result['video_id'],
+                    'method': 'hybrid_api_ytdlp'
+                }
+            else:
+                LOGGER(__name__).info("⚠️ فشل التحميل المختلط، التبديل للنظام التقليدي")
+                # استخدام النظام الموجود مع تحسينات
+                result = await downloader.hyper_download(query)
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في النظام المختلط: {e}")
+            # استخدام النظام الموجود مع تحسينات
+            result = await downloader.hyper_download(query)
+        
+        if result:
+            # تحديث المرحلة
+            if task_id in active_downloads:
+                active_downloads[task_id]['phase'] = 'sending_file'
+            
+            # إرسال الملف مع حفظ في التخزين الذكي
+            await send_audio_file(event, status_msg, result['audio_path'], result, query, event.client)
+            
+            # تحديث الإحصائيات
+            await update_performance_stats(True, time.time() - start_time)
+            
+            LOGGER(__name__).info(f"✅ تم إكمال التحميل المحسن: {query}")
+        else:
+            await status_msg.edit("❌ **عذراً، لم أتمكن من العثور على الأغنية**\n\n💡 **جرب:**\n• كلمات مختلفة\n• اسم الفنان\n• جزء من كلمات الأغنية")
+            await update_performance_stats(False, time.time() - start_time)
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في التحميل الذكي: {e}")
+        await status_msg.edit("❌ **حدث خطأ في التحميل**")
+        await update_performance_stats(False, time.time() - start_time)
 
 # --- أوامر المطور مع Telethon ---
 async def cache_stats_handler(event):
     """عرض إحصائيات التخزين الذكي"""
+    import config
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -2577,6 +3419,7 @@ async def cache_stats_handler(event):
 
 async def clear_cache_handler(event):
     """مسح كاش التخزين الذكي"""
+    import config
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -2604,6 +3447,7 @@ async def clear_cache_handler(event):
 
 async def system_stats_handler(event):
     """عرض إحصائيات النظام المتقدمة"""
+    import config
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -2642,67 +3486,647 @@ async def system_stats_handler(event):
 # --- إدارة إغلاق النظام ---
 async def shutdown_system():
     """إغلاق جميع موارد النظام بشكل آمن"""
-    LOGGER(__name__).info("🔴 بدء إيقاف النظام...")
-    await downloader.conn_manager.close()
-    LOGGER(__name__).info("✅ تم إيقاف جميع الموارد")
+    try:
+        LOGGER(__name__).info("🔴 بدء إيقاف النظام...")
+        if hasattr(downloader, 'conn_manager') and downloader.conn_manager:
+            await downloader.conn_manager.close()
+        LOGGER(__name__).info("✅ تم إيقاف جميع الموارد")
+    except Exception as e:
+        LOGGER(__name__).error(f"خطأ في إيقاف النظام: {e}")
 
 # تسجيل معالج الإغلاق
-import atexit
 atexit.register(lambda: asyncio.run(shutdown_system()))
 
-# دالة التحميل الذكي للاستخدام الخارجي
+# دالة التحميل الذكي المتوازي المطور
 async def download_song_smart(message, query: str):
     """
-    دالة التحميل الذكي الرئيسية
-    تستخدم من قبل معالجات البحث الخارجية
+    دالة التحميل الذكي الرئيسية مع البحث المتوازي
+    
+    المراحل:
+    1. البحث المتوازي في الكاش وقناة التخزين
+    2. إرسال فوري إذا وُجد المقطع
+    3. انتقال متسلسل للطرق الأخرى إذا لم يوجد
     """
     try:
-        # رسالة الحالة
-        status_msg = await message.reply_text(
-            "⚡ **النظام الذكي**\n\n"
-            "🔍 جاري البحث..."
-        )
+        # متغير لرسالة الحالة (سيتم إنشاؤه عند الحاجة)
+        status_msg = None
         
-        # تحديد الجودة
-        quality = "medium"
+        LOGGER(__name__).info(f"🎵 بدء البحث المتوازي للاستعلام: {query}")
         
-        # البحث عن الفيديو
-        await status_msg.edit("🔍 **جاري البحث عن الأغنية...**")
-        video_info = None
+        # المرحلة 1: البحث المتوازي في الكاش وقناة التخزين
+        cache_result, telegram_result = await parallel_cache_search(query, message.client)
         
-        # محاولة البحث بطرق مختلفة
-        try:
-            from youtubesearchpython import VideosSearch
-            search = VideosSearch(query, limit=1)
-            results = search.result()
-            if results.get('result'):
-                video_info = results['result'][0]
-        except:
-            try:
-                from youtube_search import YoutubeSearch
-                search = YoutubeSearch(query, max_results=1)
-                search_results = search.to_dict()
-                if search_results:
-                    video_info = search_results[0]
-            except:
-                pass
+        # فحص النتائج المتوازية
+        if cache_result:
+            LOGGER(__name__).info("✅ تم العثور على المقطع في الكاش المحلي")
+            if not status_msg:
+                status_msg = await message.reply("📁 **تم العثور في الكاش!**\n📤 جاري الإرسال...")
+            else:
+                await status_msg.edit("📁 **تم العثور في الكاش!**\n📤 جاري الإرسال...")
+            
+            success = await send_local_cached_audio(message, cache_result, status_msg)
+            if success:
+                return
+                
+        elif telegram_result:
+            LOGGER(__name__).info("✅ تم العثور على المقطع في قناة التخزين")
+            if not status_msg:
+                status_msg = await message.reply("📺 **تم العثور في قناة التخزين!**\n📤 جاري الإرسال...")
+            else:
+                await status_msg.edit("📺 **تم العثور في قناة التخزين!**\n📤 جاري الإرسال...")
+            
+            success = await send_telegram_cached_audio(message, telegram_result, status_msg)
+            if success:
+                return
+        
+        # المرحلة 2: لم يتم العثور على المقطع - الانتقال للبحث الخارجي
+        LOGGER(__name__).info("🔍 لم يتم العثور في الكاش - بدء البحث الخارجي")
+        if not status_msg:
+            status_msg = await message.reply("🔍 **جاري البحث في YouTube...**")
+        else:
+            await status_msg.edit("🔍 **جاري البحث في YouTube...**")
+        
+        # البحث المتسلسل في الطرق الخارجية
+        video_info = await sequential_external_search(query)
         
         if not video_info:
-            await status_msg.edit(
-                "❌ **لم يتم العثور على نتائج**\n\n"
-                "💡 **جرب:**\n"
-                "• كلمات مختلفة\n"
-                "• اسم الفنان\n"
-                "• جزء من كلمات الأغنية"
-            )
+            if not status_msg:
+                status_msg = await message.reply(
+                    "❌ **لم يتم العثور على نتائج**\n\n"
+                    "💡 **جرب:**\n"
+                    "• كلمات مختلفة\n"
+                    "• اسم الفنان\n"
+                    "• جزء من كلمات الأغنية"
+                )
+            else:
+                await status_msg.edit(
+                    "❌ **لم يتم العثور على نتائج**\n\n"
+                    "💡 **جرب:**\n"
+                    "• كلمات مختلفة\n"
+                    "• اسم الفنان\n"
+                    "• جزء من كلمات الأغنية"
+                )
             return
         
-        # استخراج معلومات الفيديو
-        title = video_info.get('title', 'أغنية')
-        video_id = video_info.get('id', '')
-        duration_text = video_info.get('duration', '0:00')
+        # المرحلة 3: التحميل الذكي مع cookies
+        LOGGER(__name__).info(f"⬇️ بدء التحميل الذكي: {video_info.get('title', 'غير محدد')}")
+        success = await smart_download_and_send(message, video_info, status_msg)
         
-        # تحويل المدة إلى ثوان
+        if not success:
+            if not status_msg:
+                status_msg = await message.reply(
+                    "❌ **فشل التحميل**\n\n"
+                    "حدث خطأ أثناء تحميل المقطع\n"
+                    "يرجى المحاولة مرة أخرى لاحقاً"
+                )
+            else:
+                await status_msg.edit(
+                    "❌ **فشل التحميل**\n\n"
+                    "حدث خطأ أثناء تحميل المقطع\n"
+                    "يرجى المحاولة مرة أخرى لاحقاً"
+                )
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"خطأ في download_song_smart: {e}")
+        try:
+            await message.reply(
+                "❌ **خطأ في البحث**\n\n"
+                "حدث خطأ أثناء معالجة طلبك\n"
+                "يرجى المحاولة مرة أخرى"
+            )
+        except:
+            pass
+
+# === نظام البحث المتوازي المطور ===
+
+async def parallel_cache_search(query: str, bot_client) -> Tuple[Optional[Dict], Optional[Dict]]:
+    """البحث المتوازي في الكاش المحلي وقناة التخزين مع معالجة أخطاء دقيقة"""
+    start_time = time.time()
+    
+    try:
+        LOGGER(__name__).info(f"🔍 بدء البحث المتوازي: {query}")
+        
+        # التحقق من صحة المدخلات
+        if not query or not query.strip():
+            LOGGER(__name__).error("❌ خطأ: استعلام البحث فارغ")
+            return None, None
+            
+        if not bot_client:
+            LOGGER(__name__).error("❌ خطأ: عميل البوت غير متاح")
+            return None, None
+        
+        # تنظيف الاستعلام
+        cleaned_query = query.strip()
+        LOGGER(__name__).debug(f"🧹 الاستعلام المنظف: {cleaned_query}")
+        
+        # إنشاء مهام البحث المتوازي مع معالجة أخطاء فردية
+        cache_task = None
+        telegram_task = None
+        
+        try:
+            cache_task = asyncio.create_task(search_local_cache(cleaned_query))
+            LOGGER(__name__).debug("✅ تم إنشاء مهمة البحث في الكاش المحلي")
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في إنشاء مهمة الكاش المحلي: {e}")
+            
+        try:
+            telegram_task = asyncio.create_task(search_in_telegram_cache(cleaned_query, bot_client))
+            LOGGER(__name__).debug("✅ تم إنشاء مهمة البحث في التليجرام")
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في إنشاء مهمة التليجرام: {e}")
+        
+        # التحقق من نجاح إنشاء المهام
+        if not cache_task and not telegram_task:
+            LOGGER(__name__).error("❌ فشل في إنشاء أي من مهام البحث")
+            return None, None
+        
+        # انتظار النتائج مع timeout ومعالجة أخطاء متقدمة
+        cache_result = None
+        telegram_result = None
+        
+        try:
+            # تنفيذ المهام المتاحة فقط
+            tasks = []
+            if cache_task:
+                tasks.append(cache_task)
+            if telegram_task:
+                tasks.append(telegram_task)
+            
+            LOGGER(__name__).info(f"⏳ انتظار {len(tasks)} مهمة بحث مع مهلة 10 ثوان...")
+            
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=10.0
+            )
+            
+            # تحليل النتائج
+            result_index = 0
+            if cache_task:
+                cache_result = results[result_index]
+                result_index += 1
+                
+                if isinstance(cache_result, Exception):
+                    LOGGER(__name__).error(f"❌ خطأ في البحث المحلي: {cache_result}")
+                    cache_result = None
+                elif cache_result:
+                    LOGGER(__name__).info(f"✅ نجح البحث المحلي: {cache_result.get('title', 'غير محدد')}")
+                else:
+                    LOGGER(__name__).debug("🔍 لم يتم العثور على نتائج في الكاش المحلي")
+                    
+            if telegram_task:
+                telegram_result = results[result_index]
+                
+                if isinstance(telegram_result, Exception):
+                    LOGGER(__name__).error(f"❌ خطأ في البحث في التليجرام: {telegram_result}")
+                    telegram_result = None
+                elif telegram_result:
+                    LOGGER(__name__).info(f"✅ نجح البحث في التليجرام: {telegram_result.get('title', 'غير محدد')}")
+                else:
+                    LOGGER(__name__).debug("🔍 لم يتم العثور على نتائج في التليجرام")
+            
+        except asyncio.TimeoutError:
+            LOGGER(__name__).warning("⏰ انتهت مهلة البحث المتوازي (10 ثوان)")
+            
+            # إلغاء المهام المعلقة
+            if cache_task and not cache_task.done():
+                cache_task.cancel()
+                LOGGER(__name__).debug("🚫 تم إلغاء مهمة البحث المحلي")
+                
+            if telegram_task and not telegram_task.done():
+                telegram_task.cancel()
+                LOGGER(__name__).debug("🚫 تم إلغاء مهمة البحث في التليجرام")
+                
+        except Exception as gather_error:
+            LOGGER(__name__).error(f"❌ خطأ في تجميع نتائج البحث: {gather_error}")
+            import traceback
+            LOGGER(__name__).error(f"📋 تفاصيل الخطأ: {traceback.format_exc()}")
+        
+        # تسجيل الإحصائيات
+        elapsed_time = time.time() - start_time
+        LOGGER(__name__).info(
+            f"📊 إحصائيات البحث المتوازي:\n"
+            f"   ⏱️ الوقت المستغرق: {elapsed_time:.2f} ثانية\n"
+            f"   📁 الكاش المحلي: {'✅ نجح' if cache_result else '❌ فشل/فارغ'}\n"
+            f"   📺 التليجرام: {'✅ نجح' if telegram_result else '❌ فشل/فارغ'}"
+        )
+        
+        return cache_result, telegram_result
+        
+    except Exception as e:
+        elapsed_time = time.time() - start_time
+        LOGGER(__name__).error(
+            f"❌ خطأ عام في البحث المتوازي:\n"
+            f"   🔍 الاستعلام: {query}\n"
+            f"   ⏱️ الوقت: {elapsed_time:.2f} ثانية\n"
+            f"   📋 الخطأ: {str(e)}"
+        )
+        import traceback
+        LOGGER(__name__).error(f"📋 تفاصيل الخطأ الكاملة: {traceback.format_exc()}")
+        return None, None
+
+async def search_local_cache(query: str) -> Optional[Dict]:
+    """البحث في الكاش المحلي (قاعدة البيانات) مع معالجة أخطاء دقيقة"""
+    start_time = time.time()
+    conn = None
+    
+    try:
+        LOGGER(__name__).info(f"📁 بدء البحث في الكاش المحلي: {query}")
+        
+        # التحقق من صحة الاستعلام
+        if not query or not query.strip():
+            LOGGER(__name__).error("❌ خطأ: استعلام البحث فارغ في الكاش المحلي")
+            return None
+        
+        # تنظيف النص للبحث
+        try:
+            normalized_query = normalize_arabic_text(query)
+            LOGGER(__name__).debug(f"🧹 الاستعلام المنظف: '{normalized_query}'")
+            
+            if not normalized_query:
+                LOGGER(__name__).warning("⚠️ الاستعلام المنظف فارغ")
+                return None
+                
+            search_keywords = normalized_query.split()
+            LOGGER(__name__).debug(f"🔑 كلمات البحث: {search_keywords}")
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في تنظيف الاستعلام: {e}")
+            return None
+        
+        # التحقق من وجود قاعدة البيانات
+        if not os.path.exists(DATABASE_PATH):
+            LOGGER(__name__).warning(f"⚠️ قاعدة البيانات غير موجودة: {DATABASE_PATH}")
+            return None
+        
+        # الاتصال بقاعدة البيانات
+        try:
+            conn = sqlite3.connect(DATABASE_PATH, timeout=5.0)
+            cursor = conn.cursor()
+            LOGGER(__name__).debug("✅ تم الاتصال بقاعدة البيانات")
+            
+        except sqlite3.Error as db_error:
+            LOGGER(__name__).error(f"❌ خطأ في الاتصال بقاعدة البيانات: {db_error}")
+            return None
+        
+        # التحقق من وجود الجدول
+        try:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cached_audio'")
+            table_exists = cursor.fetchone()
+            
+            if not table_exists:
+                LOGGER(__name__).warning("⚠️ جدول cached_audio غير موجود")
+                return None
+                
+            LOGGER(__name__).debug("✅ جدول cached_audio موجود")
+            
+        except sqlite3.Error as e:
+            LOGGER(__name__).error(f"❌ خطأ في فحص الجدول: {e}")
+            return None
+        
+        # بناء استعلام البحث المتقدم
+        search_conditions = []
+        search_params = []
+        
+        try:
+            for keyword in search_keywords:
+                if keyword.strip():  # تجاهل الكلمات الفارغة
+                    search_conditions.append(
+                        "(LOWER(title) LIKE ? OR LOWER(artist) LIKE ? OR LOWER(keywords) LIKE ?)"
+                    )
+                    keyword_lower = keyword.lower()
+                    search_params.extend([f"%{keyword_lower}%", f"%{keyword_lower}%", f"%{keyword_lower}%"])
+            
+            if not search_conditions:
+                LOGGER(__name__).warning("⚠️ لا توجد شروط بحث صالحة")
+                return None
+                
+            where_clause = " AND ".join(search_conditions)
+            query_sql = f"""
+            SELECT video_id, title, artist, duration, file_path, thumb, message_id, keywords, created_at
+            FROM cached_audio 
+            WHERE {where_clause}
+            ORDER BY created_at DESC LIMIT 1
+            """
+            
+            LOGGER(__name__).debug(f"📋 استعلام SQL: {query_sql}")
+            LOGGER(__name__).debug(f"📋 معاملات البحث: {len(search_params)} معامل")
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في بناء استعلام البحث: {e}")
+            return None
+        
+        # تنفيذ الاستعلام
+        try:
+            cursor.execute(query_sql, search_params)
+            result = cursor.fetchone()
+            
+            if result:
+                # التحقق من صحة البيانات المسترجعة
+                try:
+                    result_dict = {
+                        "video_id": result[0] if result[0] else "unknown",
+                        "title": result[1] if result[1] else "عنوان غير محدد",
+                        "artist": result[2] if result[2] else "فنان غير محدد",
+                        "duration": int(result[3]) if result[3] and str(result[3]).isdigit() else 0,
+                        "file_path": result[4] if result[4] else None,
+                        "thumb": result[5] if result[5] else None,
+                        "message_id": int(result[6]) if result[6] and str(result[6]).isdigit() else None,
+                        "keywords": result[7] if result[7] else "",
+                        "source": "local_cache",
+                        "created_at": result[8] if result[8] else "غير محدد"
+                    }
+                    
+                    # التحقق من وجود الملف إذا كان محدداً
+                    if result_dict["file_path"] and not os.path.exists(result_dict["file_path"]):
+                        LOGGER(__name__).warning(f"⚠️ الملف المحفوظ غير موجود: {result_dict['file_path']}")
+                        result_dict["file_path"] = None
+                    
+                    elapsed_time = time.time() - start_time
+                    LOGGER(__name__).info(
+                        f"✅ تم العثور في الكاش المحلي:\n"
+                        f"   🎵 العنوان: {result_dict['title']}\n"
+                        f"   👤 الفنان: {result_dict['artist']}\n"
+                        f"   📁 الملف: {'✅ موجود' if result_dict['file_path'] else '❌ غير موجود'}\n"
+                        f"   ⏱️ الوقت: {elapsed_time:.2f} ثانية"
+                    )
+                    
+                    return result_dict
+                    
+                except Exception as e:
+                    LOGGER(__name__).error(f"❌ خطأ في معالجة نتيجة البحث: {e}")
+                    return None
+            else:
+                elapsed_time = time.time() - start_time
+                LOGGER(__name__).info(f"🔍 لم يتم العثور على نتائج في الكاش المحلي (⏱️ {elapsed_time:.2f}s)")
+                return None
+                
+        except sqlite3.Error as e:
+            LOGGER(__name__).error(f"❌ خطأ في تنفيذ استعلام البحث: {e}")
+            return None
+        
+    except Exception as e:
+        elapsed_time = time.time() - start_time
+        LOGGER(__name__).error(
+            f"❌ خطأ عام في البحث المحلي:\n"
+            f"   🔍 الاستعلام: {query}\n"
+            f"   ⏱️ الوقت: {elapsed_time:.2f} ثانية\n"
+            f"   📋 الخطأ: {str(e)}"
+        )
+        import traceback
+        LOGGER(__name__).error(f"📋 تفاصيل الخطأ الكاملة: {traceback.format_exc()}")
+        return None
+        
+    finally:
+        # إغلاق الاتصال بقاعدة البيانات
+        if conn:
+            try:
+                conn.close()
+                LOGGER(__name__).debug("🔒 تم إغلاق الاتصال بقاعدة البيانات")
+            except Exception as e:
+                LOGGER(__name__).warning(f"⚠️ خطأ في إغلاق قاعدة البيانات: {e}")
+
+async def sequential_external_search(query: str) -> Optional[Dict]:
+    """البحث المتسلسل في المصادر الخارجية"""
+    try:
+        LOGGER(__name__).info(f"🌐 بدء البحث الخارجي المتسلسل: {query}")
+        
+        # الطريقة 1: YouTube Search
+        try:
+            LOGGER(__name__).info("🔍 محاولة YouTube Search...")
+            if YOUTUBE_SEARCH_AVAILABLE:
+                search = YoutubeSearch(query, max_results=1)
+                results = search.to_dict()
+                
+                if results:
+                    result = results[0]
+                    video_id = result.get('id', '')
+                    
+                    if video_id:
+                        LOGGER(__name__).info(f"✅ YouTube Search نجح: {result.get('title', 'غير محدد')}")
+                        return {
+                            'id': video_id,
+                            'title': result.get('title', 'غير محدد'),
+                            'channel': result.get('channel', 'غير محدد'),
+                            'duration': result.get('duration', '0:00'),
+                            'views': result.get('views', 'غير محدد'),
+                            'source': 'youtube_search'
+                        }
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ YouTube Search فشل: {e}")
+        
+        # الطريقة 2: النظام المختلط (YouTube API + yt-dlp)
+        try:
+            LOGGER(__name__).info("🔍 محاولة النظام المختلط (YouTube API + yt-dlp)...")
+            from .youtube_api_downloader import download_youtube_hybrid
+            
+            success, result = await download_youtube_hybrid(query, "downloads")
+            if success and result:
+                LOGGER(__name__).info(f"✅ النظام المختلط نجح: {result.get('title', 'غير محدد')}")
+                return {
+                    'id': result['video_id'],
+                    'title': result['title'],
+                    'channel': result.get('channel', 'غير محدد'),
+                    'duration': '0:00',  # سيتم الحصول عليها من الملف
+                    'views': 'غير محدد',
+                    'source': 'hybrid_api_ytdlp',
+                    'file_path': result['file_path'],
+                    'thumbnail': result.get('thumbnail', ''),
+                    'url': result['url']
+                }
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ النظام المختلط فشل: {e}")
+        
+        # الطريقة 3: YouTube API التقليدي (إذا كان متاحاً)
+        try:
+            LOGGER(__name__).info("🔍 محاولة YouTube API التقليدي...")
+            import config
+            
+            if hasattr(config, 'YOUTUBE_API_KEY') and config.YOUTUBE_API_KEY:
+                # يمكن إضافة YouTube API التقليدي هنا لاحقاً
+                pass
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ YouTube API فشل: {e}")
+        
+        # الطريقة 3: Invidious (إذا كان متاحاً)
+        try:
+            LOGGER(__name__).info("🔍 محاولة Invidious...")
+            # يمكن إضافة Invidious هنا لاحقاً
+            pass
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ Invidious فشل: {e}")
+        
+        LOGGER(__name__).warning("❌ فشل جميع طرق البحث الخارجي")
+        return None
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في البحث الخارجي: {e}")
+        return None
+
+async def send_local_cached_audio(message, cache_result: Dict, status_msg) -> bool:
+    """إرسال المقطع الصوتي من الكاش المحلي"""
+    try:
+        LOGGER(__name__).info(f"📤 إرسال من الكاش المحلي: {cache_result.get('title', 'غير محدد')}")
+        
+        file_path = cache_result.get('file_path')
+        
+        if file_path and os.path.exists(file_path):
+            # إرسال الملف الموجود
+            await message.reply(
+                file=file_path,
+                message=f"✦ @{config.BOT_USERNAME}",
+                attributes=[
+                    DocumentAttributeAudio(
+                        duration=cache_result.get('duration', 0),
+                        title=cache_result.get('title', 'غير محدد'),
+                        performer=cache_result.get('artist', 'ZeMusic Bot')
+                    )
+                ]
+            )
+            
+            await status_msg.delete()
+            LOGGER(__name__).info("✅ تم إرسال المقطع من الكاش المحلي بنجاح")
+            return True
+            
+        else:
+            LOGGER(__name__).warning("⚠️ ملف الكاش المحلي غير موجود")
+            return False
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في إرسال الكاش المحلي: {e}")
+        return False
+
+async def send_telegram_cached_audio(message, telegram_result: Dict, status_msg) -> bool:
+    """إرسال المقطع الصوتي من قناة التخزين"""
+    try:
+        LOGGER(__name__).info(f"📤 إرسال من قناة التخزين: {telegram_result.get('title', 'غير محدد')}")
+        
+        message_id = telegram_result.get('message_id')
+        file_id = telegram_result.get('file_id')
+        
+        if file_id:
+            # إرسال بـ file_id
+            await message.reply(
+                file=file_id,
+                message=f"✦ @{config.BOT_USERNAME}",
+                attributes=[
+                    DocumentAttributeAudio(
+                        duration=telegram_result.get('duration', 0),
+                        title=telegram_result.get('title', 'غير محدد'),
+                        performer=telegram_result.get('artist', 'ZeMusic Bot')
+                    )
+                ]
+            )
+            
+            await status_msg.delete()
+            LOGGER(__name__).info("✅ تم إرسال المقطع من قناة التخزين بنجاح")
+            return True
+            
+        elif message_id:
+            # إعادة توجيه الرسالة
+            import config
+            cache_channel = config.CACHE_CHANNEL_ID
+            
+            await message.client.forward_messages(
+                entity=message.chat_id,
+                messages=message_id,
+                from_peer=cache_channel
+            )
+            
+            await status_msg.delete()
+            LOGGER(__name__).info("✅ تم إعادة توجيه المقطع من قناة التخزين بنجاح")
+            return True
+            
+        else:
+            LOGGER(__name__).warning("⚠️ لا يوجد file_id أو message_id صالح")
+            return False
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في إرسال من قناة التخزين: {e}")
+        return False
+
+async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool:
+    """التحميل الذكي مع cookies وحفظ في الكاش مع معالجة أخطاء دقيقة"""
+    start_time = time.time()
+    downloaded_file = None
+    
+    try:
+        LOGGER(__name__).info(f"⬇️ بدء التحميل الذكي مع معالجة أخطاء متقدمة")
+        
+        # التحقق من وجود ملف محمل من النظام المختلط
+        if video_info.get('source') == 'hybrid_api_ytdlp' and video_info.get('file_path'):
+            hybrid_file_path = video_info.get('file_path')
+            if os.path.exists(hybrid_file_path):
+                LOGGER(__name__).info(f"✅ استخدام ملف محمل من النظام المختلط: {hybrid_file_path}")
+                try:
+                    # إرسال الملف مباشرة
+                    await status_msg.edit("📤 **جاري إرسال الملف المحمل...**")
+                    
+                    # الحصول على معلومات الملف
+                    file_size = os.path.getsize(hybrid_file_path)
+                    duration = get_audio_duration(hybrid_file_path) if os.path.exists(hybrid_file_path) else 0
+                    
+                    # إرسال الملف
+                    sent_message = await message.reply_audio(
+                        audio=hybrid_file_path,
+                        caption=f"🎵 **{video_info.get('title', 'أغنية')}**\n👤 **{video_info.get('channel', 'قناة')}**",
+                        duration=duration,
+                        title=video_info.get('title', 'أغنية'),
+                        performer=video_info.get('channel', 'قناة')
+                    )
+                    
+                    if sent_message:
+                        # حفظ في قاعدة البيانات
+                        await save_to_database_enhanced(
+                            video_info.get('title', 'أغنية'),
+                            video_info.get('id', ''),
+                            sent_message.audio.file_id,
+                            duration,
+                            video_info.get('channel', 'قناة'),
+                            video_info.get('thumbnail', ''),
+                            hybrid_file_path
+                        )
+                        
+                        await status_msg.delete()
+                        LOGGER(__name__).info("✅ تم إرسال الملف من النظام المختلط بنجاح")
+                        return True
+                        
+                except Exception as e:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في إرسال الملف المختلط: {e}")
+                    # المتابعة للتحميل التقليدي
+        
+        # التحقق من صحة المدخلات
+        if not video_info or not isinstance(video_info, dict):
+            LOGGER(__name__).error("❌ خطأ: معلومات الفيديو غير صحيحة")
+            return False
+            
+        if not message:
+            LOGGER(__name__).error("❌ خطأ: كائن الرسالة غير متاح")
+            return False
+            
+        if not status_msg:
+            LOGGER(__name__).error("❌ خطأ: رسالة الحالة غير متاحة")
+            return False
+        
+        # استخراج المعلومات مع التحقق من الصحة
+        title = video_info.get('title', 'أغنية غير محددة').strip()
+        video_id = video_info.get('id', '').strip()
+        duration_text = video_info.get('duration', '0:00').strip()
+        channel = video_info.get('channel', 'قناة غير محددة').strip()
+        
+        # التحقق من وجود video_id
+        if not video_id:
+            LOGGER(__name__).error("❌ خطأ: معرف الفيديو مفقود")
+            return False
+        
+        LOGGER(__name__).info(
+            f"📋 معلومات التحميل:\n"
+            f"   🎵 العنوان: {title}\n"
+            f"   🆔 المعرف: {video_id}\n"
+            f"   👤 القناة: {channel}\n"
+            f"   ⏱️ المدة: {duration_text}"
+        )
+        
+        # تحويل المدة إلى ثوان مع معالجة أخطاء
         duration = 0
         try:
             if ':' in duration_text:
@@ -2711,23 +4135,87 @@ async def download_song_smart(message, query: str):
                     duration = int(parts[0]) * 60 + int(parts[1])
                 elif len(parts) == 3:
                     duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        except:
+                    
+                LOGGER(__name__).debug(f"⏱️ تم تحويل المدة: {duration_text} → {duration} ثانية")
+                
+        except (ValueError, IndexError) as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في تحويل المدة '{duration_text}': {e}")
             duration = 0
         
-        # التحميل
-        await status_msg.edit("📥 **جاري التحميل...**")
-        
-        # استخدام yt-dlp للتحميل
+        # التحقق من توفر yt-dlp
         if not yt_dlp:
-            await status_msg.edit("❌ **خطأ:** yt-dlp غير متاح")
-            return
+            LOGGER(__name__).error("❌ خطأ: مكتبة yt-dlp غير متاحة")
+            return False
         
-        # إعدادات التحميل
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': f'downloads/{video_id}.%(ext)s',
-            'noplaylist': True,
-        }
+        # الحصول على ملف cookies مع معالجة أخطاء دقيقة
+        cookie_file = None
+        try:
+            await status_msg.edit("🍪 **جاري تحضير التحميل...**")
+            LOGGER(__name__).debug("🍪 محاولة الحصول على ملف cookies")
+            
+            # البحث المباشر عن ملفات cookies
+            cookies_dir = Path("cookies")
+            if cookies_dir.exists():
+                cookie_files = list(cookies_dir.glob("*.txt"))
+                if cookie_files:
+                    # اختيار ملف عشوائي
+                    cookie_file = str(cookie_files[0])  # أول ملف متاح
+                    
+                    if os.path.exists(cookie_file):
+                        file_size = os.path.getsize(cookie_file)
+                        LOGGER(__name__).info(f"✅ تم الحصول على ملف cookies: {cookie_file} ({file_size} bytes)")
+                    else:
+                        LOGGER(__name__).warning("⚠️ ملف cookies غير موجود")
+                        cookie_file = None
+                else:
+                    LOGGER(__name__).warning("⚠️ لا توجد ملفات cookies في المجلد")
+                    cookie_file = None
+            else:
+                LOGGER(__name__).warning("⚠️ مجلد cookies غير موجود")
+                cookie_file = None
+            
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في الحصول على cookies: {e}")
+            cookie_file = None
+        
+        # إعداد مجلد التحميلات مع التحقق
+        try:
+            downloads_dir = Path("downloads")
+            downloads_dir.mkdir(exist_ok=True)
+            LOGGER(__name__).debug(f"📁 مجلد التحميلات جاهز: {downloads_dir.absolute()}")
+            
+            # التحقق من الصلاحيات
+            if not os.access(downloads_dir, os.W_OK):
+                LOGGER(__name__).error("❌ لا توجد صلاحية كتابة في مجلد التحميلات")
+                return False
+                
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في إعداد مجلد التحميلات: {e}")
+            return False
+        
+        # إعدادات التحميل المحسنة مع تحويل إلى MP3
+        try:
+            ydl_opts = get_ytdlp_opts(cookie_file)
+            ydl_opts['outtmpl'] = f'downloads/{video_id}.%(ext)s'
+            
+            # إضافة cookies إذا كان متاحاً
+            if cookie_file and os.path.exists(cookie_file):
+                ydl_opts['cookiefile'] = cookie_file
+                LOGGER(__name__).info("🍪 تم إضافة ملف cookies لإعدادات التحميل")
+            else:
+                LOGGER(__name__).info("🚫 التحميل بدون cookies")
+            
+            LOGGER(__name__).debug(f"⚙️ إعدادات yt-dlp: {ydl_opts}")
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في إعداد خيارات التحميل: {e}")
+            return False
+        
+        # تحديث رسالة الحالة
+        try:
+            await status_msg.edit("📥 **جاري التحميل من YouTube...**")
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في تحديث رسالة الحالة: {e}")
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -2736,28 +4224,56 @@ async def download_song_smart(message, query: str):
                 
                 # البحث عن الملف المحمل
                 downloaded_file = None
-                for ext in ['mp3', 'webm', 'm4a', 'ogg']:
+                for ext in ['mp3', 'webm', 'm4a', 'ogg', 'opus']:
                     file_path = f'downloads/{video_id}.{ext}'
                     if os.path.exists(file_path):
                         downloaded_file = file_path
                         break
                 
                 if not downloaded_file:
-                    await status_msg.edit("❌ **خطأ:** فشل في تحميل الملف")
-                    return
+                    LOGGER(__name__).error("❌ لم يتم العثور على الملف المحمل")
+                    return False
+                
+                # تحميل الصورة المصغرة
+                thumb_path = None
+                try:
+                    if info and 'thumbnail' in info and info['thumbnail']:
+                        thumb_path = await download_thumbnail(info['thumbnail'], title, video_id)
+                    elif info and 'thumbnails' in info and info['thumbnails']:
+                        # أخذ أفضل جودة متاحة
+                        best_thumb = None
+                        for thumb in info['thumbnails']:
+                            if thumb.get('url'):
+                                best_thumb = thumb['url']
+                        if best_thumb:
+                            thumb_path = await download_thumbnail(best_thumb, title, video_id)
+                except Exception as thumb_error:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في تحميل الصورة المصغرة: {thumb_error}")
                 
                 # إرسال الملف
                 await status_msg.edit("📤 **جاري الإرسال...**")
                 
-                await message.reply_audio(
-                    audio=downloaded_file,
-                    caption=f"🎵 **{title}**\n\n"
-                           f"⏱️ المدة: {duration // 60}:{duration % 60:02d}\n"
-                           f"🤖 بواسطة: ZeMusic Bot",
-                    duration=duration,
-                    title=title,
-                    performer="ZeMusic Bot"
-                )
+                try:
+                    LOGGER(__name__).info(f"📤 محاولة إرسال الملف: {downloaded_file}")
+                    audio_message = await message.reply(
+                        file=downloaded_file,
+                        message=f"✦ @{config.BOT_USERNAME}",
+                        thumb=thumb_path,
+                        attributes=[
+                            DocumentAttributeAudio(
+                                duration=duration,
+                                title=title,
+                                performer=channel
+                            )
+                        ]
+                    )
+                    LOGGER(__name__).info(f"✅ تم إرسال الملف بنجاح: {audio_message.id}")
+                except Exception as send_error:
+                    LOGGER(__name__).error(f"❌ خطأ في إرسال الملف: {send_error}")
+                    raise send_error
+                
+                # حفظ في الكاش للاستخدام المستقبلي
+                await save_to_cache(video_id, title, channel, duration, downloaded_file, audio_message, thumb_path)
                 
                 # حذف رسالة الحالة
                 try:
@@ -2765,27 +4281,855 @@ async def download_song_smart(message, query: str):
                 except:
                     pass
                 
-                # حذف الملف المؤقت
+                # حذف الملفات المؤقتة
                 try:
                     os.remove(downloaded_file)
                 except:
                     pass
                 
-                LOGGER(__name__).info(f"✅ تم إرسال الأغنية: {title}")
+                # حذف الصورة المصغرة
+                if thumb_path and os.path.exists(thumb_path):
+                    try:
+                        os.remove(thumb_path)
+                    except:
+                        pass
+                
+                LOGGER(__name__).info(f"✅ تم إرسال وحفظ الأغنية: {title}")
+                return True
                 
         except Exception as e:
-            LOGGER(__name__).error(f"خطأ في التحميل: {e}")
-            await status_msg.edit("❌ **خطأ في التحميل**")
+            LOGGER(__name__).error(f"❌ خطأ في التحميل مع cookies: {e}")
+            
+            # محاولة بدون cookies
+            LOGGER(__name__).info("🔄 محاولة التحميل بدون cookies...")
+            await status_msg.edit("🔄 **محاولة بديلة...**")
+            
+            try:
+                ydl_opts_no_cookies = get_ytdlp_opts()
+                ydl_opts_no_cookies['outtmpl'] = f'downloads/{video_id}_nocookies.%(ext)s'
+                
+                with yt_dlp.YoutubeDL(ydl_opts_no_cookies) as ydl:
+                    video_url = f"https://www.youtube.com/watch?v={video_id}"
+                    info = ydl.extract_info(video_url, download=True)
+                    
+                    # البحث عن الملف المحمل
+                    downloaded_file = None
+                    for ext in ['mp3', 'webm', 'm4a', 'ogg', 'opus']:
+                        file_path = f'downloads/{video_id}_nocookies.{ext}'
+                        if os.path.exists(file_path):
+                            downloaded_file = file_path
+                            break
+                    
+                    if downloaded_file:
+                        # تحميل الصورة المصغرة
+                        thumb_path = None
+                        try:
+                            if info and 'thumbnail' in info and info['thumbnail']:
+                                thumb_path = await download_thumbnail(info['thumbnail'], title, video_id)
+                            elif info and 'thumbnails' in info and info['thumbnails']:
+                                # أخذ أفضل جودة متاحة
+                                best_thumb = None
+                                for thumb in info['thumbnails']:
+                                    if thumb.get('url'):
+                                        best_thumb = thumb['url']
+                                if best_thumb:
+                                    thumb_path = await download_thumbnail(best_thumb, title, video_id)
+                        except Exception as thumb_error:
+                            LOGGER(__name__).warning(f"⚠️ خطأ في تحميل الصورة المصغرة: {thumb_error}")
+                        
+                        await status_msg.edit("📤 **جاري الإرسال...**")
+                        
+                        audio_message = await message.reply(
+                            file=downloaded_file,
+                            message=f"✦ @{config.BOT_USERNAME}",
+                            thumb=thumb_path,
+                            attributes=[
+                                DocumentAttributeAudio(
+                                    duration=duration,
+                                    title=title,
+                                    performer=channel
+                                )
+                            ]
+                        )
+                        
+                        # حفظ في الكاش
+                        await save_to_cache(video_id, title, channel, duration, downloaded_file, audio_message, thumb_path)
+                        
+                        try:
+                            await status_msg.delete()
+                        except:
+                            pass
+                        
+                        try:
+                            os.remove(downloaded_file)
+                        except:
+                            pass
+                        
+                        # حذف الصورة المصغرة
+                        if thumb_path and os.path.exists(thumb_path):
+                            try:
+                                os.remove(thumb_path)
+                            except:
+                                pass
+                        
+                        LOGGER(__name__).info(f"✅ تم إرسال الأغنية بدون cookies: {title}")
+                        return True
+                        
+            except Exception as e2:
+                LOGGER(__name__).error(f"❌ فشل التحميل بدون cookies أيضاً: {e2}")
+                return False
+        
+        return False
         
     except Exception as e:
-        LOGGER(__name__).error(f"خطأ في download_song_smart: {e}")
+        LOGGER(__name__).error(f"❌ خطأ عام في التحميل الذكي: {e}")
+        return False
+
+async def save_to_cache(video_id: str, title: str, artist: str, duration: int, file_path: str, audio_message, thumb_path: str = None) -> bool:
+    """حفظ المقطع في الكاش المحلي وقناة التخزين"""
+    try:
+        LOGGER(__name__).info(f"💾 حفظ في الكاش: {title}")
+        
+        # حفظ في قاعدة البيانات المحلية
         try:
-            await message.reply_text(
-                "❌ **خطأ في البحث**\n\n"
-                "حدث خطأ أثناء معالجة طلبك\n"
-                "يرجى المحاولة مرة أخرى"
-            )
-        except:
-            pass
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # إدراج أو تحديث السجل
+            cursor.execute("""
+                INSERT OR REPLACE INTO cached_audio 
+                (video_id, title, artist, duration, file_path, thumb, message_id, keywords, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, (
+                video_id,
+                title,
+                artist,
+                duration,
+                file_path,
+                None,  # thumb
+                getattr(audio_message, 'id', None),
+                f"{title} {artist}".lower(),  # keywords
+            ))
+            
+            conn.commit()
+            conn.close()
+            
+            LOGGER(__name__).info("✅ تم حفظ في قاعدة البيانات المحلية")
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في حفظ قاعدة البيانات: {e}")
+        
+        # حفظ في قناة التخزين (إذا كانت متاحة)
+        try:
+            import config
+            from ZeMusic.core.telethon_client import telethon_manager
+            
+            if hasattr(config, 'CACHE_CHANNEL_ID') and config.CACHE_CHANNEL_ID:
+                LOGGER(__name__).info(f"💾 حفظ المقطع في قناة التخزين...")
+                
+                # إعداد بيانات المقطع للحفظ
+                result_data = {
+                    'title': title,
+                    'uploader': artist,
+                    'duration': duration,
+                    'source': 'YouTube',
+                    'elapsed': 0
+                }
+                
+                # حفظ في قناة التخزين باستخدام save_to_smart_cache
+                if telethon_manager and telethon_manager.bot_client:
+                    saved = await save_to_smart_cache(
+                        telethon_manager.bot_client, 
+                        file_path, 
+                        result_data, 
+                        f"{title} {artist}",
+                        thumb_path  # تمرير الصورة المصغرة
+                    )
+                    if saved:
+                        LOGGER(__name__).info("✅ تم حفظ المقطع في قناة التخزين")
+                    else:
+                        LOGGER(__name__).warning("⚠️ فشل حفظ المقطع في قناة التخزين")
+                
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في حفظ قناة التخزين: {e}")
+        
+        return True
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في حفظ الكاش: {e}")
+        return False
 
 LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق المتطور V2")
+
+# إضافة نظام الفحص الدوري لقناة التخزين
+LAST_CHANNEL_SYNC = 0
+CHANNEL_SYNC_INTERVAL = 3600  # كل ساعة
+
+async def sync_channel_to_database(bot_client, force_sync: bool = False) -> Dict:
+    """مزامنة قناة التخزين مع قاعدة البيانات بشكل ذكي"""
+    global LAST_CHANNEL_SYNC
+    
+    current_time = time.time()
+    
+    # فحص الحاجة للمزامنة
+    if not force_sync and (current_time - LAST_CHANNEL_SYNC) < CHANNEL_SYNC_INTERVAL:
+        return {'skipped': True, 'reason': 'لم تحن المزامنة بعد'}
+    
+    try:
+        import config
+        
+        if not hasattr(config, 'CACHE_CHANNEL_ID') or not config.CACHE_CHANNEL_ID:
+            return {'error': 'قناة التخزين غير محددة'}
+        
+        cache_channel = config.CACHE_CHANNEL_ID
+        LOGGER(__name__).info(f"⚠️ مزامنة قناة التخزين معطلة مؤقتاً (قيود API للبوتات)")
+        return {'error': 'مزامنة القناة معطلة مؤقتاً'}
+        
+        # إحصائيات المزامنة
+        sync_stats = {
+            'processed': 0,
+            'added': 0,
+            'updated': 0,
+            'errors': 0,
+            'start_time': current_time
+        }
+        
+        # الحصول على آخر message_id في قاعدة البيانات
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT MAX(message_id) FROM channel_index")
+        last_db_message_id = cursor.fetchone()[0] or 0
+        
+        LOGGER(__name__).info(f"📊 آخر رسالة في قاعدة البيانات: {last_db_message_id}")
+        
+        # فحص الرسائل الجديدة في القناة
+        new_messages_found = 0
+        batch_size = 100
+        
+        async for message in bot_client.iter_messages(cache_channel, limit=1000):
+            if not (message.text and message.file):
+                continue
+                
+            sync_stats['processed'] += 1
+            
+            # تخطي الرسائل الموجودة بالفعل
+            if message.id <= last_db_message_id:
+                continue
+                
+            new_messages_found += 1
+            
+            try:
+                # استخراج المعلومات من الرسالة
+                title = extract_title_from_cache_text(message.text)
+                uploader = extract_uploader_from_cache_text(message.text)
+                duration = extract_duration_from_cache_text(message.text)
+                
+                # استخراج هاش البحث من النص إن وجد
+                import re
+                hash_match = re.search(r'هاش البحث.*?`([a-f0-9]+)`', message.text)
+                search_hash = hash_match.group(1) if hash_match else None
+                
+                # إنشاء هاش جديد إذا لم يوجد
+                if not search_hash:
+                    title_normalized = normalize_search_text(title)
+                    uploader_normalized = normalize_search_text(uploader)
+                    search_data = f"{title_normalized}|{uploader_normalized}"
+                    search_hash = hashlib.md5(search_data.encode()).hexdigest()[:12]
+                
+                # تطبيع النصوص
+                title_normalized = normalize_search_text(title)
+                uploader_normalized = normalize_search_text(uploader)
+                
+                # إنشاء vector الكلمات المفتاحية
+                keywords_vector = f"{title_normalized} {uploader_normalized}"
+                
+                # فحص وجود السجل
+                cursor.execute("SELECT id FROM channel_index WHERE message_id = ?", (message.id,))
+                existing = cursor.fetchone()
+                
+                if existing:
+                    # تحديث السجل
+                    cursor.execute("""
+                        UPDATE channel_index 
+                        SET file_id = ?, title_normalized = ?, artist_normalized = ?, 
+                            keywords_vector = ?, original_title = ?, original_artist = ?, 
+                            duration = ?, file_size = ?, search_hash = ?
+                        WHERE message_id = ?
+                    """, (
+                        message.file.id, title_normalized, uploader_normalized,
+                        keywords_vector, title, uploader, duration,
+                        message.file.size or 0, search_hash, message.id
+                    ))
+                    sync_stats['updated'] += 1
+                else:
+                    # إضافة سجل جديد
+                    cursor.execute("""
+                        INSERT INTO channel_index 
+                        (message_id, file_id, file_unique_id, search_hash, title_normalized, 
+                         artist_normalized, keywords_vector, original_title, original_artist, 
+                         duration, file_size, access_count, popularity_rank)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0.5)
+                    """, (
+                        message.id, message.file.id, getattr(message.file, 'unique_id', None),
+                        search_hash, title_normalized, uploader_normalized, keywords_vector,
+                        title, uploader, duration, message.file.size or 0
+                    ))
+                    sync_stats['added'] += 1
+                
+                # حفظ على دفعات
+                if sync_stats['processed'] % batch_size == 0:
+                    conn.commit()
+                    LOGGER(__name__).info(f"💾 تم حفظ دفعة: {sync_stats['processed']} رسالة معالجة")
+                
+            except Exception as msg_error:
+                sync_stats['errors'] += 1
+                LOGGER(__name__).warning(f"⚠️ خطأ في معالجة رسالة {message.id}: {msg_error}")
+                continue
+        
+        # حفظ نهائي
+        conn.commit()
+        conn.close()
+        
+        # تحديث وقت آخر مزامنة
+        LAST_CHANNEL_SYNC = current_time
+        
+        # حساب الإحصائيات النهائية
+        sync_stats['duration'] = time.time() - current_time
+        sync_stats['new_messages'] = new_messages_found
+        
+        LOGGER(__name__).info(
+            f"✅ اكتملت مزامنة القناة: "
+            f"معالج={sync_stats['processed']} | "
+            f"جديد={sync_stats['added']} | "
+            f"محدث={sync_stats['updated']} | "
+            f"أخطاء={sync_stats['errors']} | "
+            f"مدة={sync_stats['duration']:.2f}s"
+        )
+        
+        return sync_stats
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في مزامنة القناة: {e}")
+        return {'error': str(e)}
+
+async def auto_sync_channel_if_needed(bot_client):
+    """فحص تلقائي للحاجة لمزامنة القناة"""
+    try:
+        # فحص آخر مزامنة
+        current_time = time.time()
+        if (current_time - LAST_CHANNEL_SYNC) > CHANNEL_SYNC_INTERVAL:
+            LOGGER(__name__).info("🔄 بدء المزامنة التلقائية لقناة التخزين...")
+            
+            # تشغيل المزامنة في الخلفية
+            asyncio.create_task(sync_channel_to_database(bot_client, force_sync=False))
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في المزامنة التلقائية: {e}")
+
+async def force_channel_sync_handler(event):
+    """معالج أمر المطور لإجبار مزامنة القناة"""
+    import config
+    if event.sender_id != config.OWNER_ID:
+        return
+    
+    try:
+        await event.reply("🔄 **بدء مزامنة قناة التخزين...**")
+        
+        result = await sync_channel_to_database(event.client, force_sync=True)
+        
+        if 'error' in result:
+            await event.reply(f"❌ **خطأ في المزامنة:** {result['error']}")
+        elif 'skipped' in result:
+            await event.reply(f"⏭️ **تم تخطي المزامنة:** {result['reason']}")
+        else:
+            response = f"""✅ **اكتملت مزامنة القناة!**
+
+📊 **الإحصائيات:**
+• رسائل معالجة: {result['processed']}
+• سجلات جديدة: {result['added']}
+• سجلات محدثة: {result['updated']}
+• أخطاء: {result['errors']}
+• رسائل جديدة: {result['new_messages']}
+• المدة: {result['duration']:.2f}s
+
+💾 تم تحديث قاعدة البيانات بنجاح"""
+            
+            await event.reply(response)
+        
+    except Exception as e:
+        await event.reply(f"❌ **خطأ:** {e}")
+
+# تحديث معالج البحث ليشمل المزامنة التلقائية
+
+# إضافة دالة فحص قناة التخزين
+async def verify_cache_channel(bot_client) -> Dict:
+    """فحص والتحقق من صحة قناة التخزين"""
+    try:
+        import config
+        
+        # فحص وجود التعريف
+        if not hasattr(config, 'CACHE_CHANNEL_ID') or not config.CACHE_CHANNEL_ID:
+            return {
+                'status': 'error',
+                'message': 'قناة التخزين غير محددة في config.py',
+                'solution': 'تأكد من تعيين CACHE_CHANNEL_USERNAME في متغيرات البيئة'
+            }
+        
+        cache_channel = config.CACHE_CHANNEL_ID
+        
+        # فحص نوع المعرف
+        channel_type = "unknown"
+        if cache_channel.startswith('@'):
+            channel_type = "username"
+        elif cache_channel.startswith('-100'):
+            channel_type = "supergroup_id"
+        elif cache_channel.startswith('-'):
+            channel_type = "group_id"
+        elif cache_channel.isdigit():
+            channel_type = "user_id"
+        
+        LOGGER(__name__).info(f"🔍 فحص قناة التخزين: {cache_channel} (نوع: {channel_type})")
+        
+        # محاولة الوصول للقناة
+        try:
+            entity = await bot_client.get_entity(cache_channel)
+            
+            # الحصول على معلومات القناة
+            channel_info = {
+                'status': 'success',
+                'channel_id': cache_channel,
+                'channel_type': channel_type,
+                'entity_id': entity.id,
+                'title': getattr(entity, 'title', 'Unknown'),
+                'username': getattr(entity, 'username', None),
+                'participants_count': getattr(entity, 'participants_count', 0),
+                'is_channel': hasattr(entity, 'broadcast'),
+                'is_megagroup': getattr(entity, 'megagroup', False),
+                'access_hash': getattr(entity, 'access_hash', None)
+            }
+            
+            # فحص صلاحيات الإرسال
+            try:
+                # محاولة إرسال رسالة اختبار
+                test_message = await bot_client.send_message(
+                    entity, 
+                    "🧪 **اختبار قناة التخزين الذكي**\n\n✅ البوت يمكنه الإرسال بنجاح!\n\n🗑️ سيتم حذف هذه الرسالة خلال 10 ثوان..."
+                )
+                
+                # حذف الرسالة بعد 10 ثوان
+                await asyncio.sleep(10)
+                await test_message.delete()
+                
+                channel_info['can_send'] = True
+                channel_info['permissions'] = 'full'
+                
+            except Exception as perm_error:
+                channel_info['can_send'] = False
+                channel_info['permissions'] = 'limited'
+                channel_info['permission_error'] = str(perm_error)
+            
+            # فحص عدد الرسائل الموجودة
+            try:
+                message_count = 0
+                audio_count = 0
+                
+                async for message in bot_client.iter_messages(entity, limit=100):
+                    message_count += 1
+                    if message.file and message.file.mime_type and 'audio' in message.file.mime_type:
+                        audio_count += 1
+                
+                channel_info['recent_messages'] = message_count
+                channel_info['recent_audio_files'] = audio_count
+                
+            except Exception as count_error:
+                channel_info['recent_messages'] = 0
+                channel_info['recent_audio_files'] = 0
+                channel_info['count_error'] = str(count_error)
+            
+            LOGGER(__name__).info(f"✅ قناة التخزين متاحة: {channel_info['title']}")
+            return channel_info
+            
+        except Exception as access_error:
+            return {
+                'status': 'error',
+                'channel_id': cache_channel,
+                'channel_type': channel_type,
+                'message': f'لا يمكن الوصول لقناة التخزين: {access_error}',
+                'solutions': [
+                    'تأكد من أن البوت عضو في القناة',
+                    'تأكد من أن البوت لديه صلاحية الإرسال',
+                    'تأكد من صحة معرف/يوزر القناة',
+                    'تأكد من أن القناة موجودة وليست محذوفة'
+                ]
+            }
+            
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': f'خطأ في فحص قناة التخزين: {e}',
+            'solution': 'تحقق من إعدادات config.py'
+        }
+
+async def cache_channel_info_handler(event):
+    """معالج أمر المطور لعرض معلومات قناة التخزين"""
+    import config
+    if event.sender_id != config.OWNER_ID:
+        return
+    
+    try:
+        await event.reply("🔍 **جاري فحص قناة التخزين...**")
+        
+        # فحص القناة
+        result = await verify_cache_channel(event.client)
+        
+        if result['status'] == 'error':
+            error_msg = f"❌ **خطأ في قناة التخزين**\n\n"
+            error_msg += f"**المشكلة:** {result['message']}\n\n"
+            
+            if 'solutions' in result:
+                error_msg += "**الحلول المقترحة:**\n"
+                for i, solution in enumerate(result['solutions'], 1):
+                    error_msg += f"{i}. {solution}\n"
+            elif 'solution' in result:
+                error_msg += f"**الحل:** {result['solution']}\n"
+            
+            await event.reply(error_msg)
+        else:
+            # إعداد رسالة النجاح
+            success_msg = f"✅ **معلومات قناة التخزين**\n\n"
+            success_msg += f"🏷️ **العنوان:** {result['title']}\n"
+            success_msg += f"🆔 **المعرف:** `{result['channel_id']}`\n"
+            success_msg += f"🔢 **ID الحقيقي:** `{result['entity_id']}`\n"
+            
+            if result.get('username'):
+                success_msg += f"👤 **اليوزر:** @{result['username']}\n"
+            
+            success_msg += f"📊 **النوع:** {result['channel_type']}\n"
+            success_msg += f"👥 **الأعضاء:** {result.get('participants_count', 'غير معروف')}\n"
+            success_msg += f"📺 **قناة:** {'نعم' if result.get('is_channel') else 'لا'}\n"
+            success_msg += f"🔓 **مجموعة كبيرة:** {'نعم' if result.get('is_megagroup') else 'لا'}\n\n"
+            
+            # صلاحيات الإرسال
+            if result.get('can_send'):
+                success_msg += "✅ **الصلاحيات:** البوت يمكنه الإرسال\n"
+            else:
+                success_msg += "❌ **الصلاحيات:** البوت لا يمكنه الإرسال\n"
+                if 'permission_error' in result:
+                    success_msg += f"**السبب:** {result['permission_error']}\n"
+            
+            # إحصائيات المحتوى
+            success_msg += f"\n📈 **إحصائيات المحتوى:**\n"
+            success_msg += f"• رسائل حديثة: {result.get('recent_messages', 0)}\n"
+            success_msg += f"• ملفات صوتية: {result.get('recent_audio_files', 0)}\n"
+            
+            # إضافة معلومات من قاعدة البيانات
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                
+                cursor.execute("SELECT COUNT(*) FROM channel_index")
+                total_cached = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM channel_index WHERE last_accessed > datetime('now', '-7 days')")
+                recent_accessed = cursor.fetchone()[0]
+                
+                conn.close()
+                
+                success_msg += f"\n💾 **قاعدة البيانات:**\n"
+                success_msg += f"• إجمالي المحفوظ: {total_cached}\n"
+                success_msg += f"• استُخدم مؤخراً: {recent_accessed}\n"
+                
+            except Exception as db_error:
+                success_msg += f"\n⚠️ **قاعدة البيانات:** خطأ في القراءة\n"
+            
+            await event.reply(success_msg)
+        
+    except Exception as e:
+        await event.reply(f"❌ **خطأ:** {e}")
+
+async def test_cache_channel_handler(event):
+    """معالج أمر المطور لاختبار قناة التخزين"""
+    import config
+    if event.sender_id != config.OWNER_ID:
+        return
+    
+    try:
+        await event.reply("🧪 **بدء اختبار قناة التخزين...**")
+        
+        # فحص القناة أولاً
+        result = await verify_cache_channel(event.client)
+        
+        if result['status'] == 'error':
+            await event.reply(f"❌ **فشل الاختبار:** {result['message']}")
+            return
+        
+        # اختبار حفظ ملف تجريبي
+        import tempfile
+        import os
+        
+        # إنشاء ملف صوتي تجريبي
+        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+            # كتابة بيانات تجريبية (ملف فارغ)
+            temp_file.write(b'test audio data')
+            temp_path = temp_file.name
+        
+        try:
+            # محاولة حفظ في التخزين الذكي
+            test_result = {
+                'title': 'اختبار النظام الذكي',
+                'uploader': 'ZeMusic Test Bot',
+                'duration': 30,
+                'file_size': 1024,
+                'source': 'test_system',
+                'elapsed': 0.5
+            }
+            
+            success = await save_to_smart_cache(
+                event.client, 
+                temp_path, 
+                test_result, 
+                'اختبار النظام',
+                None  # لا توجد صورة مصغرة في الاختبار
+            )
+            
+            if success:
+                await event.reply("✅ **نجح الاختبار!**\n\n🎯 تم حفظ ملف تجريبي بنجاح\n💾 قاعدة البيانات محدثة\n🚀 النظام جاهز للعمل")
+            else:
+                await event.reply("❌ **فشل الاختبار:** لم يتم حفظ الملف التجريبي")
+            
+        finally:
+            # حذف الملف التجريبي
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        
+    except Exception as e:
+        await event.reply(f"❌ **خطأ في الاختبار:** {e}")
+        import traceback
+        LOGGER(__name__).error(f"خطأ في اختبار القناة: {traceback.format_exc()}")
+
+# تحديث معالج البحث ليشمل فحص القناة التلقائي
+
+async def smart_download_handler(event):
+    """المعالج الذكي للتحميل الفوري المتوازي مع مزامنة تلقائية وفحص القناة"""
+    start_time = time.time()
+    user_id = event.sender_id
+    
+    try:
+        # تتبع معدل الطلبات (للإحصائيات فقط)
+        await check_rate_limit(user_id)
+        
+        # تهيئة قاعدة البيانات إذا لم تكن مهيأة
+        await ensure_database_initialized()
+        
+        # فحص قناة التخزين بشكل دوري (كل 50 طلب)
+        if PERFORMANCE_STATS['total_requests'] % 50 == 0:
+            asyncio.create_task(verify_cache_channel_periodic(event.client))
+        
+        # المزامنة التلقائية لقناة التخزين (في الخلفية)
+        asyncio.create_task(auto_sync_channel_if_needed(event.client))
+        
+        # تنظيف دوري للكوكيز المحظورة (كل 100 طلب)
+        if PERFORMANCE_STATS['total_requests'] % 100 == 0:
+            cleanup_blocked_cookies()
+        
+        # عرض إحصائيات الأداء (كل 50 طلب)
+        if PERFORMANCE_STATS['total_requests'] % 50 == 0:
+            log_performance_stats()
+        
+        # فحص الصلاحيات
+        chat_id = event.chat_id
+        if chat_id > 0:  # محادثة خاصة
+            if not await is_search_enabled1():
+                await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
+                return
+        else:  # مجموعة أو قناة
+            if not await is_search_enabled(chat_id):
+                await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
+                return
+                
+        # معالجة فورية بدون حدود مع تحسينات إضافية
+        LOGGER(__name__).info(f"🚀 معالجة ذكية محسنة للمستخدم {user_id} - العمليات النشطة: {len(active_downloads)}")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في فحص الحمولة المحسن: {e}")
+        await update_performance_stats(False, time.time() - start_time)
+        return
+    
+    # تنظيف دوري للعمليات القديمة (كل 50 طلب)
+    # if len(active_downloads) % 50 == 0:
+    #     asyncio.create_task(cleanup_old_downloads())
+    
+    # تحكم ذكي في العمليات المتوازية
+    current_downloads = len(active_downloads)
+    
+    if current_downloads < MAX_CONCURRENT_DOWNLOADS:
+        # تنفيذ المعالجة الفورية المتوازية المحسنة
+        asyncio.create_task(process_unlimited_download_enhanced(event, user_id, start_time))
+        LOGGER(__name__).info(f"⚡ تم إنشاء مهمة متوازية محسنة للمستخدم {user_id} - العمليات النشطة: {current_downloads + 1}")
+    else:
+        # إذا تجاوزنا الحد، ننتظر قليلاً ثم نحاول مرة أخرى
+        LOGGER(__name__).info(f"⏳ تأجيل الطلب - العمليات النشطة: {current_downloads} (الحد الأقصى: {MAX_CONCURRENT_DOWNLOADS})")
+        
+        async def delayed_process():
+            await asyncio.sleep(0.5)  # انتظار نصف ثانية
+            if len(active_downloads) < MAX_CONCURRENT_DOWNLOADS:
+                await process_unlimited_download_enhanced(event, user_id, start_time)
+            else:
+                # إذا لا يزال مزدحماً، ننشئ المهمة بأي حال
+                asyncio.create_task(process_unlimited_download_enhanced(event, user_id, start_time))
+        
+        asyncio.create_task(delayed_process())
+
+async def cleanup_old_downloads():
+    """تنظيف دوري للعمليات القديمة لمنع تراكمها"""
+    try:
+        current_time = time.time()
+        old_tasks = []
+        
+        for task_id, task_info in active_downloads.items():
+            # إذا مرت أكثر من 10 دقائق على العملية، احذفها
+            if current_time - task_info.get('start_time', current_time) > 600:
+                old_tasks.append(task_id)
+        
+        for task_id in old_tasks:
+            del active_downloads[task_id]
+            LOGGER(__name__).info(f"🧹 تم تنظيف عملية قديمة: {task_id}")
+            
+        if old_tasks:
+            LOGGER(__name__).info(f"🧹 تم تنظيف {len(old_tasks)} عملية قديمة - العمليات النشطة: {len(active_downloads)}")
+            
+    except Exception as e:
+        LOGGER(__name__).warning(f"⚠️ خطأ في تنظيف العمليات القديمة: {e}")
+
+async def verify_cache_channel_periodic(bot_client):
+    """فحص دوري لقناة التخزين في الخلفية"""
+    try:
+        result = await verify_cache_channel(bot_client)
+        
+        if result['status'] == 'error':
+            LOGGER(__name__).warning(f"⚠️ مشكلة في قناة التخزين: {result['message']}")
+        else:
+            LOGGER(__name__).info(f"✅ قناة التخزين تعمل بشكل طبيعي: {result['title']}")
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في الفحص الدوري لقناة التخزين: {e}")
+
+# إضافة دالة لعرض حالة النظام الشاملة
+async def system_status_handler(event):
+    """معالج أمر المطور لعرض حالة النظام الشاملة"""
+    import config
+    if event.sender_id != config.OWNER_ID:
+        return
+    
+    try:
+        await event.reply("📊 **جاري فحص حالة النظام الشاملة...**")
+        
+        # فحص قناة التخزين
+        cache_status = await verify_cache_channel(event.client)
+        
+        # فحص قاعدة البيانات
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT COUNT(*) FROM channel_index")
+            total_cached = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM channel_index WHERE last_accessed > datetime('now', '-1 day')")
+            daily_accessed = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM channel_index WHERE created_at > datetime('now', '-1 day')")
+            daily_added = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT AVG(popularity_rank) FROM channel_index")
+            avg_popularity = cursor.fetchone()[0] or 0
+            
+            conn.close()
+            
+            db_status = {
+                'working': True,
+                'total_cached': total_cached,
+                'daily_accessed': daily_accessed,
+                'daily_added': daily_added,
+                'avg_popularity': avg_popularity
+            }
+            
+        except Exception as db_error:
+            db_status = {
+                'working': False,
+                'error': str(db_error)
+            }
+        
+        # فحص ملفات الكوكيز
+        cookies_stats = get_cookies_statistics()
+        
+        # إعداد رسالة الحالة الشاملة
+        status_msg = "📊 **حالة النظام الشاملة**\n\n"
+        
+        # حالة قناة التخزين
+        if cache_status['status'] == 'success':
+            status_msg += f"✅ **قناة التخزين:** تعمل بشكل طبيعي\n"
+            status_msg += f"   📝 العنوان: {cache_status['title']}\n"
+            status_msg += f"   🎵 ملفات صوتية: {cache_status.get('recent_audio_files', 0)}\n"
+            status_msg += f"   📤 صلاحية الإرسال: {'✅' if cache_status.get('can_send') else '❌'}\n"
+        else:
+            status_msg += f"❌ **قناة التخزين:** مشكلة\n"
+            status_msg += f"   ⚠️ {cache_status['message']}\n"
+        
+        status_msg += "\n"
+        
+        # حالة قاعدة البيانات
+        if db_status['working']:
+            status_msg += f"✅ **قاعدة البيانات:** تعمل بشكل طبيعي\n"
+            status_msg += f"   💾 إجمالي المحفوظ: {db_status['total_cached']}\n"
+            status_msg += f"   📈 استُخدم اليوم: {db_status['daily_accessed']}\n"
+            status_msg += f"   ➕ أُضيف اليوم: {db_status['daily_added']}\n"
+            status_msg += f"   ⭐ متوسط الشعبية: {db_status['avg_popularity']:.2f}\n"
+        else:
+            status_msg += f"❌ **قاعدة البيانات:** مشكلة\n"
+            status_msg += f"   ⚠️ {db_status['error']}\n"
+        
+        status_msg += "\n"
+        
+        # حالة ملفات الكوكيز
+        if cookies_stats:
+            status_msg += f"🍪 **ملفات الكوكيز:**\n"
+            status_msg += f"   📊 الإجمالي: {cookies_stats.get('total', 0)}\n"
+            status_msg += f"   ✅ المتاح: {cookies_stats.get('available', 0)}\n"
+            status_msg += f"   🚫 المحظور: {cookies_stats.get('blocked', 0)}\n"
+            status_msg += f"   🏆 الأكثر استخداماً: {cookies_stats.get('most_used_file', 'لا يوجد')}\n"
+        else:
+            status_msg += f"❌ **ملفات الكوكيز:** غير متاحة\n"
+        
+        status_msg += "\n"
+        
+        # إحصائيات الأداء
+        stats = PERFORMANCE_STATS
+        success_rate = (stats['successful_downloads'] / max(stats['total_requests'], 1)) * 100
+        cache_hit_rate = (stats['cache_hits'] / max(stats['total_requests'], 1)) * 100
+        
+        status_msg += f"⚡ **الأداء:**\n"
+        status_msg += f"   🔢 إجمالي الطلبات: {stats['total_requests']}\n"
+        status_msg += f"   ✅ نسبة النجاح: {success_rate:.1f}%\n"
+        status_msg += f"   💾 نسبة الكاش: {cache_hit_rate:.1f}%\n"
+        status_msg += f"   ⏱️ متوسط الوقت: {stats['avg_response_time']:.2f}s\n"
+        status_msg += f"   🔄 العمليات النشطة: {stats['current_concurrent']}\n"
+        status_msg += f"   🏔️ الذروة: {stats['peak_concurrent']}\n"
+        
+        # إضافة معلومات النظام
+        import psutil
+        memory = psutil.virtual_memory()
+        cpu = psutil.cpu_percent()
+        
+        status_msg += f"\n🖥️ **النظام:**\n"
+        status_msg += f"   🧠 الذاكرة: {memory.percent}% ({memory.used//1024//1024}MB)\n"
+        status_msg += f"   ⚙️ المعالج: {cpu}%\n"
+        status_msg += f"   🕐 وقت التشغيل: {time.time() - start_time:.0f}s\n"
+        
+        await event.reply(status_msg)
+        
+    except Exception as e:
+        await event.reply(f"❌ **خطأ في فحص النظام:** {e}")
+        import traceback
+        LOGGER(__name__).error(f"خطأ في فحص حالة النظام: {traceback.format_exc()}")

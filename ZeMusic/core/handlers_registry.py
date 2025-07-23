@@ -29,6 +29,54 @@ async def register_all_handlers(bot_client):
         LOGGER(__name__).error(f"❌ خطأ في تسجيل معالج البحث: {e}")
     
     try:
+        # تسجيل معالج أمر مزامنة القناة للمطور
+        from ZeMusic.plugins.play.download import force_channel_sync_handler
+        bot_client.add_event_handler(
+            force_channel_sync_handler,
+            events.NewMessage(pattern=r'^/sync_cache$')
+        )
+        LOGGER(__name__).info("✅ تم تسجيل معالج مزامنة القناة")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في تسجيل معالج المزامنة: {e}")
+    
+    try:
+        # تسجيل معالج معلومات قناة التخزين للمطور
+        from ZeMusic.plugins.play.download import cache_channel_info_handler
+        bot_client.add_event_handler(
+            cache_channel_info_handler,
+            events.NewMessage(pattern=r'^/cache_info$')
+        )
+        LOGGER(__name__).info("✅ تم تسجيل معالج معلومات قناة التخزين")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في تسجيل معالج معلومات القناة: {e}")
+    
+    try:
+        # تسجيل معالج اختبار قناة التخزين للمطور
+        from ZeMusic.plugins.play.download import test_cache_channel_handler
+        bot_client.add_event_handler(
+            test_cache_channel_handler,
+            events.NewMessage(pattern=r'^/test_cache$')
+        )
+        LOGGER(__name__).info("✅ تم تسجيل معالج اختبار قناة التخزين")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في تسجيل معالج اختبار القناة: {e}")
+    
+    try:
+        # تسجيل معالج حالة النظام الشاملة للمطور
+        from ZeMusic.plugins.play.download import system_status_handler
+        bot_client.add_event_handler(
+            system_status_handler,
+            events.NewMessage(pattern=r'^/system_status$')
+        )
+        LOGGER(__name__).info("✅ تم تسجيل معالج حالة النظام الشاملة")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في تسجيل معالج حالة النظام: {e}")
+    
+    try:
         # تسجيل معالج cookies callbacks
         bot_client.add_event_handler(handle_cookies_callbacks, events.CallbackQuery)
         LOGGER(__name__).info("✅ تم تسجيل معالج cookies callbacks")

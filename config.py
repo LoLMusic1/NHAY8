@@ -31,6 +31,10 @@ BOT_ID = getenv("BOT_ID", "7727065450")  # معرف البوت الرقمي
 # Owner ID - معرف المالك
 OWNER_ID = int(getenv("OWNER_ID", "7345311113"))
 
+# Force Subscribe Channel - قناة الاشتراك الإجباري (اختياري)
+FORCE_SUB_CHANNEL = getenv("FORCE_SUB_CHANNEL", None)  # اتركه None لتعطيل الاشتراك الإجباري
+FORCE_SUB_TEXT = getenv("FORCE_SUB_TEXT", None)  # نص رسالة الاشتراك الإجباري
+
 # Support chat - will be defined later with correct value
 
 # ============================================
