@@ -2954,29 +2954,7 @@ async def download_thumbnail(url: str, title: str) -> Optional[str]:
     
     return None
 
-# --- المعالج الموحد لجميع أنواع المحادثات مع Telethon ---
-async def smart_download_handler(event):
-    """المعالج الذكي للتحميل الفوري المتوازي مع مزامنة تلقائية"""
-    start_time = time.time()
-    user_id = event.sender_id
-    
-    try:
-        # تتبع معدل الطلبات (للإحصائيات فقط)
-        await check_rate_limit(user_id)
-        
-        # تهيئة قاعدة البيانات إذا لم تكن مهيأة
-        await ensure_database_initialized()
-        
-        # المزامنة التلقائية لقناة التخزين (في الخلفية)
-        asyncio.create_task(auto_sync_channel_if_needed(event.client))
-        
-        # تنظيف دوري للكوكيز المحظورة (كل 100 طلب)
-        if PERFORMANCE_STATS['total_requests'] % 100 == 0:
-            cleanup_blocked_cookies()
-        
-        # عرض إحصائيات الأداء (كل 50 طلب)
-        if PERFORMANCE_STATS['total_requests'] % 50 == 0:
-            log_performance_stats()
+# تم حذف التعريف المكرر - يوجد تعريف آخر في نهاية الملف
         
         # فحص الصلاحيات
         chat_id = event.chat_id
@@ -3065,21 +3043,32 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
             active_downloads[task_id]['phase'] = 'intelligent_search'
         
         # البحث المتوازي المحسن بدون حدود
-        parallel_result = await parallel_search_with_monitoring(query, event.client)
-        
-        if parallel_result and parallel_result.get('success'):
-            search_source = parallel_result.get('search_source', 'unknown')
-            search_time = parallel_result.get('search_time', 0)
-            processed_msgs = parallel_result.get('processed_messages', 0)
+        try:
+            parallel_result = await parallel_search_with_monitoring(query, event.client)
             
-            # تحديث الإحصائيات
-            await update_performance_stats(True, time.time() - start_time, from_cache=True)
+            if parallel_result and parallel_result.get('success'):
+                search_source = parallel_result.get('search_source', 'unknown')
+                search_time = parallel_result.get('search_time', 0)
+                processed_msgs = parallel_result.get('processed_messages', 0)
+                
+                # تحديث الإحصائيات
+                await update_performance_stats(True, time.time() - start_time, from_cache=True)
+                
+                if search_source == 'database':
+                    await status_msg.edit(f"📤 **تم العثور في الكاش الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
+                    await send_cached_from_database(event, status_msg, parallel_result, event.client)
+                    return
+                elif search_source == 'smart_cache':
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في البحث المتوازي: {e}")
             
-            if search_source == 'database':
-                await status_msg.edit(f"📤 **تم العثور في الكاش الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
-                await send_cached_from_database(event, status_msg, parallel_result, event.client)
-                return
-            elif search_source == 'smart_cache':
+        # البديل: استخدام النظام الذكي المطور
+        try:
+            LOGGER(__name__).info(f"🔄 استخدام النظام الذكي المطور كبديل: {query}")
+            await download_song_smart(event, query)
+            return
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ فشل النظام الذكي المطور: {e}")
                 cache_info = f"من {processed_msgs} رسالة" if processed_msgs else ""
                 await status_msg.edit(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n📊 **{cache_info}**\n🚀 **جاري الإرسال...**")
                 await send_cached_audio(event, status_msg, parallel_result, event.client)
