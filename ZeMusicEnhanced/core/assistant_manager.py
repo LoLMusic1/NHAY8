@@ -21,7 +21,10 @@ from telethon.errors import (
     FloodWaitError, PhoneNumberBannedError, UserDeactivatedError
 )
 
-from ..config import config
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import config
 from .database import db, AssistantData
 
 logger = logging.getLogger(__name__)

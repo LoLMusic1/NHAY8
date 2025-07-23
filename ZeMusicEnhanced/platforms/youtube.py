@@ -21,7 +21,10 @@ except ImportError:
     YT_DLP_AVAILABLE = False
 
 from .platform_manager import BasePlatform
-from ..config import config
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import config
 
 logger = logging.getLogger(__name__)
 

@@ -15,7 +15,10 @@ from telethon import events, Button
 from telethon.tl.types import Channel, Chat
 from telethon.errors import ChatAdminRequired, UserNotParticipant, ChannelPrivateError
 
-from ..config import config
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import config
 from ..core import TelethonClient, DatabaseManager, MusicEngine
 
 logger = logging.getLogger(__name__)

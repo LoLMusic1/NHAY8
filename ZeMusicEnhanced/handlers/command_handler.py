@@ -15,7 +15,10 @@ from typing import Dict, List, Optional, Any
 from telethon import events
 from telethon.tl.types import Message
 
-from ..config import config
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import config
 from ..core import (
     TelethonClient, DatabaseManager, AssistantManager, 
     MusicEngine, SecurityManager, PerformanceMonitor

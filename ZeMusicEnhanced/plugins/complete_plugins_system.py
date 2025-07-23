@@ -23,7 +23,10 @@ from telethon import events, Button
 from telethon.tl.types import User, Chat, Channel
 
 # ==================== IMPORTS ====================
-from ..config import config
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import config
 from ..core import TelethonClient, DatabaseManager, AssistantManager, MusicEngine
 from ..utils import format_duration, format_file_size, admin_check, maintenance_check
 

@@ -18,7 +18,10 @@ from telethon.tl.functions.phone import CreateGroupCallRequest, DiscardGroupCall
 from telethon.tl.types import InputGroupCall, InputPeerChannel, InputPeerChat
 from telethon.errors import ChatAdminRequired, UserNotParticipant, FloodWaitError
 
-from ..config import config
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import config
 from ..core import TelethonClient, DatabaseManager, AssistantManager
 
 logger = logging.getLogger(__name__)

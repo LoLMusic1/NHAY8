@@ -17,7 +17,10 @@ from typing import Dict, List, Optional, Any, Set
 from collections import defaultdict, deque
 from dataclasses import dataclass
 
-from ..config import config
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import config
 from .database import db
 
 logger = logging.getLogger(__name__)
