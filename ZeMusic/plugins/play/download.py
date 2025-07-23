@@ -18,6 +18,7 @@ import time
 import sqlite3
 import hashlib
 import concurrent.futures
+from datetime import datetime
 from typing import Dict, Optional, List, Tuple
 from itertools import cycle
 import aiohttp
@@ -1233,6 +1234,227 @@ def get_cookies_statistics():
         LOGGER(__name__).error(f"❌ خطأ في إحصائيات الكوكيز: {e}")
         return {}
 
+# === نظام التخزين الذكي في قناة التيليجرام ===
+
+async def search_in_smart_cache(query: str, bot_client) -> Optional[Dict]:
+    """البحث في قناة التخزين الذكي"""
+    try:
+        import config
+        
+        if not hasattr(config, 'CACHE_CHANNEL_ID') or not config.CACHE_CHANNEL_ID:
+            LOGGER(__name__).warning("❌ قناة التخزين غير محددة")
+            return None
+        
+        cache_channel = config.CACHE_CHANNEL_ID
+        LOGGER(__name__).info(f"🔍 البحث في التخزين الذكي: {cache_channel}")
+        
+        # تنظيف النص للبحث
+        normalized_query = normalize_search_text(query)
+        search_keywords = normalized_query.split()
+        
+        # البحث في الرسائل الأخيرة (آخر 100 رسالة)
+        async for message in bot_client.iter_messages(cache_channel, limit=100):
+            if message.text and message.file:
+                # فحص النص للتطابق
+                message_text = message.text.lower()
+                
+                # حساب نسبة التطابق
+                match_count = sum(1 for keyword in search_keywords if keyword in message_text)
+                match_ratio = match_count / len(search_keywords) if search_keywords else 0
+                
+                # إذا كان التطابق أكثر من 60%
+                if match_ratio >= 0.6:
+                    LOGGER(__name__).info(f"✅ تم العثور على مطابقة في التخزين: {match_ratio:.1%}")
+                    
+                    # استخراج معلومات من النص
+                    title = extract_title_from_cache_text(message.text)
+                    duration = extract_duration_from_cache_text(message.text)
+                    uploader = extract_uploader_from_cache_text(message.text)
+                    
+                    return {
+                        'success': True,
+                        'cached': True,
+                        'message_id': message.id,
+                        'file_id': message.file.id,
+                        'title': title,
+                        'duration': duration,
+                        'uploader': uploader,
+                        'match_ratio': match_ratio,
+                        'original_message': message
+                    }
+        
+        LOGGER(__name__).info("❌ لم يتم العثور على مطابقة في التخزين")
+        return None
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في البحث بالتخزين الذكي: {e}")
+        return None
+
+def normalize_search_text(text: str) -> str:
+    """تنظيف وتطبيع النص للبحث"""
+    import re
+    
+    # إزالة الرموز الخاصة والأرقام الزائدة
+    text = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', text)
+    
+    # تحويل للأحرف الصغيرة وإزالة المسافات الزائدة
+    text = ' '.join(text.lower().split())
+    
+    return text
+
+def extract_title_from_cache_text(text: str) -> str:
+    """استخراج العنوان من نص التخزين"""
+    try:
+        import re
+        
+        # البحث عن العنوان بعد 🎵
+        title_match = re.search(r'🎵\s*\*\*(.+?)\*\*', text)
+        if title_match:
+            return title_match.group(1).strip()
+        
+        # البحث عن العنوان بعد "العنوان:"
+        title_match = re.search(r'العنوان:\s*(.+?)(?:\n|$)', text)
+        if title_match:
+            return title_match.group(1).strip()
+        
+        return "Unknown Title"
+    except:
+        return "Unknown Title"
+
+def extract_duration_from_cache_text(text: str) -> int:
+    """استخراج المدة من نص التخزين"""
+    try:
+        import re
+        
+        # البحث عن المدة بصيغة mm:ss
+        duration_match = re.search(r'⏱️\s*\*\*(\d+):(\d+)\*\*', text)
+        if duration_match:
+            minutes = int(duration_match.group(1))
+            seconds = int(duration_match.group(2))
+            return minutes * 60 + seconds
+        
+        # البحث عن المدة بالثواني
+        duration_match = re.search(r'المدة:\s*(\d+)', text)
+        if duration_match:
+            return int(duration_match.group(1))
+        
+        return 0
+    except:
+        return 0
+
+def extract_uploader_from_cache_text(text: str) -> str:
+    """استخراج اسم الرافع من نص التخزين"""
+    try:
+        import re
+        
+        # البحث عن الفنان بعد 🎤
+        uploader_match = re.search(r'🎤\s*\*\*(.+?)\*\*', text)
+        if uploader_match:
+            return uploader_match.group(1).strip()
+        
+        # البحث عن الفنان بعد "الفنان:"
+        uploader_match = re.search(r'الفنان:\s*(.+?)(?:\n|$)', text)
+        if uploader_match:
+            return uploader_match.group(1).strip()
+        
+        return "Unknown Artist"
+    except:
+        return "Unknown Artist"
+
+async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: str) -> bool:
+    """حفظ الملف في قناة التخزين الذكي مع معلومات مفصلة"""
+    try:
+        import config
+        import os
+        from pathlib import Path
+        
+        if not hasattr(config, 'CACHE_CHANNEL_ID') or not config.CACHE_CHANNEL_ID:
+            LOGGER(__name__).warning("❌ قناة التخزين غير محددة - تخطي التخزين")
+            return False
+        
+        cache_channel = config.CACHE_CHANNEL_ID
+        
+        # تحضير النص المفصل للتخزين
+        title = result.get('title', 'Unknown')
+        uploader = result.get('uploader', 'Unknown')
+        duration = result.get('duration', 0)
+        duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
+        
+        # إنشاء هاش للبحث السريع
+        search_hash = hash(normalize_search_text(query + " " + title))
+        
+        # النص المفصل للتخزين
+        cache_text = f"""🎵 **{title}**
+🎤 **{uploader}**
+⏱️ **{duration_str}** | 🔢 **{duration}s**
+
+🔍 **كلمات البحث:** {query}
+📊 **هاش البحث:** {abs(search_hash)}
+
+📅 **تاريخ التخزين:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
+🤖 **بواسطة:** ZeMusic Smart Cache System
+
+#تخزين_ذكي #موسيقى #{normalize_search_text(query).replace(' ', '_')}"""
+        
+        # إرسال الملف مع النص المفصل
+        await bot_client.send_file(
+            cache_channel,
+            file_path,
+            caption=cache_text,
+            attributes=[
+                DocumentAttributeAudio(
+                    duration=duration,
+                    title=title,
+                    performer=uploader
+                )
+            ]
+        )
+        
+        LOGGER(__name__).info(f"✅ تم حفظ الملف في التخزين الذكي: {os.path.basename(file_path)}")
+        return True
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في حفظ التخزين الذكي: {e}")
+        return False
+
+async def send_cached_audio(event, status_msg, cache_result: Dict, bot_client):
+    """إرسال الملف الصوتي من التخزين الذكي"""
+    try:
+        await status_msg.edit("📤 **إرسال من التخزين الذكي...**")
+        
+        original_message = cache_result['original_message']
+        
+        # تحضير التسمية التوضيحية للمستخدم
+        duration = cache_result.get('duration', 0)
+        duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
+        
+        user_caption = f"""🎵 **{cache_result.get('title', 'مقطع صوتي')[:60]}**
+🎤 **{cache_result.get('uploader', 'غير معروف')[:40]}**
+⏱️ **{duration_str}** | ⚡ **من التخزين الذكي**
+
+💾 **تطابق:** {cache_result.get('match_ratio', 0):.1%}
+💡 **مُحمّل بواسطة:** ZeMusic Bot"""
+        
+        # إرسال الملف للمستخدم
+        await event.respond(
+            user_caption,
+            file=original_message.file,
+            attributes=[
+                DocumentAttributeAudio(
+                    duration=duration,
+                    title=cache_result.get('title', 'Unknown')[:60],
+                    performer=cache_result.get('uploader', 'Unknown')[:40]
+                )
+            ]
+        )
+        
+        await status_msg.delete()
+        LOGGER(__name__).info(f"✅ تم إرسال الملف من التخزين الذكي")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في إرسال الملف المخزن: {e}")
+        await status_msg.edit("❌ **خطأ في إرسال الملف من التخزين**")
+
 async def try_youtube_api_download(video_id: str, title: str) -> Optional[Dict]:
     """محاولة التحميل باستخدام YouTube Data API"""
     try:
@@ -1458,8 +1680,8 @@ async def simple_download(video_url: str, title: str) -> Optional[Dict]:
         LOGGER(__name__).error(f"❌ خطأ في التحميل البديل: {e}")
         return None
 
-async def send_audio_file(event, status_msg, audio_file: str, result: dict):
-    """إرسال الملف الصوتي للمستخدم"""
+async def send_audio_file(event, status_msg, audio_file: str, result: dict, query: str = "", bot_client=None):
+    """إرسال الملف الصوتي للمستخدم وحفظه في التخزين الذكي"""
     try:
         await status_msg.edit("📤 **جاري إرسال الملف...**")
         
@@ -1487,6 +1709,19 @@ async def send_audio_file(event, status_msg, audio_file: str, result: dict):
         )
         
         await status_msg.delete()
+        
+        # حفظ في التخزين الذكي (في الخلفية)
+        if query and bot_client:
+            try:
+                await status_msg.edit("💾 **جاري الحفظ في التخزين الذكي...**")
+                saved = await save_to_smart_cache(bot_client, audio_file, result, query)
+                if saved:
+                    LOGGER(__name__).info(f"✅ تم حفظ المقطع في التخزين الذكي")
+                else:
+                    LOGGER(__name__).warning(f"⚠️ فشل حفظ المقطع في التخزين الذكي")
+            except Exception as cache_error:
+                LOGGER(__name__).error(f"❌ خطأ في حفظ التخزين الذكي: {cache_error}")
+        
         # حذف الملف المؤقت
         await remove_temp_files(audio_file)
         
@@ -1696,8 +1931,28 @@ async def smart_download_handler(event):
         await event.reply("📝 **الاستخدام:** `بحث اسم الأغنية`")
         return
     
-    # رسالة المعالجة
-    status_msg = await event.reply("⚡ **جاري المعالجة بالنظام الذكي...**")
+    # الحصول على عميل البوت
+    bot_client = event.client
+    
+    # إرسال رسالة الحالة
+    status_msg = await event.reply("🔍 **جاري البحث في التخزين الذكي...**")
+    
+    try:
+        # المرحلة 1: البحث في التخزين الذكي أولاً
+        LOGGER(__name__).info(f"🔍 بدء البحث في التخزين الذكي: {query}")
+        cache_result = await search_in_smart_cache(query, bot_client)
+        
+        if cache_result and cache_result.get('success'):
+            LOGGER(__name__).info(f"✅ تم العثور على المقطع في التخزين الذكي")
+            await send_cached_audio(event, status_msg, cache_result, bot_client)
+            return
+        
+        # المرحلة 2: إذا لم يجد في التخزين، ابدأ البحث العادي
+        await status_msg.edit("🔍 **لم يوجد في التخزين - جاري البحث في يوتيوب...**")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في البحث بالتخزين الذكي: {e}")
+        await status_msg.edit("🔍 **جاري البحث في يوتيوب...**")
     
     try:
         # التحقق من توفر المكتبات المطلوبة
@@ -1815,7 +2070,7 @@ async def smart_download_handler(event):
             if api_result and api_result.get('success'):
                 audio_file = api_result.get('file_path')
                 if audio_file and Path(audio_file).exists():
-                    await send_audio_file(event, status_msg, audio_file, api_result)
+                    await send_audio_file(event, status_msg, audio_file, api_result, query, bot_client)
                     return
             
             # إذا فشل API، جرب الطرق البديلة
@@ -1846,7 +2101,7 @@ async def smart_download_handler(event):
                             audio_file = alternative_result.get('file_path')
                             if audio_file and Path(audio_file).exists() and not audio_file.endswith('.txt'):
                                 # إرسال الملف البديل
-                                await send_audio_file(event, status_msg, audio_file, alternative_result)
+                                await send_audio_file(event, status_msg, audio_file, alternative_result, query, bot_client)
                                 return
                     
                     else:
@@ -1891,7 +2146,7 @@ async def smart_download_handler(event):
         if forced_result and forced_result.get('success'):
             audio_file = forced_result.get('file_path')
             if audio_file and Path(audio_file).exists():
-                await send_audio_file(event, status_msg, audio_file, forced_result)
+                                    await send_audio_file(event, status_msg, audio_file, forced_result, query, bot_client)
                 return
         
         # إذا فشل كل شيء، نرسل رسالة فشل بدون رابط
