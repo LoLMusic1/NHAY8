@@ -1871,12 +1871,7 @@ async def send_cached_from_database(event, status_msg, db_result: Dict, bot_clie
         duration = db_result.get('duration', 0)
         duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
         
-        user_caption = f"""🎵 **{db_result.get('title', 'مقطع صوتي')[:60]}**
-🎤 **{db_result.get('uploader', 'غير معروف')[:40]}**
-⏱️ **{duration_str}** | ⚡ **من الكاش السريع**
-
-💾 **تطابق:** {db_result.get('match_ratio', 0):.1%} | 📊 **مرات الوصول:** {db_result.get('access_count', 1)}
-💡 **مُحمّل بواسطة:** ZeMusic Bot"""
+        user_caption = f"✦ @{config.BOT_USERNAME}"
         
         # إرسال الملف باستخدام file_id
         await event.respond(
@@ -2457,12 +2452,7 @@ async def send_cached_audio(event, status_msg, cache_result: Dict, bot_client):
         duration = cache_result.get('duration', 0)
         duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
         
-        user_caption = f"""🎵 **{cache_result.get('title', 'مقطع صوتي')[:60]}**
-🎤 **{cache_result.get('uploader', 'غير معروف')[:40]}**
-⏱️ **{duration_str}** | ⚡ **من التخزين الذكي**
-
-💾 **تطابق:** {cache_result.get('match_ratio', 0):.1%}
-💡 **مُحمّل بواسطة:** ZeMusic Bot"""
+        user_caption = f"✦ @{config.BOT_USERNAME}"
         
         # إرسال الملف للمستخدم
         await event.respond(
@@ -2718,11 +2708,7 @@ async def send_audio_file(event, status_msg, audio_file: str, result: dict, quer
         duration = result.get('duration', 0)
         duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
         
-        caption = f"""🎵 **{result.get('title', 'مقطع صوتي')[:60]}**
-🎤 **{result.get('uploader', 'غير معروف')[:40]}**
-⏱️ **{duration_str}** | ⚡ **{result.get('elapsed', 0):.1f}s**
-
-💡 **مُحمّل بواسطة:** ZeMusic Bot"""
+        caption = f"✦ @{config.BOT_USERNAME}"
         
         # إرسال الملف الصوتي
         await event.respond(
@@ -3689,11 +3675,7 @@ async def send_local_cached_audio(message, cache_result: Dict, status_msg) -> bo
             # إرسال الملف الموجود
             await message.reply(
                 file=file_path,
-                message=f"🎵 **{cache_result.get('title', 'غير محدد')}**\n"
-                       f"👤 **الفنان:** {cache_result.get('artist', 'غير محدد')}\n"
-                       f"⏱️ **المدة:** {cache_result.get('duration', 'غير محدد')}\n"
-                       f"📁 **المصدر:** كاش محلي\n"
-                       f"🤖 **بواسطة:** ZeMusic Bot",
+                message=f"✦ @{config.BOT_USERNAME}",
                 attributes=[
                     DocumentAttributeAudio(
                         duration=cache_result.get('duration', 0),
@@ -3727,11 +3709,7 @@ async def send_telegram_cached_audio(message, telegram_result: Dict, status_msg)
             # إرسال بـ file_id
             await message.reply(
                 file=file_id,
-                message=f"🎵 **{telegram_result.get('title', 'غير محدد')}**\n"
-                       f"👤 **الفنان:** {telegram_result.get('artist', 'غير محدد')}\n"
-                       f"⏱️ **المدة:** {telegram_result.get('duration', 'غير محدد')}\n"
-                       f"📺 **المصدر:** قناة التخزين\n"
-                       f"🤖 **بواسطة:** ZeMusic Bot",
+                message=f"✦ @{config.BOT_USERNAME}",
                 attributes=[
                     DocumentAttributeAudio(
                         duration=telegram_result.get('duration', 0),
@@ -3923,11 +3901,7 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                     LOGGER(__name__).info(f"📤 محاولة إرسال الملف: {downloaded_file}")
                     audio_message = await message.reply(
                         file=downloaded_file,
-                        message=f"🎵 **{title}**\n"
-                               f"👤 **القناة:** {channel}\n"
-                               f"⏱️ **المدة:** {duration // 60}:{duration % 60:02d}\n"
-                               f"🌐 **المصدر:** YouTube\n"
-                               f"🤖 **بواسطة:** ZeMusic Bot",
+                        message=f"✦ @{config.BOT_USERNAME}",
                         attributes=[
                             DocumentAttributeAudio(
                                 duration=duration,
@@ -3987,11 +3961,7 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                         
                         audio_message = await message.reply(
                             file=downloaded_file,
-                            message=f"🎵 **{title}**\n"
-                                   f"👤 **القناة:** {channel}\n"
-                                   f"⏱️ **المدة:** {duration // 60}:{duration % 60:02d}\n"
-                                   f"🌐 **المصدر:** YouTube (بديل)\n"
-                                   f"🤖 **بواسطة:** ZeMusic Bot",
+                            message=f"✦ @{config.BOT_USERNAME}",
                             attributes=[
                                 DocumentAttributeAudio(
                                     duration=duration,
