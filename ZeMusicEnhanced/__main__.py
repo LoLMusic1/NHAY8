@@ -168,9 +168,23 @@ class ZeMusicEnhanced:
             
             try:
                 from handlers.basic_handlers import BasicHandlers
+                from handlers.music_handlers import MusicHandlers
+                from handlers.owner_handlers import OwnerHandlers
                 
+                # تسجيل المعالجات الأساسية
                 self.basic_handlers = BasicHandlers(self.client, self.db, config)
                 self.basic_handlers.register_handlers()
+                
+                # تسجيل معالجات الموسيقى
+                self.music_handlers = MusicHandlers(self.client, self.db, config)
+                self.music_handlers.register_handlers()
+                
+                # تسجيل معالجات المالك
+                self.owner_handlers = OwnerHandlers(self.client, self.db, config)
+                self.owner_handlers.register_handlers()
+                
+                logger.info("✅ تم تحميل جميع المعالجات المتقدمة")
+                
             except ImportError as e:
                 logger.warning(f"⚠️ لم يتم العثور على معالجات مخصصة: {e}")
                 # تسجيل معالجات أساسية مباشرة

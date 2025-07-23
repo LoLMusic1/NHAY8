@@ -959,6 +959,163 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"❌ خطأ في إضافة المستخدم {user_id}: {e}")
             return False
+    
+    async def get_all_users(self) -> list:
+        """جلب جميع المستخدمين"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
+                rows = cursor.fetchall()
+                
+                users = []
+                for row in rows:
+                    users.append({
+                        'user_id': row[0],
+                        'username': row[1],
+                        'first_name': row[2],
+                        'created_at': row[3],
+                        'last_seen': row[4]
+                    })
+                
+                return users
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في جلب المستخدمين: {e}")
+            return []
+    
+    async def get_all_chats(self) -> list:
+        """جلب جميع المجموعات"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM chats ORDER BY created_at DESC")
+                rows = cursor.fetchall()
+                
+                chats = []
+                for row in rows:
+                    chats.append({
+                        'chat_id': row[0],
+                        'title': row[1],
+                        'type': row[2],
+                        'created_at': row[3]
+                    })
+                
+                return chats
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في جلب المجموعات: {e}")
+            return []
+    
+    async def get_active_users_count(self) -> int:
+        """عدد المستخدمين النشطين"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) FROM users 
+                    WHERE last_seen > datetime('now', '-7 days')
+                """)
+                return cursor.fetchone()[0]
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في عدد المستخدمين النشطين: {e}")
+            return 0
+    
+    async def get_active_chats_count(self) -> int:
+        """عدد المجموعات النشطة"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) FROM chats 
+                    WHERE last_activity > datetime('now', '-7 days')
+                """)
+                return cursor.fetchone()[0]
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في عدد المجموعات النشطة: {e}")
+            return 0
+    
+    async def get_new_users_today(self) -> int:
+        """عدد المستخدمين الجدد اليوم"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) FROM users 
+                    WHERE created_at > datetime('now', '-1 day')
+                """)
+                return cursor.fetchone()[0]
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في عدد المستخدمين الجدد: {e}")
+            return 0
+    
+    async def save_search_results(self, user_id: int, results: list) -> bool:
+        """حفظ نتائج البحث مؤقتاً"""
+        try:
+            import json
+            results_json = json.dumps(results)
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO search_cache 
+                    (user_id, results, created_at)
+                    VALUES (?, ?, ?)
+                """, (user_id, results_json, datetime.now()))
+                conn.commit()
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في حفظ نتائج البحث: {e}")
+            return False
+    
+    async def get_search_results(self, user_id: int) -> list:
+        """جلب نتائج البحث المحفوظة"""
+        try:
+            import json
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT results FROM search_cache 
+                    WHERE user_id = ? AND created_at > datetime('now', '-1 hour')
+                    ORDER BY created_at DESC LIMIT 1
+                """, (user_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    return json.loads(row[0])
+                
+            return []
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في جلب نتائج البحث: {e}")
+            return []
+    
+    async def save_now_playing(self, chat_id: int, song_info: dict, user_id: int) -> bool:
+        """حفظ معلومات الأغنية الحالية"""
+        try:
+            import json
+            song_json = json.dumps(song_info)
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO now_playing 
+                    (chat_id, song_info, user_id, started_at)
+                    VALUES (?, ?, ?, ?)
+                """, (chat_id, song_json, user_id, datetime.now()))
+                conn.commit()
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في حفظ معلومات التشغيل: {e}")
+            return False
 
 # إنشاء مثيل عام لمدير قاعدة البيانات
 db = DatabaseManager()
