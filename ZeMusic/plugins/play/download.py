@@ -2955,27 +2955,6 @@ async def download_thumbnail(url: str, title: str) -> Optional[str]:
     return None
 
 # تم حذف التعريف المكرر - يوجد تعريف آخر في نهاية الملف
-        
-        # فحص الصلاحيات
-        chat_id = event.chat_id
-        if chat_id > 0:  # محادثة خاصة
-            if not await is_search_enabled1():
-                await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
-                return
-        else:  # مجموعة أو قناة
-            if not await is_search_enabled(chat_id):
-                await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
-                return
-                
-        # معالجة فورية بدون حدود مع تحسينات إضافية
-        LOGGER(__name__).info(f"🚀 معالجة ذكية محسنة للمستخدم {user_id} - العمليات النشطة: {len(active_downloads)}")
-        
-    except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في فحص الحمولة المحسن: {e}")
-        await update_performance_stats(False, time.time() - start_time)
-        return
-    
-    # تنفيذ المعالجة الفورية المتوازية المحسنة - كل طلب يبدأ فوراً
     # إنشاء مهمة منفصلة لكل طلب بدون انتظار مع تحسينات الأداء
     asyncio.create_task(process_unlimited_download_enhanced(event, user_id, start_time))
     
