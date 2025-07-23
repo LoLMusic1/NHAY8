@@ -3281,8 +3281,29 @@ async def process_smart_youtube_download(event, status_msg, query: str, user_id:
         # البحث المتقدم في يوتيوب
         await status_msg.edit("🔍 **البحث المتقدم في يوتيوب...**")
         
-        # استخدام النظام الموجود مع تحسينات
-        result = await downloader.hyper_download(query)
+        # محاولة النظام المختلط أولاً (API + yt-dlp)
+        try:
+            from ZeMusic.plugins.play.youtube_api_downloader import search_and_download_hybrid
+            hybrid_result = await search_and_download_hybrid(query)
+            
+            if hybrid_result and hybrid_result.get('success'):
+                LOGGER(__name__).info(f"✅ نجح التحميل المختلط: {hybrid_result['title']}")
+                result = {
+                    'audio_path': hybrid_result['file_path'],
+                    'title': hybrid_result['title'],
+                    'duration': hybrid_result['duration'],
+                    'uploader': hybrid_result['uploader'],
+                    'video_id': hybrid_result['video_id'],
+                    'method': 'hybrid_api_ytdlp'
+                }
+            else:
+                LOGGER(__name__).info("⚠️ فشل التحميل المختلط، التبديل للنظام التقليدي")
+                # استخدام النظام الموجود مع تحسينات
+                result = await downloader.hyper_download(query)
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في النظام المختلط: {e}")
+            # استخدام النظام الموجود مع تحسينات
+            result = await downloader.hyper_download(query)
         
         if result:
             # تحديث المرحلة
