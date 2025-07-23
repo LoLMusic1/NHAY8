@@ -10,13 +10,27 @@
 
 from .telethon_client import TelethonClient, TelethonClientManager
 from .database import DatabaseManager, ChatSettings, UserData, ChatData, AssistantData
-from .call import TelethonCall, CallManager
-from .music_manager import TelethonMusicManager, MusicSession, QueueItem
-from .command_handler import CommandHandler, CommandRegistry
-from .cookies_manager import CookiesManager
-from .git import GitManager
-from .handlers_registry import HandlersRegistry
-from .simple_handlers import SimpleHandlers
+
+# استيرادات اختيارية - ستتم إضافتها تدريجياً
+try:
+    from .assistant_manager import AssistantManager
+except ImportError:
+    AssistantManager = None
+
+try:
+    from .music_engine import MusicEngine
+except ImportError:
+    MusicEngine = None
+
+try:
+    from .security_manager import SecurityManager
+except ImportError:
+    SecurityManager = None
+
+try:
+    from .performance_monitor import PerformanceMonitor
+except ImportError:
+    PerformanceMonitor = None
 
 # مدراء النظام الرئيسيين
 telethon_client_manager = None  # سيتم تهيئته في الملف الرئيسي
@@ -29,35 +43,24 @@ git_manager = None
 handlers_registry = None
 
 __all__ = [
-    # Classes
+    # Core Classes
     'TelethonClient',
     'TelethonClientManager', 
     'DatabaseManager',
-    'TelethonCall',
-    'CallManager',
-    'TelethonMusicManager',
-    'CommandHandler',
-    'CommandRegistry',
-    'CookiesManager',
-    'GitManager',
-    'HandlersRegistry',
-    'SimpleHandlers',
+    
+    # Optional Classes
+    'AssistantManager',
+    'MusicEngine',
+    'SecurityManager',
+    'PerformanceMonitor',
     
     # Data Classes
     'ChatSettings',
     'UserData', 
     'ChatData',
     'AssistantData',
-    'MusicSession',
-    'QueueItem',
     
     # Global Managers
     'telethon_client_manager',
-    'database_manager',
-    'call_manager',
-    'music_manager',
-    'command_handler',
-    'cookies_manager',
-    'git_manager',
-    'handlers_registry'
+    'database_manager'
 ]

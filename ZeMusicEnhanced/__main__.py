@@ -19,7 +19,7 @@ from typing import Optional
 # إضافة مجلد المشروع لـ Python Path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import config
+from config.simple_config import config
 from core import (
     TelethonClient,
     DatabaseManager,
@@ -84,8 +84,8 @@ class ZeMusicEnhanced:
             
             # 2. تهيئة عميل Telethon
             logger.info("📱 تهيئة عميل Telethon...")
-            self.client = TelethonClient()
-            if not await self.client.initialize():
+            self.client = TelethonClient("zemusic_enhanced_bot", is_bot=True)
+            if not await self.client.initialize(bot_token=config.BOT_TOKEN):
                 logger.error("❌ فشل في تهيئة عميل Telethon")
                 return False
             
@@ -149,10 +149,10 @@ class ZeMusicEnhanced:
 │  💿 التخزين: {psutil.disk_usage('/').free // (1024**3)} GB متاح
 ├─────────────────────────────────────────────────┤
 │  ⚙️ الإعدادات:                                  │
-│  📊 قاعدة البيانات: {config.database._get_db_type()}
-│  🤖 الحسابات المساعدة: {config.assistant.max_assistants} حد أقصى
-│  🎵 وضع الأحمال الكبيرة: {'✅' if config.performance.high_load_mode else '❌'}
-│  🔄 Redis: {'✅' if config.performance.enable_redis else '❌'}
+│  📊 قاعدة البيانات: {getattr(config.database, 'type', 'SQLite')}
+│  🤖 الحسابات المساعدة: {getattr(config.assistant, 'max_count', 10)} حد أقصى
+│  🎵 وضع الأحمال الكبيرة: {'✅' if getattr(config, 'HIGH_LOAD_MODE', False) else '❌'}
+│  🔄 Redis: {'✅' if getattr(config, 'ENABLE_REDIS', False) else '❌'}
 ╰─────────────────────────────────────────────────╯
             """
             

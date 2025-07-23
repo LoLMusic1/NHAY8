@@ -103,13 +103,18 @@ class DatabaseManager:
     
     def __init__(self, db_path: str = None):
         """تهيئة مدير قاعدة البيانات"""
-        self.db_path = db_path or config.database.path
+        if db_path:
+            self.db_path = db_path
+        elif hasattr(config, 'DATABASE_PATH') and config.DATABASE_PATH:
+            self.db_path = config.DATABASE_PATH
+        else:
+            self.db_path = 'zemusic_enhanced.db'
         self._lock = threading.Lock()
         self._connection_pool = {}
         
         # كاش في الذاكرة للبيانات المتكررة
-        self.cache_enabled = config.database.enable_cache
-        self.cache_ttl = config.database.cache_ttl
+        self.cache_enabled = getattr(config, 'ENABLE_DATABASE_CACHE', True)
+        self.cache_ttl = getattr(config, 'DATABASE_CACHE_TTL', 3600)
         
         if self.cache_enabled:
             self.cache = {
@@ -139,7 +144,8 @@ class DatabaseManager:
             
             # إنشاء مجلد قاعدة البيانات
             import os
-            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+            if os.path.dirname(self.db_path):
+                os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
             
             # إنشاء الجداول
             await self._create_tables()

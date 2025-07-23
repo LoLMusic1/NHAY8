@@ -31,7 +31,7 @@ from telethon.tl.types import User, Chat, Channel
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import config
+from config.simple_config import config
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +80,7 @@ class TelethonClient:
                 app_version=config.telegram.app_version,
                 lang_code="ar",
                 system_lang_code="ar",
-                timeout=30,
-                retry_delay=1,
-                retries=3
+                timeout=30
             )
             
             # بدء الاتصال
@@ -186,7 +184,7 @@ class TelethonClientManager:
         self.session_data: Dict[str, Dict[str, Any]] = {}
         
         # إعدادات الإدارة
-        self.max_assistants = getattr(config, 'MAX_ASSISTANTS', 10)
+        self.max_assistants = config.assistant.max_count
         self.assistant_rotation = True
         self.health_check_interval = 300  # 5 دقائق
         

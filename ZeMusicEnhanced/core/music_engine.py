@@ -93,14 +93,18 @@ class MusicEngine:
         self.cleanup_task = None
         self.stats_task = None
         
+        # وضع محدود (بدون PyTgCalls)
+        self.limited_mode = False
+        
     async def initialize(self) -> bool:
         """تهيئة محرك الموسيقى"""
         try:
             logger.info("🎵 تهيئة محرك الموسيقى...")
             
             if not PYTGCALLS_AVAILABLE:
-                logger.error("❌ PyTgCalls غير متاح - لن تعمل ميزات التشغيل")
-                return False
+                logger.warning("⚠️ PyTgCalls غير متاح - سيعمل البوت في وضع محدود بدون تشغيل موسيقى")
+                self.limited_mode = True
+                return True
             
             # تهيئة PyTgCalls للحسابات المساعدة
             await self._initialize_pytgcalls()
