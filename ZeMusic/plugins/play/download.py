@@ -2710,10 +2710,23 @@ async def send_audio_file(event, status_msg, audio_file: str, result: dict, quer
         
         caption = f"✦ @{config.BOT_USERNAME}"
         
+        # تحميل الصورة المصغرة إذا كانت متاحة
+        thumb_path = None
+        try:
+            if 'thumbnail' in result and result['thumbnail']:
+                thumb_path = await download_thumbnail(
+                    result['thumbnail'], 
+                    result.get('title', 'Unknown'), 
+                    result.get('id', None)
+                )
+        except Exception as thumb_error:
+            LOGGER(__name__).warning(f"⚠️ خطأ في تحميل الصورة المصغرة: {thumb_error}")
+        
         # إرسال الملف الصوتي
         await event.respond(
             caption,
             file=audio_file,
+            thumb=thumb_path,
             attributes=[
                 DocumentAttributeAudio(
                     duration=duration,
@@ -2737,8 +2750,16 @@ async def send_audio_file(event, status_msg, audio_file: str, result: dict, quer
         
         await status_msg.delete()
         
-        # حذف الملف المؤقت
+        # حذف الملفات المؤقتة
         await remove_temp_files(audio_file)
+        
+        # حذف الصورة المصغرة
+        if thumb_path and os.path.exists(thumb_path):
+            try:
+                os.remove(thumb_path)
+                LOGGER(__name__).debug(f"🗑️ تم حذف الصورة المصغرة: {os.path.basename(thumb_path)}")
+            except Exception as e:
+                LOGGER(__name__).warning(f"⚠️ فشل حذف الصورة المصغرة: {e}")
         
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في إرسال الملف: {e}")
@@ -2920,23 +2941,36 @@ async def remove_temp_files(*paths):
             except Exception as e:
                 LOGGER(__name__).warning(f"فشل حذف {path}: {e}")
 
-async def download_thumbnail(url: str, title: str) -> Optional[str]:
+async def download_thumbnail(url: str, title: str, video_id: str = None) -> Optional[str]:
     """تحميل الصورة المصغرة بشكل غير متزامن"""
     if not url:
         return None
     
     try:
-        title_clean = re.sub(r'[\\/*?:"<>|]', "", title)
-        thumb_path = f"downloads/thumb_{title_clean[:20]}.jpg"
+        # استخدام video_id إذا كان متاحاً، وإلا استخدام العنوان المنظف
+        if video_id:
+            thumb_path = f"downloads/thumb_{video_id}.jpg"
+        else:
+            title_clean = re.sub(r'[\\/*?:"<>|]', "", title)
+            thumb_path = f"downloads/thumb_{title_clean[:20]}.jpg"
         
-        session = await downloader.conn_manager.get_session()
-        async with session.get(url) as resp:
-            if resp.status == 200:
-                async with aiofiles.open(thumb_path, mode='wb') as f:
-                    await f.write(await resp.read())
-                return thumb_path
+        # تحقق من وجود الصورة مسبقاً
+        if os.path.exists(thumb_path):
+            return thumb_path
+        
+        LOGGER(__name__).info(f"📸 تحميل الصورة المصغرة: {os.path.basename(thumb_path)}")
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    async with aiofiles.open(thumb_path, mode='wb') as f:
+                        await f.write(await resp.read())
+                    LOGGER(__name__).info(f"✅ تم تحميل الصورة المصغرة: {os.path.basename(thumb_path)}")
+                    return thumb_path
+                else:
+                    LOGGER(__name__).warning(f"⚠️ فشل تحميل الصورة: HTTP {resp.status}")
     except Exception as e:
-        LOGGER(__name__).warning(f"فشل تحميل الصورة: {e}")
+        LOGGER(__name__).warning(f"❌ خطأ في تحميل الصورة المصغرة: {e}")
     
     return None
 
@@ -3894,6 +3928,22 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                     LOGGER(__name__).error("❌ لم يتم العثور على الملف المحمل")
                     return False
                 
+                # تحميل الصورة المصغرة
+                thumb_path = None
+                try:
+                    if info and 'thumbnail' in info and info['thumbnail']:
+                        thumb_path = await download_thumbnail(info['thumbnail'], title, video_id)
+                    elif info and 'thumbnails' in info and info['thumbnails']:
+                        # أخذ أفضل جودة متاحة
+                        best_thumb = None
+                        for thumb in info['thumbnails']:
+                            if thumb.get('url'):
+                                best_thumb = thumb['url']
+                        if best_thumb:
+                            thumb_path = await download_thumbnail(best_thumb, title, video_id)
+                except Exception as thumb_error:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في تحميل الصورة المصغرة: {thumb_error}")
+                
                 # إرسال الملف
                 await status_msg.edit("📤 **جاري الإرسال...**")
                 
@@ -3902,6 +3952,7 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                     audio_message = await message.reply(
                         file=downloaded_file,
                         message=f"✦ @{config.BOT_USERNAME}",
+                        thumb=thumb_path,
                         attributes=[
                             DocumentAttributeAudio(
                                 duration=duration,
@@ -3924,11 +3975,18 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                 except:
                     pass
                 
-                # حذف الملف المؤقت
+                # حذف الملفات المؤقتة
                 try:
                     os.remove(downloaded_file)
                 except:
                     pass
+                
+                # حذف الصورة المصغرة
+                if thumb_path and os.path.exists(thumb_path):
+                    try:
+                        os.remove(thumb_path)
+                    except:
+                        pass
                 
                 LOGGER(__name__).info(f"✅ تم إرسال وحفظ الأغنية: {title}")
                 return True
@@ -3957,11 +4015,28 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                             break
                     
                     if downloaded_file:
+                        # تحميل الصورة المصغرة
+                        thumb_path = None
+                        try:
+                            if info and 'thumbnail' in info and info['thumbnail']:
+                                thumb_path = await download_thumbnail(info['thumbnail'], title, video_id)
+                            elif info and 'thumbnails' in info and info['thumbnails']:
+                                # أخذ أفضل جودة متاحة
+                                best_thumb = None
+                                for thumb in info['thumbnails']:
+                                    if thumb.get('url'):
+                                        best_thumb = thumb['url']
+                                if best_thumb:
+                                    thumb_path = await download_thumbnail(best_thumb, title, video_id)
+                        except Exception as thumb_error:
+                            LOGGER(__name__).warning(f"⚠️ خطأ في تحميل الصورة المصغرة: {thumb_error}")
+                        
                         await status_msg.edit("📤 **جاري الإرسال...**")
                         
                         audio_message = await message.reply(
                             file=downloaded_file,
                             message=f"✦ @{config.BOT_USERNAME}",
+                            thumb=thumb_path,
                             attributes=[
                                 DocumentAttributeAudio(
                                     duration=duration,
@@ -3983,6 +4058,13 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                             os.remove(downloaded_file)
                         except:
                             pass
+                        
+                        # حذف الصورة المصغرة
+                        if thumb_path and os.path.exists(thumb_path):
+                            try:
+                                os.remove(thumb_path)
+                            except:
+                                pass
                         
                         LOGGER(__name__).info(f"✅ تم إرسال الأغنية بدون cookies: {title}")
                         return True
