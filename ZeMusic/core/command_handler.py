@@ -11,6 +11,45 @@ from ZeMusic.plugins.owner.stats_handler import stats_handler
 from ZeMusic.plugins.owner.broadcast_handler import broadcast_handler
 from ZeMusic.plugins.owner.owner_panel import owner_panel
 
+# فئات مشتركة لتجنب التكرار
+class MockChat:
+    def __init__(self, chat_id):
+        self.id = chat_id
+        self.type = "private" if chat_id > 0 else "group"
+
+class MockUser:
+    def __init__(self, user_id):
+        self.id = user_id
+        self.username = None
+        self.first_name = "User"
+
+class MockMessage:
+    def __init__(self, event):
+        # التحقق الآمن من الخصائص
+        if hasattr(event, 'message') and event.message:
+            self.text = getattr(event.message, 'text', '') or ""
+            self.message_id = getattr(event.message, 'id', 0)
+            self.date = getattr(event.message, 'date', None)
+            reply_to_msg_id = getattr(event.message, 'reply_to_msg_id', None)
+        else:
+            self.text = ""
+            self.message_id = 0
+            self.date = None
+            reply_to_msg_id = None
+        
+        self.chat = MockChat(getattr(event, 'chat_id', 0))
+        self.from_user = MockUser(getattr(event, 'sender_id', 0))
+        self.reply_to_message = None
+        if reply_to_msg_id:
+            self.reply_to_message = MockMessage(event)
+
+class MockCallback:
+    def __init__(self, event):
+        self.data = event.data.decode('utf-8') if isinstance(event.data, bytes) else str(event.data)
+        self.message = MockMessage(event)
+        self.from_user = MockUser(getattr(event, 'sender_id', 0))
+        self.id = str(getattr(event, 'query_id', 0))
+
 class TelethonCommandHandler:
     """معالج الأوامر والcallbacks مع Telethon"""
     
@@ -156,67 +195,13 @@ class TelethonCommandHandler:
                 """إضافة دالة reply للتوافق"""
                 return await self.event.reply(text, **kwargs)
         
-        class MockMessage:
-            def __init__(self, event):
-                # التحقق الآمن من الخصائص
-                if hasattr(event, 'message') and event.message:
-                    self.text = getattr(event.message, 'text', '') or ""
-                    self.message_id = getattr(event.message, 'id', 0)
-                    self.date = getattr(event.message, 'date', None)
-                    reply_to_msg_id = getattr(event.message, 'reply_to_msg_id', None)
-                else:
-                    self.text = ""
-                    self.message_id = 0
-                    self.date = None
-                    reply_to_msg_id = None
-                
-                self.chat = MockChat(getattr(event, 'chat_id', 0))
-                self.from_user = MockUser(getattr(event, 'sender_id', 0))
-                self.reply_to_message = None
-                if reply_to_msg_id:
-                    self.reply_to_message = MockMessage(event)
-        
-        class MockChat:
-            def __init__(self, chat_id):
-                self.id = chat_id
-                self.type = "private" if chat_id > 0 else "group"
-        
-        class MockUser:
-            def __init__(self, user_id):
-                self.id = user_id
-                self.username = None
-                self.first_name = "User"
+        # استخدام الفئات المشتركة المعرفة أعلاه
         
         return MockUpdate(event)
     
     def _create_mock_callback_from_telethon(self, event):
         """تحويل callback من Telethon إلى تنسيق متوافق"""
-        class MockCallback:
-            def __init__(self, event):
-                self.data = event.data.decode('utf-8') if isinstance(event.data, bytes) else str(event.data)
-                self.message = MockMessage(event)
-                self.from_user = MockUser(getattr(event, 'sender_id', 0))
-                self.id = str(getattr(event, 'query_id', 0))
-        
-        class MockMessage:
-            def __init__(self, event):
-                # التحقق الآمن من الخصائص
-                if hasattr(event, 'message') and event.message:
-                    self.message_id = getattr(event.message, 'id', 0)
-                    self.text = getattr(event.message, 'text', '')
-                else:
-                    self.message_id = 0
-                    self.text = ''
-                
-                self.chat = MockChat(getattr(event, 'chat_id', 0))
-        
-        class MockChat:
-            def __init__(self, chat_id):
-                self.id = chat_id
-        
-        class MockUser:
-            def __init__(self, user_id):
-                self.id = user_id
+        # استخدام الفئات المشتركة المعرفة أعلاه
         
         return MockCallback(event)
     

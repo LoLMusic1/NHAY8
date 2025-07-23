@@ -1748,7 +1748,7 @@ async def remove_temp_files(*paths):
             except Exception as e:
                 LOGGER(__name__).warning(f"فشل حذف {path}: {e}")
 
-async def download_thumbnail(url: str, title: str) -> Optional[str]:
+async def download_thumbnail_enhanced(url: str, title: str) -> Optional[str]:
     """تحميل محسن للصورة المصغرة"""
     if not url:
         return None

@@ -1,11 +1,11 @@
 from ZeMusic.pyrogram_compatibility import Client, filters
-from ZeMusic.core.userbot import Userbot
+# from ZeMusic.core.userbot import Userbot  # غير موجود
 from ZeMusic.pyrogram_compatibility import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from config import LOGGER_ID as LOG_ID
 from ZeMusic import app
 
 
-userbot = Userbot()
+# userbot = Userbot()  # غير موجود
 
 
 async def new_message(chat_id: int, message: str, reply_markup=None):

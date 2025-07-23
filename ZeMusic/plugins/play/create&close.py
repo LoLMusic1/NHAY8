@@ -12,7 +12,7 @@ from ZeMusic.utils.database import *
 # from pyrogram.raw.functions.messages import GetFullChat  
 # from pyrogram.raw.types import InputGroupCall, InputPeerChannel, InputPeerChat
 # from pyrogram.raw.functions.phone import CreateGroupCall, DiscardGroupCall
-from ZeMusic import app , Userbot
+from ZeMusic import app
 
 async def get_group_call(
     client: Client, message: Message, err_msg: str = ""

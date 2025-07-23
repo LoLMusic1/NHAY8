@@ -31,8 +31,7 @@ BOT_ID = getenv("BOT_ID", "7727065450")  # معرف البوت الرقمي
 # Owner ID - معرف المالك
 OWNER_ID = int(getenv("OWNER_ID", "7345311113"))
 
-# Support chat
-SUPPORT_CHAT = getenv("SUPPORT_CHAT", "@YourSupport")
+# Support chat - will be defined later with correct value
 
 # ============================================
 # إعدادات قاعدة البيانات - SQLite
@@ -48,7 +47,7 @@ ENABLE_DATABASE_CACHE = getenv("ENABLE_DATABASE_CACHE", "True").lower() == "true
 # إعدادات الأمان والتخفي
 DEVICE_MODEL = getenv("DEVICE_MODEL", "ZeMusic Bot")
 SYSTEM_VERSION = getenv("SYSTEM_VERSION", "Ubuntu 20.04")
-APPLICATION_VERSION = getenv("APPLICATION_VERSION", "2.0.0")
+APPLICATION_VERSION = getenv("APPLICATION_VERSION", "2.0.0 Telethon Edition")
 
 # ============================================
 # إعدادات الحسابات المساعدة
@@ -180,6 +179,7 @@ CHANNEL_NAME = getenv("CHANNEL_NAME", "السورس")
 CHANNEL_LINK = getenv("CHANNEL_LINK", "K55DD")
 STORE_NAME = getenv("STORE_NAME", "المتجر")
 STORE_LINK = getenv("STORE_LINK", "https://t.me/YMMYN")
+# SUPPORT_CHAT already defined above - using consistent value
 SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/K55DD")
 
 # ============================================
@@ -190,8 +190,7 @@ LOGGER_ID = int(getenv("LOGGER_ID", "-1002766950323"))
 LANGUAGE = "ar"
 LANGS = "ar"
 
-# Get this value from @FallenxBot on Telegram by /id
-OWNER_ID = int(getenv("OWNER_ID", "7345311113"))
+# OWNER_ID already defined above - removing duplicate
 
 # ============================================
 # إعدادات Heroku (اختياري)
@@ -293,8 +292,8 @@ ASSISTANT_NOT_FOUND_MESSAGE = """
 # ============================================
 # إعدادات إضافية للإحصائيات والإذاعة
 # ============================================
-ENABLE_DATABASE_CACHE = getenv("ENABLE_DATABASE_CACHE", "True").lower() == "true"
-APPLICATION_VERSION = "2.0.0 Telethon Edition"
+# ENABLE_DATABASE_CACHE already defined above
+# APPLICATION_VERSION already defined above - using Telethon Edition
 
 # قائمة المستخدمين المحظورين
 BANNED_USERS_LIST = []
