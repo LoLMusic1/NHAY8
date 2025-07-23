@@ -3154,8 +3154,8 @@ async def process_unlimited_download_enhanced(event, user_id: int, start_time: f
         
         LOGGER(__name__).info(f"🚀 بدء معالجة فورية محسنة للمستخدم {user_id} | المهمة: {task_id}")
         
-        # تنفيذ المعالجة الكاملة المحسنة في مهمة منفصلة
-        await execute_parallel_download_enhanced(event, user_id, start_time, task_id)
+        # تنفيذ المعالجة الكاملة المحسنة في مهمة منفصلة - بدون انتظار
+        asyncio.create_task(execute_parallel_download_enhanced(event, user_id, start_time, task_id))
         
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في معالجة التحميل المتوازي المحسن: {e}")
