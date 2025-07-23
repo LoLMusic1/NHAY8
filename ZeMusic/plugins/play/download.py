@@ -2177,17 +2177,8 @@ async def search_in_telegram_cache(query: str, bot_client) -> Optional[Dict]:
         LOGGER(__name__).error(f"❌ خطأ في البحث الذكي بالتخزين: {e}")
         return None
 
-def normalize_search_text(text: str) -> str:
-    """تنظيف وتطبيع النص للبحث"""
-    import re
-    
-    # إزالة الرموز الخاصة والأرقام الزائدة
-    text = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', text)
-    
-    # تحويل للأحرف الصغيرة وإزالة المسافات الزائدة
-    text = ' '.join(text.lower().split())
-    
-    return text
+# تم دمج هذه الدالة مع normalize_arabic_text
+normalize_search_text = normalize_arabic_text  # توحيد الدوال
 
 def extract_title_from_cache_text(text: str) -> str:
     """استخراج العنوان من نص التخزين"""
@@ -3846,22 +3837,27 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
             await status_msg.edit("🍪 **جاري تحضير التحميل...**")
             LOGGER(__name__).debug("🍪 محاولة الحصول على ملف cookies")
             
-            from ZeMusic.core.cookies_manager import CookiesManager
-            cookies_manager = CookiesManager()
-            await cookies_manager.initialize()
-            
-            cookie_file = await cookies_manager.get_next_cookie()
-            
-            if cookie_file and os.path.exists(cookie_file):
-                file_size = os.path.getsize(cookie_file)
-                LOGGER(__name__).info(f"✅ تم الحصول على ملف cookies: {cookie_file} ({file_size} bytes)")
+            # البحث المباشر عن ملفات cookies
+            cookies_dir = Path("cookies")
+            if cookies_dir.exists():
+                cookie_files = list(cookies_dir.glob("*.txt"))
+                if cookie_files:
+                    # اختيار ملف عشوائي
+                    cookie_file = str(cookie_files[0])  # أول ملف متاح
+                    
+                    if os.path.exists(cookie_file):
+                        file_size = os.path.getsize(cookie_file)
+                        LOGGER(__name__).info(f"✅ تم الحصول على ملف cookies: {cookie_file} ({file_size} bytes)")
+                    else:
+                        LOGGER(__name__).warning("⚠️ ملف cookies غير موجود")
+                        cookie_file = None
+                else:
+                    LOGGER(__name__).warning("⚠️ لا توجد ملفات cookies في المجلد")
+                    cookie_file = None
             else:
-                LOGGER(__name__).warning("⚠️ ملف cookies غير متاح أو غير موجود")
+                LOGGER(__name__).warning("⚠️ مجلد cookies غير موجود")
                 cookie_file = None
             
-        except ImportError as e:
-            LOGGER(__name__).warning(f"⚠️ مدير cookies غير متاح: {e}")
-            cookie_file = None
         except Exception as e:
             LOGGER(__name__).warning(f"⚠️ خطأ في الحصول على cookies: {e}")
             cookie_file = None
