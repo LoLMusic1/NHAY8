@@ -3161,9 +3161,8 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
         # متغير لرسالة الحالة (سيتم إنشاؤه لاحقاً عند الحاجة)
         status_msg = None
         
-        # إظهار رسالة البحث في الكاش أولاً
-        if not status_msg:
-            status_msg = await event.reply("🔍 **جاري البحث في الكاش والتخزين الذكي...**")
+        # البحث في الكاش بصمت - بدون رسائل مزعجة
+        # status_msg سيتم إنشاؤه عند الحاجة فقط
         
         # البحث المتوازي المحسن بدون حدود
         try:
@@ -3178,14 +3177,20 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
                 await update_performance_stats(True, time.time() - start_time, from_cache=True)
                 
                 if search_source == 'database':
-                    await status_msg.edit(f"✅ **تم العثور في الكاش المحلي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
+                    if not status_msg:
+                        status_msg = await event.reply(f"✅ **تم العثور في الكاش المحلي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
+                    else:
+                        await status_msg.edit(f"✅ **تم العثور في الكاش المحلي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
                     success = await send_cached_from_database(event, status_msg, parallel_result, event.client)
                     if success:
                         return  # نجح الإرسال من الكاش
                     else:
                         LOGGER(__name__).warning("⚠️ فشل الإرسال من الكاش - سيتم التحميل من يوتيوب")
                 elif search_source == 'smart_cache':
-                    await status_msg.edit(f"✅ **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
+                    if not status_msg:
+                        status_msg = await event.reply(f"✅ **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
+                    else:
+                        await status_msg.edit(f"✅ **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n📤 **جاري الإرسال...**")
                     success = await send_cached_from_telegram(event, status_msg, parallel_result, event.client)
                     if success:
                         return  # نجح الإرسال من التخزين الذكي
