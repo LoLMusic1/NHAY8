@@ -42,11 +42,10 @@ except ImportError:
     yt_dlp = None
     
 try:
-    from youtube_search import YoutubeSearch
+    from youtubesearchpython import VideosSearch as YoutubeSearch
 except ImportError:
     try:
-        from youtubesearchpython import VideosSearch
-        YoutubeSearch = VideosSearch
+        from youtube_search import YoutubeSearch
     except ImportError:
         YoutubeSearch = None
 
@@ -279,10 +278,16 @@ class ConnectionManager:
     
     async def close(self):
         """إغلاق جميع الموارد"""
-        for session in self._session_pool:
-            await session.close()
-        self._executor_pool.shutdown(wait=True)
-        LOGGER(__name__).info("🔌 تم إغلاق جميع موارد الاتصال")
+        try:
+            if self._session_pool:
+                for session in self._session_pool:
+                    if session and not session.closed:
+                        await session.close()
+            if self._executor_pool:
+                self._executor_pool.shutdown(wait=True)
+            LOGGER(__name__).info("🔌 تم إغلاق جميع موارد الاتصال")
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إغلاق الموارد: {e}")
 
 # ================================================================
 #                 نظام التحميل الذكي الخارق
@@ -294,8 +299,30 @@ class HyperSpeedDownloader:
         self.downloads_folder = "downloads"
         os.makedirs(self.downloads_folder, exist_ok=True)
         
+        # إعداد المتغيرات المطلوبة
+        self.cache_hits = 0
+        self.cache_misses = 0
+        self.active_tasks = set()
+        self.last_health_check = time.time()
+        
+        # إعداد إحصائيات الأداء
+        self.method_performance = {
+            'youtube_api': {'avg_time': 0},
+            'invidious': {'avg_time': 0},
+            'youtube_search': {'avg_time': 0},
+            'ytdlp_cookies': {'avg_time': 0},
+            'ytdlp_no_cookies': {'avg_time': 0}
+        }
+        
+        # إعداد مدير الاتصالات
+        try:
+            self.conn_manager = ConnectionManager()
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في تهيئة مدير الاتصالات: {e}")
+            self.conn_manager = None
+        
         # تسجيل بدء التشغيل
-        LOGGER(__name__).info("🚀 بدء تشغيل نظام التحميل المبسط")
+        LOGGER(__name__).info("🚀 بدء تشغيل نظام التحميل المحسن")
     
     async def health_check(self):
         """فحص صحة النظام بشكل دوري"""
@@ -417,7 +444,7 @@ class HyperSpeedDownloader:
             self.cache_misses += 1
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في البحث السريع: {e}")
-            self.monitor.log_error('cache_search')
+            # self.monitor.log_error('cache_search')
         
         return None
     
@@ -482,7 +509,7 @@ class HyperSpeedDownloader:
         
         except Exception as e:
             LOGGER(__name__).warning(f"فشل YouTube API: {e}")
-            self.monitor.log_error('youtube_api')
+            # self.monitor.log_error('youtube_api')
         
         return None
     
@@ -545,7 +572,7 @@ class HyperSpeedDownloader:
         
         except Exception as e:
             LOGGER(__name__).warning(f"فشل Invidious: {e}")
-            self.monitor.log_error('invidious')
+            # self.monitor.log_error('invidious')
         
         return None
     
@@ -557,30 +584,48 @@ class HyperSpeedDownloader:
         start_time = time.time()
             
         try:
-            # استخدام youtube_search مع معالجة محسنة
-            search = YoutubeSearch(query, max_results=1)
-            results = search.result()['result'] if hasattr(search, 'result') else search.to_dict()
+            # استخدام youtubesearchpython مع معالجة محسنة
+            search = YoutubeSearch(query, limit=1)
             
-            if not results:
-                return None
-            
-            result = results[0]
-            
-            # استخراج video_id
-            video_id = result.get('id') or result.get('link', '').split('=')[-1]
+            # التحقق من نوع المكتبة المستخدمة
+            if hasattr(search, 'result'):
+                # youtubesearchpython
+                results = search.result()
+                if not results or not results.get('result'):
+                    return None
+                result = results['result'][0]
+                video_id = result.get('id', '')
+                title = result.get('title', 'Unknown Title')
+                channel = result.get('channel', {})
+                artist = channel.get('name', 'Unknown Artist') if isinstance(channel, dict) else str(channel)
+                duration_text = result.get('duration', '0:00')
+                thumb = result.get('thumbnails', [{}])[0].get('url') if result.get('thumbnails') else None
+            else:
+                # youtube_search (fallback)
+                results = search.to_dict() if hasattr(search, 'to_dict') else []
+                if not results:
+                    return None
+                result = results[0]
+                video_id = result.get('id', '') or result.get('link', '').split('=')[-1] if result.get('link') else ''
+                title = result.get('title', 'Unknown Title')
+                artist = result.get('channel', 'Unknown Artist')
+                duration_text = result.get('duration', '0:00')
+                thumb = result.get('thumbnails', [None])[0] if result.get('thumbnails') else None
             
             # معالجة المدة
-            duration = result.get('duration', '0:00')
-            if isinstance(duration, str) and ':' in duration:
-                parts = duration.split(':')
-                if len(parts) == 2:
-                    duration = int(parts[0]) * 60 + int(parts[1])
-                elif len(parts) == 3:
-                    duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                else:
+            duration = 0
+            if isinstance(duration_text, str) and ':' in duration_text:
+                try:
+                    parts = duration_text.split(':')
+                    if len(parts) == 2:
+                        duration = int(parts[0]) * 60 + int(parts[1])
+                    elif len(parts) == 3:
+                        duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                except (ValueError, IndexError):
                     duration = 0
-            else:
-                duration = int(duration)
+            
+            if not video_id:
+                return None
             
             self.method_performance['youtube_search']['avg_time'] = (
                 self.method_performance['youtube_search']['avg_time'] * 0.7 + 
@@ -589,17 +634,20 @@ class HyperSpeedDownloader:
             
             return {
                 "video_id": video_id,
-                "title": result.get("title", "Unknown Title")[:60],
-                "artist": result.get("channel", {}).get("name", "Unknown Artist") if isinstance(result.get("channel"), dict) else result.get("channel", "Unknown Artist"),
+                "title": title[:60],
+                "artist": artist[:40] if artist else "Unknown Artist",
                 "duration": duration,
-                "thumb": result.get("thumbnails", [None])[0] if result.get("thumbnails") else None,
+                "thumb": thumb,
                 "link": f"https://youtube.com/watch?v={video_id}",
                 "source": "youtube_search"
             }
             
         except Exception as e:
             LOGGER(__name__).warning(f"فشل YouTube Search: {e}")
-            self.monitor.log_error('youtube_search')
+            try:
+                self.monitor.log_error('youtube_search')
+            except:
+                pass
             return None
     
     async def download_with_ytdlp(self, video_info: Dict) -> Optional[Dict]:
@@ -816,8 +864,9 @@ class HyperSpeedDownloader:
                 search_methods.append(self.youtube_search_simple(query))
             
             # تشغيل جميع عمليات البحث بالتوازي
+            search_tasks = [asyncio.create_task(method) for method in search_methods]
             done, pending = await asyncio.wait(
-                search_methods,
+                search_tasks,
                 timeout=REQUEST_TIMEOUT * 1.5,
                 return_when=asyncio.FIRST_COMPLETED
             )
@@ -847,7 +896,11 @@ class HyperSpeedDownloader:
             
             # خطوة 4: حفظ في التخزين الذكي (في الخلفية)
             if SMART_CACHE_CHANNEL:
-                asyncio.create_task(self.cache_to_channel(audio_info, query))
+                try:
+                    # سيتم الحفظ في دالة send_audio_file
+                    pass
+                except Exception as cache_error:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في حفظ التخزين: {cache_error}")
             
             LOGGER(__name__).info(f"✅ تحميل جديد: {query} ({time.time() - start_time:.3f}s)")
             
@@ -862,7 +915,7 @@ class HyperSpeedDownloader:
             
         except Exception as e:
             LOGGER(__name__).error(f"خطأ في التحميل الخارق: {e}")
-            self.monitor.log_error('hyper_download')
+            # self.monitor.log_error('hyper_download')
             return None
         finally:
             self.active_tasks.discard(task_id)
@@ -1093,7 +1146,7 @@ class HyperSpeedDownloader:
                         
         except Exception as e:
             LOGGER(__name__).error(f"فشل التحميل بدون كوكيز: {e}")
-            self.monitor.log_error('fallback_download')
+            # self.monitor.log_error('fallback_download')
         finally:
             self.active_tasks.discard(task_id)
             
@@ -1339,6 +1392,7 @@ def get_available_cookies():
     """الحصول على قائمة ملفات الكوكيز المتاحة مع تدوير ذكي"""
     try:
         import glob
+        import os
         cookies_pattern = "cookies/cookies*.txt"
         all_cookies_files = glob.glob(cookies_pattern)
         
@@ -1419,6 +1473,7 @@ def get_next_cookie_with_rotation():
 def cleanup_blocked_cookies():
     """تنظيف دوري للكوكيز المحظورة"""
     try:
+        import glob
         # إذا تم حظر أكثر من 70% من الكوكيز، اعد تعيين النظام
         total_cookies = len(glob.glob("cookies/cookies*.txt"))
         blocked_count = len(BLOCKED_COOKIES)
@@ -1479,6 +1534,7 @@ def calculate_cookies_distribution(total_count: int) -> Dict[str, int]:
 def get_cookies_statistics():
     """إحصائيات استخدام الكوكيز مع التوزيع الديناميكي"""
     try:
+        import glob
         total_cookies = len(glob.glob("cookies/cookies*.txt"))
         available_cookies = len(get_available_cookies())
         blocked_cookies = len(BLOCKED_COOKIES)
@@ -2082,7 +2138,6 @@ async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: s
         import config
         import os
         from pathlib import Path
-        import hashlib
         
         if not hasattr(config, 'CACHE_CHANNEL_ID') or not config.CACHE_CHANNEL_ID:
             LOGGER(__name__).warning("❌ قناة التخزين غير محددة - تخطي التخزين")
@@ -2979,6 +3034,7 @@ async def process_smart_youtube_download(event, status_msg, query: str, user_id:
 # --- أوامر المطور مع Telethon ---
 async def cache_stats_handler(event):
     """عرض إحصائيات التخزين الذكي"""
+    import config
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -3025,6 +3081,7 @@ async def cache_stats_handler(event):
 
 async def clear_cache_handler(event):
     """مسح كاش التخزين الذكي"""
+    import config
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -3052,6 +3109,7 @@ async def clear_cache_handler(event):
 
 async def system_stats_handler(event):
     """عرض إحصائيات النظام المتقدمة"""
+    import config
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -3090,9 +3148,13 @@ async def system_stats_handler(event):
 # --- إدارة إغلاق النظام ---
 async def shutdown_system():
     """إغلاق جميع موارد النظام بشكل آمن"""
-    LOGGER(__name__).info("🔴 بدء إيقاف النظام...")
-    await downloader.conn_manager.close()
-    LOGGER(__name__).info("✅ تم إيقاف جميع الموارد")
+    try:
+        LOGGER(__name__).info("🔴 بدء إيقاف النظام...")
+        if hasattr(downloader, 'conn_manager') and downloader.conn_manager:
+            await downloader.conn_manager.close()
+        LOGGER(__name__).info("✅ تم إيقاف جميع الموارد")
+    except Exception as e:
+        LOGGER(__name__).error(f"خطأ في إيقاف النظام: {e}")
 
 # تسجيل معالج الإغلاق
 import atexit
@@ -3405,6 +3467,7 @@ async def auto_sync_channel_if_needed(bot_client):
 
 async def force_channel_sync_handler(event):
     """معالج أمر المطور لإجبار مزامنة القناة"""
+    import config
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -3548,6 +3611,7 @@ async def verify_cache_channel(bot_client) -> Dict:
 
 async def cache_channel_info_handler(event):
     """معالج أمر المطور لعرض معلومات قناة التخزين"""
+    import config
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -3624,6 +3688,7 @@ async def cache_channel_info_handler(event):
 
 async def test_cache_channel_handler(event):
     """معالج أمر المطور لاختبار قناة التخزين"""
+    import config
     if event.sender_id != config.OWNER_ID:
         return
     
@@ -3751,6 +3816,7 @@ async def verify_cache_channel_periodic(bot_client):
 # إضافة دالة لعرض حالة النظام الشاملة
 async def system_status_handler(event):
     """معالج أمر المطور لعرض حالة النظام الشاملة"""
+    import config
     if event.sender_id != config.OWNER_ID:
         return
     
