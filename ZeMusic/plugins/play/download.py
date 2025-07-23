@@ -2737,12 +2737,10 @@ async def send_audio_file(event, status_msg, audio_file: str, result: dict, quer
             ]
         )
         
-        await status_msg.delete()
-        
         # حفظ في التخزين الذكي (في الخلفية)
         if query and bot_client:
             try:
-                await status_msg.edit("💾 **جاري الحفظ في التخزين الذكي...**")
+                LOGGER(__name__).info(f"💾 جاري حفظ المقطع في قناة التخزين...")
                 saved = await save_to_smart_cache(bot_client, audio_file, result, query)
                 if saved:
                     LOGGER(__name__).info(f"✅ تم حفظ المقطع في التخزين الذكي")
@@ -2750,6 +2748,8 @@ async def send_audio_file(event, status_msg, audio_file: str, result: dict, quer
                     LOGGER(__name__).warning(f"⚠️ فشل حفظ المقطع في التخزين الذكي")
             except Exception as cache_error:
                 LOGGER(__name__).error(f"❌ خطأ في حفظ التخزين الذكي: {cache_error}")
+        
+        await status_msg.delete()
         
         # حذف الملف المؤقت
         await remove_temp_files(audio_file)
@@ -4064,10 +4064,32 @@ async def save_to_cache(video_id: str, title: str, artist: str, duration: int, f
         # حفظ في قناة التخزين (إذا كانت متاحة)
         try:
             import config
+            from ZeMusic.core.telethon_client import telethon_manager
             
             if hasattr(config, 'CACHE_CHANNEL_ID') and config.CACHE_CHANNEL_ID:
-                # يمكن إضافة حفظ في قناة التخزين هنا لاحقاً
-                pass
+                LOGGER(__name__).info(f"💾 حفظ المقطع في قناة التخزين...")
+                
+                # إعداد بيانات المقطع للحفظ
+                result_data = {
+                    'title': title,
+                    'uploader': artist,
+                    'duration': duration,
+                    'source': 'YouTube',
+                    'elapsed': 0
+                }
+                
+                # حفظ في قناة التخزين باستخدام save_to_smart_cache
+                if telethon_manager and telethon_manager.bot_client:
+                    saved = await save_to_smart_cache(
+                        telethon_manager.bot_client, 
+                        file_path, 
+                        result_data, 
+                        f"{title} {artist}"
+                    )
+                    if saved:
+                        LOGGER(__name__).info("✅ تم حفظ المقطع في قناة التخزين")
+                    else:
+                        LOGGER(__name__).warning("⚠️ فشل حفظ المقطع في قناة التخزين")
                 
         except Exception as e:
             LOGGER(__name__).warning(f"⚠️ خطأ في حفظ قناة التخزين: {e}")
