@@ -193,7 +193,15 @@ async def init_database():
     conn.close()
 
 # تهيئة قاعدة البيانات عند بدء الوحدة
-asyncio.run(init_database())
+# سيتم تهيئة قاعدة البيانات عند أول استخدام
+_database_initialized = False
+
+async def ensure_database_initialized():
+    """التأكد من تهيئة قاعدة البيانات"""
+    global _database_initialized
+    if not _database_initialized:
+        await init_database()
+        _database_initialized = True
 
 # ================================================================
 #                 نظام إدارة الاتصالات المتقدم
@@ -1048,6 +1056,9 @@ async def download_thumbnail(url: str, title: str) -> Optional[str]:
 async def smart_download_handler(event):
     """المعالج الذكي للتحميل مع إدارة متقدمة للموارد"""
     try:
+        # تهيئة قاعدة البيانات إذا لم تكن مهيأة
+        await ensure_database_initialized()
+        
         chat_id = event.chat_id
         if chat_id > 0:  # محادثة خاصة
             if not await is_search_enabled1():
