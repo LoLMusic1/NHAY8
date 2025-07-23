@@ -331,10 +331,19 @@ async def play_commnd(
         query = message.text.split(None, 1)[1]
         if "-v" in query:
             query = query.replace("-v", "")
+        
+        # استخدام نظام التحميل الذكي الجديد
         try:
-            details, track_id = await YouTube.track(query)
-        except:
-            return await mystic.edit_text(_["play_3"])
+            from ZeMusic.plugins.play.download import download_song_smart
+            # استدعاء النظام الذكي مباشرة
+            await download_song_smart(message, query)
+            return await mystic.delete()
+        except Exception as e:
+            # العودة للطريقة القديمة في حالة الفشل
+            try:
+                details, track_id = await YouTube.track(query)
+            except:
+                return await mystic.edit_text(_["play_3"])
         streamtype = "youtube"
     if str(playmode) == "Direct":
         if not plist_type:
