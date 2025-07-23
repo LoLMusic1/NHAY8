@@ -3844,22 +3844,10 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
             LOGGER(__name__).error(f"❌ خطأ في إعداد مجلد التحميلات: {e}")
             return False
         
-        # إعدادات التحميل المحسنة
+        # إعدادات التحميل المحسنة مع تحويل إلى MP3
         try:
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': f'downloads/{video_id}.%(ext)s',
-                'noplaylist': True,
-                'extract_flat': False,
-                'writeinfojson': False,
-                'writesubtitles': False,
-                'writeautomaticsub': False,
-                'ignoreerrors': False,
-                'no_warnings': False,
-                'extractaudio': True,
-                'audioformat': 'best',
-                'prefer_ffmpeg': True,
-            }
+            ydl_opts = get_ytdlp_opts(cookie_file)
+            ydl_opts['outtmpl'] = f'downloads/{video_id}.%(ext)s'
             
             # إضافة cookies إذا كان متاحاً
             if cookie_file and os.path.exists(cookie_file):
@@ -3948,12 +3936,8 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
             await status_msg.edit("🔄 **محاولة بديلة...**")
             
             try:
-                ydl_opts_no_cookies = {
-                    'format': 'bestaudio/best',
-                    'outtmpl': f'downloads/{video_id}_nocookies.%(ext)s',
-                    'noplaylist': True,
-                    'extract_flat': False,
-                }
+                ydl_opts_no_cookies = get_ytdlp_opts()
+                ydl_opts_no_cookies['outtmpl'] = f'downloads/{video_id}_nocookies.%(ext)s'
                 
                 with yt_dlp.YoutubeDL(ydl_opts_no_cookies) as ydl:
                     video_url = f"https://www.youtube.com/watch?v={video_id}"
