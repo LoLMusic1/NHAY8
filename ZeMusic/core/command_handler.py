@@ -146,6 +146,35 @@ class TelethonCommandHandler:
                     await self.commands[command](mock_update)
                     return
             
+            # معالجة أوامر التشغيل المباشرة
+            play_commands = ['play', 'تشغيل', 'شغل', 'vplay', 'cplay']
+            first_word = text.split()[0].lower() if text.split() else ""
+            
+            if any(cmd in first_word for cmd in play_commands) or text.startswith('/play') or text.startswith('/تشغيل') or text.startswith('/شغل'):
+                try:
+                    # استخراج الاستعلام
+                    if text.startswith('/'):
+                        parts = text.split(None, 1)
+                        query = parts[1] if len(parts) > 1 else ""
+                    else:
+                        # إزالة كلمة الأمر والحصول على الاستعلام
+                        parts = text.split(None, 1)
+                        query = parts[1] if len(parts) > 1 else ""
+                    
+                    if query.strip():
+                        LOGGER(__name__).info(f"🎵 معالجة أمر تشغيل: {query}")
+                        from ZeMusic.plugins.play.download import download_song_smart
+                        await download_song_smart(mock_update, query)
+                        return
+                    else:
+                        await event.respond("❌ يرجى كتابة اسم الأغنية بعد الأمر")
+                        return
+                        
+                except Exception as e:
+                    LOGGER(__name__).error(f"❌ خطأ في معالجة أمر التشغيل: {e}")
+                    await event.respond("❌ حدث خطأ في معالجة طلبك")
+                    return
+            
             # معالجة الرسائل العادية
             await self._handle_normal_message(mock_update)
             
