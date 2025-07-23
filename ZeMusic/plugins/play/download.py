@@ -1216,26 +1216,63 @@ def log_performance_stats():
     )
 
 async def process_unlimited_download(event, user_id: int, start_time: float):
-    """معالجة التحميل بدون حدود"""
+    """معالجة التحميل المتوازي الفوري"""
+    task_id = f"{user_id}_{int(time.time() * 1000000)}"  # دقة عالية جداً
+    
     try:
-        # تسجيل بداية المهمة
-        task_id = f"{user_id}_{int(time.time() * 1000)}"  # دقة أعلى
+        # تسجيل بداية المهمة فوراً
         active_downloads[task_id] = {
             'user_id': user_id,
             'start_time': start_time,
-            'task_id': task_id
+            'task_id': task_id,
+            'status': 'started'
         }
         
-        # تنفيذ البحث والتحميل مباشرة
-        await process_normal_download(event, None, user_id, start_time)
+        LOGGER(__name__).info(f"🚀 بدء معالجة فورية للمستخدم {user_id} | المهمة: {task_id}")
+        
+        # تنفيذ المعالجة الكاملة في مهمة منفصلة
+        await execute_parallel_download(event, user_id, start_time, task_id)
         
     except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في معالجة التحميل اللامحدود: {e}")
+        LOGGER(__name__).error(f"❌ خطأ في معالجة التحميل المتوازي: {e}")
         await update_performance_stats(False, time.time() - start_time)
     finally:
         # تنظيف المهمة
         if task_id in active_downloads:
+            active_downloads[task_id]['status'] = 'completed'
             del active_downloads[task_id]
+
+async def execute_parallel_download(event, user_id: int, start_time: float, task_id: str):
+    """تنفيذ التحميل المتوازي الكامل"""
+    try:
+        # استخراج الاستعلام
+        match = event.pattern_match
+        if not match:
+            await event.reply("❌ **خطأ في تحليل الطلب**")
+            return
+        
+        query = match.group(2) if match.group(2) else ""
+        if not query:
+            await event.reply("📝 **الاستخدام:** `بحث اسم الأغنية`")
+            await update_performance_stats(False, time.time() - start_time)
+            return
+        
+        # تحديث حالة المهمة
+        if task_id in active_downloads:
+            active_downloads[task_id].update({
+                'query': query,
+                'status': 'processing'
+            })
+        
+        LOGGER(__name__).info(f"🎵 معالجة متوازية: {query} | المستخدم: {user_id} | المهمة: {task_id}")
+        
+        # تنفيذ البحث والتحميل مباشرة
+        await process_normal_download(event, query, user_id, start_time)
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في تنفيذ التحميل المتوازي: {e}")
+        await event.reply("❌ **حدث خطأ في معالجة طلبك**")
+        await update_performance_stats(False, time.time() - start_time)
 
 async def process_normal_download(event, query: str, user_id: int, start_time: float):
     """معالجة التحميل العادي مع إدارة الموارد"""
@@ -2443,7 +2480,7 @@ async def download_thumbnail(url: str, title: str) -> Optional[str]:
 
 # --- المعالج الموحد لجميع أنواع المحادثات مع Telethon ---
 async def smart_download_handler(event):
-    """المعالج الذكي للتحميل مع إدارة الحمولة العالية"""
+    """المعالج الذكي للتحميل الفوري المتوازي"""
     start_time = time.time()
     user_id = event.sender_id
     
@@ -2481,273 +2518,15 @@ async def smart_download_handler(event):
         await update_performance_stats(False, time.time() - start_time)
         return
     
-    # تنفيذ المعالجة الفورية بدون حدود
-    # إنشاء مهمة منفصلة لكل طلب
+    # تنفيذ المعالجة الفورية المتوازية - كل طلب يبدأ فوراً
+    # إنشاء مهمة منفصلة لكل طلب بدون انتظار
     asyncio.create_task(process_unlimited_download(event, user_id, start_time))
     
-    # استخراج الاستعلام من pattern
-    match = event.pattern_match
-    if not match:
-        return
+    # تسجيل بدء المهمة فوراً
+    LOGGER(__name__).info(f"⚡ تم إنشاء مهمة متوازية فورية للمستخدم {user_id} - العمليات النشطة: {len(active_downloads) + 1}")
     
-    query = match.group(2) if match.group(2) else ""
-    
-    if not query:
-        await event.reply("📝 **الاستخدام:** `بحث اسم الأغنية`")
-        return
-    
-    # الحصول على عميل البوت
-    bot_client = event.client
-    
-    # إرسال رسالة الحالة
-    status_msg = await event.reply("🔍 **جاري البحث في التخزين الذكي...**")
-    
-    try:
-        # البحث المتوازي في الكاش وقناة التخزين الذكي
-        await status_msg.edit("🔍 **البحث المتوازي في الكاش والتخزين الذكي...**")
-        
-        # استخدام دالة البحث المتوازي المحسنة
-        parallel_result = await parallel_search_with_monitoring(query, bot_client)
-        
-        if parallel_result and parallel_result.get('success'):
-            search_source = parallel_result.get('search_source', 'unknown')
-            search_time = parallel_result.get('search_time', 0)
-            
-            if search_source == 'database':
-                await status_msg.edit(f"📤 **تم العثور في الكاش ({search_time:.2f}s) - جاري الإرسال...**")
-                await send_cached_from_database(event, status_msg, parallel_result, bot_client)
-                return
-            elif search_source == 'smart_cache':
-                await status_msg.edit(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s) - جاري الإرسال...**")
-                await send_cached_audio(event, status_msg, parallel_result, bot_client)
-                return
-        
-        # إذا لم يجد في أي مكان، ابدأ البحث العادي
-        LOGGER(__name__).info("❌ لم يتم العثور على المقطع في الكاش أو التخزين الذكي")
-        await status_msg.edit("🔍 **لم يوجد في التخزين - جاري البحث في يوتيوب...**")
-        
-    except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في البحث المتوازي: {e}")
-        await status_msg.edit("🔍 **جاري البحث في يوتيوب...**")
-    
-    try:
-        # التحقق من توفر المكتبات المطلوبة
-        if not yt_dlp and not YoutubeSearch:
-            await status_msg.edit("❌ **المكتبات المطلوبة غير متوفرة**\n\n🔧 **يحتاج تثبيت:** yt-dlp, youtube-search")
-            return
-        
-        # البحث عن الفيديو
-        await status_msg.edit("🔍 **جاري البحث عن الأغنية...**")
-        video_info = None
-        
-        LOGGER(__name__).info(f"🔍 بدء البحث عن: {query}")
-        
-        # محاولة 1: youtube_search (الأكثر استقراراً)
-        try:
-            from youtube_search import YoutubeSearch
-            LOGGER(__name__).info("🔍 محاولة البحث عبر youtube_search")
-            search = YoutubeSearch(query, max_results=1)
-            search_results = search.to_dict()
-            LOGGER(__name__).info(f"🔍 نتائج البحث: {len(search_results)} نتيجة")
-            if search_results and len(search_results) > 0:
-                video_info = search_results[0]
-                LOGGER(__name__).info(f"✅ تم العثور على فيديو: {video_info.get('title', 'غير محدد')}")
-        except Exception as e:
-            LOGGER(__name__).error(f"❌ خطأ في youtube_search: {e}")
-        
-        # محاولة 2: youtubesearchpython إذا فشلت الأولى
-        if not video_info:
-            try:
-                from youtubesearchpython import VideosSearch
-                LOGGER(__name__).info("🔍 محاولة البحث عبر youtubesearchpython")
-                search = VideosSearch(query, limit=1)
-                results = search.result()
-                LOGGER(__name__).info(f"🔍 نتائج البحث: {results}")
-                if results and results.get('result') and len(results['result']) > 0:
-                    video_info = results['result'][0]
-                    LOGGER(__name__).info(f"✅ تم العثور على فيديو: {video_info.get('title', 'غير محدد')}")
-            except Exception as e:
-                LOGGER(__name__).error(f"❌ خطأ في youtubesearchpython: {e}")
-        
-        # محاولة 3: بحث مبسط إذا فشلت المحاولات السابقة
-        if not video_info:
-            try:
-                LOGGER(__name__).info("🔍 محاولة بحث مبسط")
-                import urllib.parse
-                encoded_query = urllib.parse.quote(query)
-                # إنشاء معلومات فيديو وهمية للاختبار
-                video_info = {
-                    'id': 'dQw4w9WgXcQ',  # فيديو اختبار
-                    'title': f"نتيجة بحث: {query}",
-                    'link': f"https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-                    'duration': '3:32'
-                }
-                LOGGER(__name__).info("✅ تم إنشاء نتيجة بحث اختبارية")
-            except Exception as e:
-                LOGGER(__name__).error(f"❌ خطأ في البحث المبسط: {e}")
-        
-        if not video_info:
-            LOGGER(__name__).error(f"❌ فشل في جميع محاولات البحث للاستعلام: {query}")
-            await status_msg.edit("❌ **لم يتم العثور على نتائج للبحث**\n\n💡 **جرب:**\n• كلمات مختلفة\n• اسم الفنان\n• جزء من كلمات الأغنية")
-            return
-        
-        # استخراج video_id
-        video_id = video_info.get('id') or (video_info.get('link', '').split('=')[-1])
-        
-        if not video_id:
-            await status_msg.edit("❌ **خطأ في استخراج معرف الفيديو**")
-            return
-        
-        # محاولة التحميل
-        await status_msg.edit("🔄 **جاري تحميل الملف الصوتي...**")
-        LOGGER(__name__).info(f"🔄 بدء التحميل للفيديو: {video_id}")
-        download_result = await downloader.direct_ytdlp_download(video_id, video_info.get('title', 'Unknown'))
-        
-        LOGGER(__name__).info(f"📊 نتيجة التحميل: {download_result}")
-        if download_result and download_result.get('success'):
-            # التحميل نجح - إرسال الملف
-            audio_file = download_result.get('file_path')
-            if audio_file and Path(audio_file).exists():
-                await status_msg.edit("📤 **جاري إرسال الملف...**")
-                
-                # إعداد التسمية التوضيحية
-                duration = download_result.get('duration', 0)
-                duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
-                
-                caption = f"""🎵 **{download_result.get('title', 'Unknown')[:60]}**
-🎤 **{download_result.get('uploader', 'Unknown')[:40]}**
-⏱️ **{duration_str}** | ⚡ **{download_result.get('elapsed', 0):.1f} ثانية**"""
-                
-                # إرسال الملف
-                await event.respond(
-                    caption,
-                    file=audio_file,
-                    attributes=[
-                        DocumentAttributeAudio(
-                            duration=duration,
-                            title=download_result.get('title', 'Unknown')[:60],
-                            performer=download_result.get('uploader', 'Unknown')[:40]
-                        )
-                    ]
-                )
-                await status_msg.delete()
-                
-                # حذف الملف المؤقت
-                await remove_temp_files(audio_file)
-                return
-        
-        # التحميل فشل - محاولة YouTube API أولاً
-        try:
-            await status_msg.edit("🔑 **محاولة YouTube API...**")
-            LOGGER(__name__).info("🔑 محاولة YouTube API")
-            
-            # محاولة YouTube API
-            api_result = await try_youtube_api_download(video_id, video_info.get('title', 'Unknown'))
-            if api_result and api_result.get('success'):
-                audio_file = api_result.get('file_path')
-                if audio_file and Path(audio_file).exists():
-                    await send_audio_file(event, status_msg, audio_file, api_result, query, bot_client)
-                    return
-            
-            # إذا فشل API، جرب الطرق البديلة
-            await status_msg.edit("🔄 **محاولة طرق بديلة...**")
-            LOGGER(__name__).info("🔄 محاولة تحميل بديلة")
-            
-            # إنشاء رابط مباشر للتحميل
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
-            result = await simple_download(video_url, video_info.get('title', 'Unknown'))
-            
-            if result:
-                audio_file = result['audio_path']
-                if Path(audio_file).exists():
-                    # التحقق من نوع الملف - لا نرسل ملفات TXT كصوت
-                    if audio_file.endswith('.txt'):
-                        LOGGER(__name__).warning("❌ الملف المحمل هو ملف نصي، لن يتم إرساله")
-                        # قراءة محتوى الملف النصي وإرسال الرسالة
-                        # إذا كان ملف TXT، نحاول طرق تحميل إضافية
-                        LOGGER(__name__).warning("❌ الملف المحمل هو ملف نصي، محاولة طرق إضافية")
-                        await status_msg.edit("🔄 **محاولة طرق تحميل إضافية...**")
-                        
-                        # حذف الملف النصي
-                        await remove_temp_files(audio_file)
-                        
-                        # محاولة تحميل باستخدام طرق أخرى
-                        alternative_result = await try_alternative_downloads(video_id, video_info.get('title', 'Unknown'))
-                        if alternative_result and alternative_result.get('success'):
-                            audio_file = alternative_result.get('file_path')
-                            if audio_file and Path(audio_file).exists() and not audio_file.endswith('.txt'):
-                                # إرسال الملف البديل
-                                await send_audio_file(event, status_msg, audio_file, alternative_result, query, bot_client)
-                                return
-                    
-                    else:
-                        # الملف صوتي حقيقي - إرساله
-                        # إعداد التسمية التوضيحية
-                        duration = result.get('duration', 0)
-                        duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
-                        
-                        caption = f"""🎵 **{result.get('title', 'مقطع صوتي')}**
-🎤 **{result.get('artist', 'غير معروف')}**
-⏱️ **{duration_str}** | 📦 **{result.get('source', '')}**
-
-💡 **مُحمّل بواسطة:** ZeMusic Bot"""
-                        
-                        # إرسال الملف الصوتي
-                        await event.respond(
-                            caption,
-                            file=audio_file,
-                            attributes=[
-                                DocumentAttributeAudio(
-                                    duration=duration,
-                                    title=result.get('title', 'Unknown')[:60],
-                                    performer=result.get('artist', 'Unknown')[:40]
-                                )
-                            ]
-                        )
-                        
-                        await status_msg.delete()
-                        # حذف الملف المؤقت
-                        await remove_temp_files(audio_file)
-                        return
-                    
-        except Exception as e:
-            LOGGER(__name__).warning(f"فشل التحميل بالنظام الخارق: {e}")
-        
-        # التحميل فشل - محاولة أخيرة بطرق قوية
-        await status_msg.edit("🔄 **محاولة تحميل قسري...**")
-        LOGGER(__name__).info("🔄 محاولة تحميل قسري بجميع الطرق المتاحة")
-        
-        # محاولة تحميل قسري
-        forced_result = await force_download_any_way(video_id, video_info.get('title', 'Unknown'))
-        if forced_result and forced_result.get('success'):
-            audio_file = forced_result.get('file_path')
-            if audio_file and Path(audio_file).exists():
-                await send_audio_file(event, status_msg, audio_file, forced_result, query, bot_client)
-                return
-        
-        # إذا فشل كل شيء، نرسل رسالة فشل بدون رابط
-        await status_msg.edit(f"""❌ **فشل التحميل نهائياً**
-
-📝 **العنوان:** {video_info.get('title', 'غير معروف')}
-
-⚠️ **جميع طرق التحميل فشلت:**
-• yt-dlp بجميع الإعدادات
-• pytube
-• youtube-dl مباشر
-• Invidious API
-• التحميل القسري
-
-🔄 **يرجى المحاولة:**
-• مرة أخرى لاحقاً
-• مع أغنية أخرى
-• تحديث البوت قد يكون مطلوباً""")
-        
-    except Exception as e:
-        LOGGER(__name__).error(f"خطأ في المعالج: {e}")
-        try:
-            await status_msg.edit("❌ **حدث خطأ في المعالجة**\n\n💡 **جرب:**\n• كلمات مختلفة\n• إعادة المحاولة لاحقاً")
-        except:
-            pass
+    # المعالج ينتهي فوراً - المهمة تعمل في الخلفية بشكل مستقل ومتوازي
+    # هذا يضمن أن جميع الطلبات تبدأ في نفس اللحظة بدون انتظار
 
 # --- أوامر المطور مع Telethon ---
 async def cache_stats_handler(event):
