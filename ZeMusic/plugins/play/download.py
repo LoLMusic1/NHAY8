@@ -67,6 +67,7 @@ MAX_WORKERS = min(200, (psutil.cpu_count() * 10))  # ديناميكي حسب ا�
 # قناة التخزين الذكي (يوزر أو ID)
 SMART_CACHE_CHANNEL = config.CACHE_CHANNEL_ID
 DATABASE_PATH = "zemusic.db"
+DB_FILE = DATABASE_PATH  # توحيد أسماء قواعد البيانات
 
 def normalize_arabic_text(text: str) -> str:
     """تطبيع النص العربي للبحث المحسن"""
@@ -151,7 +152,7 @@ def get_ytdlp_opts(cookies_file=None) -> Dict:
 os.makedirs("downloads", exist_ok=True)
 
 # --- قاعدة البيانات للفهرسة الذكية ---
-DB_FILE = "smart_cache.db"
+# DB_FILE تم تعريفه في الأعلى
 
 async def init_database():
     """تهيئة قاعدة البيانات بشكل غير متزامن"""
