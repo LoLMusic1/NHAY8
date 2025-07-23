@@ -646,22 +646,43 @@ class HyperSpeedDownloader:
             
         try:
             # التحقق من توفر مكتبة البحث
-            if not YOUTUBE_SEARCH_AVAILABLE or not YoutubeSearch:
+            if not YoutubeSearch:
+                LOGGER(__name__).warning(f"YouTube Search غير متاح")
                 return None
             
             # استخدام youtube_search
+            LOGGER(__name__).info(f"🔍 بدء البحث في YouTube Search: {query}")
             search = YoutubeSearch(query, max_results=1)
             results = search.to_dict()
             
+            LOGGER(__name__).info(f"📊 عدد النتائج: {len(results) if results else 0}")
+            
             if not results:
+                LOGGER(__name__).warning(f"❌ لا توجد نتائج للبحث: {query}")
                 return None
                 
             result = results[0]
-            video_id = result.get('id', '') or result.get('link', '').split('=')[-1] if result.get('link') else ''
+            LOGGER(__name__).info(f"📝 النتيجة الأولى: {result.get('title', 'Unknown')[:30]}...")
+            
+            # استخراج معرف الفيديو من الرابط
+            video_id = result.get('id', '')
+            if not video_id and result.get('link'):
+                link = result.get('link', '')
+                if 'watch?v=' in link:
+                    video_id = link.split('watch?v=')[1].split('&')[0]
+                elif '/watch/' in link:
+                    video_id = link.split('/watch/')[1].split('?')[0]
+            
+            LOGGER(__name__).info(f"🔗 الرابط الأصلي: {result.get('link', 'Unknown')}")
+            LOGGER(__name__).info(f"🆔 معرف الفيديو المستخرج: {video_id}")
             title = result.get('title', 'Unknown Title')
             artist = result.get('channel', 'Unknown Artist')
             duration_text = result.get('duration', '0:00')
             thumb = result.get('thumbnails', [None])[0] if result.get('thumbnails') else None
+            
+            LOGGER(__name__).info(f"🆔 معرف الفيديو: {video_id}")
+            LOGGER(__name__).info(f"🎵 العنوان: {title[:30]}...")
+            LOGGER(__name__).info(f"🎤 الفنان: {artist[:20]}...")
             
             # معالجة المدة
             duration = 0
