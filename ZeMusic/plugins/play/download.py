@@ -880,9 +880,29 @@ class HyperSpeedDownloader:
             temp_dir = Path(self.downloads_folder)
             temp_dir.mkdir(parents=True, exist_ok=True)
             
-            # محاولة عدة إعدادات مختلفة
-            ydl_configs = [
-                # إعداد 1: جودة منخفضة مع user agent مختلف
+            # الحصول على ملفات الكوكيز المتاحة
+            cookies_files = get_available_cookies()
+            LOGGER(__name__).info(f"🍪 تم العثور على {len(cookies_files)} ملف كوكيز")
+            
+            # إعداد محاولات التحميل مع الكوكيز المختلفة
+            ydl_configs = []
+            
+            # إضافة محاولات مع كل ملف كوكيز
+            for i, cookie_file in enumerate(cookies_files[:5], 1):  # أول 5 ملفات كوكيز
+                ydl_configs.append({
+                    'format': 'bestaudio/best',
+                    'outtmpl': str(temp_dir / f'{video_id}_cookie_{i}.%(ext)s'),
+                    'quiet': True,
+                    'no_warnings': True,
+                    'noplaylist': True,
+                    'socket_timeout': 15,
+                    'retries': 1,
+                    'cookiefile': cookie_file,
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                })
+            
+            # إضافة محاولات بدون كوكيز مع user agents مختلفة
+            ydl_configs.extend([
                 {
                     'format': 'worstaudio[ext=webm]/worstaudio[ext=m4a]/worstaudio',
                     'outtmpl': str(temp_dir / f'{video_id}_low.%(ext)s'),
@@ -894,7 +914,6 @@ class HyperSpeedDownloader:
                     'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15',
                     'referer': 'https://m.youtube.com/',
                 },
-                # إعداد 2: استخدام extractors مختلفة
                 {
                     'format': 'bestaudio[filesize<50M]/best[filesize<50M]',
                     'outtmpl': str(temp_dir / f'{video_id}_med.%(ext)s'),
@@ -902,23 +921,10 @@ class HyperSpeedDownloader:
                     'no_warnings': True,
                     'noplaylist': True,
                     'socket_timeout': 15,
-                    'retries': 2,
+                    'retries': 1,
                     'user_agent': 'Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0',
-                    'http_headers': {
-                        'User-Agent': 'Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0'
-                    }
-                },
-                # إعداد 3: الإعداد الأساسي
-                {
-                    'format': 'bestaudio/best',
-                    'outtmpl': str(temp_dir / f'{video_id}.%(ext)s'),
-                    'quiet': True,
-                    'no_warnings': True,
-                    'noplaylist': True,
-                    'socket_timeout': 15,
-                    'retries': 2,
                 }
-            ]
+            ])
             
             # جرب كل إعداد حتى ينجح أحدهم
             for i, ydl_opts in enumerate(ydl_configs, 1):
@@ -1062,6 +1068,121 @@ class HyperSpeedDownloader:
             
         return None
 
+def get_available_cookies():
+    """الحصول على قائمة ملفات الكوكيز المتاحة"""
+    try:
+        import glob
+        cookies_pattern = "cookies/cookies*.txt"
+        cookies_files = glob.glob(cookies_pattern)
+        
+        # ترتيب الملفات حسب التاريخ (الأحدث أولاً)
+        cookies_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        
+        LOGGER(__name__).info(f"🍪 تم العثور على {len(cookies_files)} ملف كوكيز")
+        return cookies_files
+    except Exception as e:
+        LOGGER(__name__).warning(f"❌ خطأ في قراءة ملفات الكوكيز: {e}")
+        return []
+
+async def try_youtube_api_download(video_id: str, title: str) -> Optional[Dict]:
+    """محاولة التحميل باستخدام YouTube Data API"""
+    try:
+        import config
+        import requests
+        
+        if not hasattr(config, 'YT_API_KEYS') or not config.YT_API_KEYS:
+            LOGGER(__name__).warning("❌ لا توجد مفاتيح YouTube API")
+            return None
+        
+        LOGGER(__name__).info("🔑 محاولة استخدام YouTube Data API")
+        
+        for api_key in config.YT_API_KEYS:
+            try:
+                # الحصول على معلومات الفيديو
+                api_url = f"https://www.googleapis.com/youtube/v3/videos"
+                params = {
+                    'part': 'snippet,contentDetails',
+                    'id': video_id,
+                    'key': api_key
+                }
+                
+                response = requests.get(api_url, params=params, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    if data.get('items'):
+                        video_info = data['items'][0]
+                        snippet = video_info['snippet']
+                        
+                        LOGGER(__name__).info(f"✅ تم الحصول على معلومات الفيديو من API")
+                        
+                        # الآن نحاول تحميل الفيديو باستخدام معلومات API
+                        return await download_with_api_info(video_id, snippet, title)
+                        
+            except Exception as e:
+                LOGGER(__name__).warning(f"❌ فشل API key: {e}")
+                continue
+        
+        return None
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في YouTube API: {e}")
+        return None
+
+async def download_with_api_info(video_id: str, snippet: dict, fallback_title: str) -> Optional[Dict]:
+    """تحميل باستخدام معلومات من YouTube API"""
+    try:
+        title = snippet.get('title', fallback_title)
+        
+        # محاولة تحميل باستخدام yt-dlp مع معلومات API
+        downloads_dir = Path("downloads")
+        downloads_dir.mkdir(exist_ok=True)
+        
+        # استخدام أفضل ملف كوكيز متاح
+        cookies_files = get_available_cookies()
+        best_cookie = cookies_files[0] if cookies_files else None
+        
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': str(downloads_dir / f'{video_id}_api.%(ext)s'),
+            'quiet': True,
+            'no_warnings': True,
+            'noplaylist': True,
+            'socket_timeout': 20,
+            'retries': 2,
+        }
+        
+        if best_cookie:
+            ydl_opts['cookiefile'] = best_cookie
+            LOGGER(__name__).info(f"🍪 استخدام كوكيز: {os.path.basename(best_cookie)}")
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(
+                f"https://www.youtube.com/watch?v={video_id}",
+                download=True
+            )
+            
+            if info:
+                # البحث عن الملف المحمل
+                for file_path in downloads_dir.glob(f"{video_id}_api.*"):
+                    if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4', '.opus']:
+                        LOGGER(__name__).info(f"✅ تم التحميل بنجاح عبر API")
+                        return {
+                            'success': True,
+                            'file_path': str(file_path),
+                            'title': title,
+                            'duration': info.get('duration', 0),
+                            'uploader': snippet.get('channelTitle', 'Unknown'),
+                            'elapsed': 0
+                        }
+        
+        return None
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في التحميل مع API: {e}")
+        return None
+
 # إنشاء مدير التحميل العالمي
 downloader = HyperSpeedDownloader()
 
@@ -1186,6 +1307,146 @@ async def simple_download(video_url: str, title: str) -> Optional[Dict]:
         
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في التحميل البديل: {e}")
+        return None
+
+async def send_audio_file(event, status_msg, audio_file: str, result: dict):
+    """إرسال الملف الصوتي للمستخدم"""
+    try:
+        await status_msg.edit("📤 **جاري إرسال الملف...**")
+        
+        # إعداد التسمية التوضيحية
+        duration = result.get('duration', 0)
+        duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
+        
+        caption = f"""🎵 **{result.get('title', 'مقطع صوتي')[:60]}**
+🎤 **{result.get('uploader', 'غير معروف')[:40]}**
+⏱️ **{duration_str}** | ⚡ **{result.get('elapsed', 0):.1f}s**
+
+💡 **مُحمّل بواسطة:** ZeMusic Bot"""
+        
+        # إرسال الملف الصوتي
+        await event.respond(
+            caption,
+            file=audio_file,
+            attributes=[
+                DocumentAttributeAudio(
+                    duration=duration,
+                    title=result.get('title', 'Unknown')[:60],
+                    performer=result.get('uploader', 'Unknown')[:40]
+                )
+            ]
+        )
+        
+        await status_msg.delete()
+        # حذف الملف المؤقت
+        await remove_temp_files(audio_file)
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في إرسال الملف: {e}")
+
+async def try_alternative_downloads(video_id: str, title: str) -> Optional[Dict]:
+    """محاولة طرق تحميل بديلة"""
+    try:
+        # محاولة 1: YouTube API
+        api_result = await try_youtube_api_download(video_id, title)
+        if api_result and api_result.get('success'):
+            return api_result
+        
+        # محاولة 2: تدوير الكوكيز
+        cookies_files = get_available_cookies()
+        for i, cookie_file in enumerate(cookies_files[5:10], 1):  # الملفات 6-10
+            try:
+                LOGGER(__name__).info(f"🍪 محاولة كوكيز بديل #{i}: {os.path.basename(cookie_file)}")
+                
+                downloads_dir = Path("downloads")
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'outtmpl': str(downloads_dir / f'{video_id}_alt_{i}.%(ext)s'),
+                    'quiet': True,
+                    'no_warnings': True,
+                    'noplaylist': True,
+                    'cookiefile': cookie_file,
+                    'socket_timeout': 20,
+                    'retries': 1,
+                }
+                
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(
+                        f"https://www.youtube.com/watch?v={video_id}",
+                        download=True
+                    )
+                    
+                    if info:
+                        for file_path in downloads_dir.glob(f"{video_id}_alt_{i}.*"):
+                            if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4', '.opus']:
+                                return {
+                                    'success': True,
+                                    'file_path': str(file_path),
+                                    'title': info.get('title', title),
+                                    'duration': info.get('duration', 0),
+                                    'uploader': info.get('uploader', 'Unknown'),
+                                    'elapsed': 0
+                                }
+                                
+            except Exception as e:
+                LOGGER(__name__).warning(f"❌ فشل الكوكيز البديل #{i}: {e}")
+                continue
+        
+        return None
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في المحاولات البديلة: {e}")
+        return None
+
+async def force_download_any_way(video_id: str, title: str) -> Optional[Dict]:
+    """محاولة تحميل قسري بجميع الطرق المتاحة"""
+    try:
+        # محاولة جميع ملفات الكوكيز المتبقية
+        cookies_files = get_available_cookies()
+        
+        for i, cookie_file in enumerate(cookies_files[10:], 1):  # الملفات المتبقية
+            try:
+                LOGGER(__name__).info(f"🚀 محاولة قسرية #{i}: {os.path.basename(cookie_file)}")
+                
+                downloads_dir = Path("downloads")
+                ydl_opts = {
+                    'format': 'worst/bestaudio/best',  # أي جودة متاحة
+                    'outtmpl': str(downloads_dir / f'{video_id}_force_{i}.%(ext)s'),
+                    'quiet': True,
+                    'no_warnings': True,
+                    'noplaylist': True,
+                    'cookiefile': cookie_file,
+                    'socket_timeout': 30,
+                    'retries': 3,
+                    'ignore_errors': True,
+                }
+                
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(
+                        f"https://www.youtube.com/watch?v={video_id}",
+                        download=True
+                    )
+                    
+                    if info:
+                        for file_path in downloads_dir.glob(f"{video_id}_force_{i}.*"):
+                            if file_path.exists() and file_path.stat().st_size > 1000:
+                                return {
+                                    'success': True,
+                                    'file_path': str(file_path),
+                                    'title': info.get('title', title),
+                                    'duration': info.get('duration', 0),
+                                    'uploader': info.get('uploader', 'Unknown'),
+                                    'elapsed': 0
+                                }
+                                
+            except Exception as e:
+                LOGGER(__name__).warning(f"❌ فشل القسري #{i}: {e}")
+                continue
+        
+        return None
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في التحميل القسري: {e}")
         return None
 
 async def remove_temp_files(*paths):
@@ -1361,9 +1622,21 @@ async def smart_download_handler(event):
                 await remove_temp_files(audio_file)
                 return
         
-        # التحميل فشل - محاولة بديلة
+        # التحميل فشل - محاولة YouTube API أولاً
         try:
-            await status_msg.edit("🔄 **محاولة طريقة بديلة...**")
+            await status_msg.edit("🔑 **محاولة YouTube API...**")
+            LOGGER(__name__).info("🔑 محاولة YouTube API")
+            
+            # محاولة YouTube API
+            api_result = await try_youtube_api_download(video_id, video_info.get('title', 'Unknown'))
+            if api_result and api_result.get('success'):
+                audio_file = api_result.get('file_path')
+                if audio_file and Path(audio_file).exists():
+                    await send_audio_file(event, status_msg, audio_file, api_result)
+                    return
+            
+            # إذا فشل API، جرب الطرق البديلة
+            await status_msg.edit("🔄 **محاولة طرق بديلة...**")
             LOGGER(__name__).info("🔄 محاولة تحميل بديلة")
             
             # إنشاء رابط مباشر للتحميل
