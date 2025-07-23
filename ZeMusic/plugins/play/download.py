@@ -511,8 +511,9 @@ class HyperSpeedDownloader:
         start_time = time.time()
         
         try:
-            for _ in range(len(YT_API_KEYS)):
+            for attempt in range(len(YT_API_KEYS)):
                 key = next(API_KEYS_CYCLE)
+                LOGGER(__name__).info(f"🔑 محاولة YouTube API - المحاولة {attempt + 1}")
                 params = {
                     "part": "snippet",
                     "q": query,
@@ -534,16 +535,22 @@ class HyperSpeedDownloader:
                             continue
                             
                         if resp.status != 200:
+                            error_text = await resp.text()
+                            LOGGER(__name__).warning(f"YouTube API خطأ {resp.status}: {error_text[:100]}")
                             continue
                         
                         data = await resp.json()
                         items = data.get("items", [])
                         if not items:
+                            LOGGER(__name__).warning(f"YouTube API: لا توجد نتائج لـ {query}")
                             continue
                         
                         item = items[0]
                         video_id = item["id"]["videoId"]
                         snippet = item["snippet"]
+                        title = snippet.get("title", "")[:60]
+                        
+                        LOGGER(__name__).info(f"✅ YouTube API نجح: {title[:30]}...")
                         
                         self.method_performance['youtube_api']['avg_time'] = (
                             self.method_performance['youtube_api']['avg_time'] * 0.7 + 
@@ -552,7 +559,7 @@ class HyperSpeedDownloader:
                         
                         return {
                             "video_id": video_id,
-                            "title": snippet.get("title", "")[:60],
+                            "title": title,
                             "artist": snippet.get("channelTitle", "Unknown"),
                             "thumb": snippet.get("thumbnails", {}).get("high", {}).get("url"),
                             "source": "youtube_api"
@@ -892,20 +899,47 @@ class HyperSpeedDownloader:
             await self.health_check()
             
             # خطوة 1: البحث الفوري في الكاش
-            cached_result = await self.lightning_search_cache(query)
+            cached_result = await self.search_in_smart_cache(query)
             if cached_result:
                 LOGGER(__name__).info(f"⚡ كاش فوري: {query} ({time.time() - start_time:.3f}s)")
-                return cached_result
+                # تحويل النتيجة إلى التنسيق المطلوب
+                return {
+                    'audio_path': cached_result.get('file_path'),
+                    'title': cached_result.get('title', 'Unknown'),
+                    'artist': cached_result.get('artist', 'Unknown'),
+                    'duration': cached_result.get('duration', 0),
+                    'source': 'smart_cache',
+                    'cached': True
+                }
             
             # خطوة 2: البحث عن معلومات الفيديو بالتوازي
             search_methods = []
             
+            # إضافة طرق البحث بترتيب الأولوية
+            
+            # أولوية 1: YouTube Search (الأكثر موثوقية)
+            try:
+                if YoutubeSearch:
+                    search_methods.append(self.youtube_search_simple(query))
+                    LOGGER(__name__).info(f"🔍 إضافة YouTube Search للبحث")
+            except Exception as e:
+                LOGGER(__name__).warning(f"⚠️ فشل في إضافة YouTube Search: {e}")
+            
+            # أولوية 2: YouTube API (إذا كان متاحاً)
             if API_KEYS_CYCLE:
                 search_methods.append(self.youtube_api_search(query))
+                LOGGER(__name__).info(f"🔍 إضافة YouTube API للبحث")
+            
+            # أولوية 3: Invidious (كبديل)
             if INVIDIOUS_CYCLE:
                 search_methods.append(self.invidious_search(query))
-            if YoutubeSearch:
-                search_methods.append(self.youtube_search_simple(query))
+                LOGGER(__name__).info(f"🔍 إضافة Invidious للبحث")
+            
+            if not search_methods:
+                LOGGER(__name__).error(f"❌ لا توجد طرق بحث متاحة!")
+                return None
+            
+            LOGGER(__name__).info(f"🚀 بدء البحث بـ {len(search_methods)} طريقة")
             
             # تشغيل جميع عمليات البحث بالتوازي
             search_tasks = [asyncio.create_task(method) for method in search_methods]
@@ -922,21 +956,33 @@ class HyperSpeedDownloader:
             # أخذ أول نتيجة ناجحة
             video_info = None
             for task in done:
-                result = task.result()
-                if result:
-                    video_info = result
-                    break
+                try:
+                    result = task.result()
+                    if result:
+                        video_info = result
+                        LOGGER(__name__).info(f"✅ نجح البحث: {result.get('title', 'Unknown')} من {result.get('source', 'Unknown')}")
+                        break
+                except Exception as e:
+                    LOGGER(__name__).warning(f"⚠️ فشلت إحدى طرق البحث: {e}")
             
             if not video_info:
+                LOGGER(__name__).error(f"❌ فشل جميع طرق البحث لـ: {query}")
                 return None
             
             # خطوة 3: تحميل الصوت
+            LOGGER(__name__).info(f"🎵 بدء تحميل الصوت: {video_info.get('title', 'Unknown')}")
             audio_info = await self.download_with_ytdlp(video_info)
             if not audio_info:
+                LOGGER(__name__).warning(f"⚠️ فشل التحميل الأساسي، جاري المحاولة الاحتياطية...")
                 # محاولة نسخة احتياطية
                 audio_info = await self.download_without_cookies(video_info)
                 if not audio_info:
+                    LOGGER(__name__).error(f"❌ فشل جميع طرق التحميل لـ: {video_info.get('title', 'Unknown')}")
                     return None
+                else:
+                    LOGGER(__name__).info(f"✅ نجح التحميل الاحتياطي: {audio_info.get('title', 'Unknown')}")
+            else:
+                LOGGER(__name__).info(f"✅ نجح التحميل الأساسي: {audio_info.get('title', 'Unknown')}")
             
             # خطوة 4: حفظ في التخزين الذكي (في الخلفية)
             if SMART_CACHE_CHANNEL:
