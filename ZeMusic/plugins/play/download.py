@@ -3436,3 +3436,432 @@ async def force_channel_sync_handler(event):
         await event.reply(f"❌ **خطأ:** {e}")
 
 # تحديث معالج البحث ليشمل المزامنة التلقائية
+
+# إضافة دالة فحص قناة التخزين
+async def verify_cache_channel(bot_client) -> Dict:
+    """فحص والتحقق من صحة قناة التخزين"""
+    try:
+        import config
+        
+        # فحص وجود التعريف
+        if not hasattr(config, 'CACHE_CHANNEL_ID') or not config.CACHE_CHANNEL_ID:
+            return {
+                'status': 'error',
+                'message': 'قناة التخزين غير محددة في config.py',
+                'solution': 'تأكد من تعيين CACHE_CHANNEL_USERNAME في متغيرات البيئة'
+            }
+        
+        cache_channel = config.CACHE_CHANNEL_ID
+        
+        # فحص نوع المعرف
+        channel_type = "unknown"
+        if cache_channel.startswith('@'):
+            channel_type = "username"
+        elif cache_channel.startswith('-100'):
+            channel_type = "supergroup_id"
+        elif cache_channel.startswith('-'):
+            channel_type = "group_id"
+        elif cache_channel.isdigit():
+            channel_type = "user_id"
+        
+        LOGGER(__name__).info(f"🔍 فحص قناة التخزين: {cache_channel} (نوع: {channel_type})")
+        
+        # محاولة الوصول للقناة
+        try:
+            entity = await bot_client.get_entity(cache_channel)
+            
+            # الحصول على معلومات القناة
+            channel_info = {
+                'status': 'success',
+                'channel_id': cache_channel,
+                'channel_type': channel_type,
+                'entity_id': entity.id,
+                'title': getattr(entity, 'title', 'Unknown'),
+                'username': getattr(entity, 'username', None),
+                'participants_count': getattr(entity, 'participants_count', 0),
+                'is_channel': hasattr(entity, 'broadcast'),
+                'is_megagroup': getattr(entity, 'megagroup', False),
+                'access_hash': getattr(entity, 'access_hash', None)
+            }
+            
+            # فحص صلاحيات الإرسال
+            try:
+                # محاولة إرسال رسالة اختبار
+                test_message = await bot_client.send_message(
+                    entity, 
+                    "🧪 **اختبار قناة التخزين الذكي**\n\n✅ البوت يمكنه الإرسال بنجاح!\n\n🗑️ سيتم حذف هذه الرسالة خلال 10 ثوان..."
+                )
+                
+                # حذف الرسالة بعد 10 ثوان
+                await asyncio.sleep(10)
+                await test_message.delete()
+                
+                channel_info['can_send'] = True
+                channel_info['permissions'] = 'full'
+                
+            except Exception as perm_error:
+                channel_info['can_send'] = False
+                channel_info['permissions'] = 'limited'
+                channel_info['permission_error'] = str(perm_error)
+            
+            # فحص عدد الرسائل الموجودة
+            try:
+                message_count = 0
+                audio_count = 0
+                
+                async for message in bot_client.iter_messages(entity, limit=100):
+                    message_count += 1
+                    if message.file and message.file.mime_type and 'audio' in message.file.mime_type:
+                        audio_count += 1
+                
+                channel_info['recent_messages'] = message_count
+                channel_info['recent_audio_files'] = audio_count
+                
+            except Exception as count_error:
+                channel_info['recent_messages'] = 0
+                channel_info['recent_audio_files'] = 0
+                channel_info['count_error'] = str(count_error)
+            
+            LOGGER(__name__).info(f"✅ قناة التخزين متاحة: {channel_info['title']}")
+            return channel_info
+            
+        except Exception as access_error:
+            return {
+                'status': 'error',
+                'channel_id': cache_channel,
+                'channel_type': channel_type,
+                'message': f'لا يمكن الوصول لقناة التخزين: {access_error}',
+                'solutions': [
+                    'تأكد من أن البوت عضو في القناة',
+                    'تأكد من أن البوت لديه صلاحية الإرسال',
+                    'تأكد من صحة معرف/يوزر القناة',
+                    'تأكد من أن القناة موجودة وليست محذوفة'
+                ]
+            }
+            
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': f'خطأ في فحص قناة التخزين: {e}',
+            'solution': 'تحقق من إعدادات config.py'
+        }
+
+async def cache_channel_info_handler(event):
+    """معالج أمر المطور لعرض معلومات قناة التخزين"""
+    if event.sender_id != config.OWNER_ID:
+        return
+    
+    try:
+        await event.reply("🔍 **جاري فحص قناة التخزين...**")
+        
+        # فحص القناة
+        result = await verify_cache_channel(event.client)
+        
+        if result['status'] == 'error':
+            error_msg = f"❌ **خطأ في قناة التخزين**\n\n"
+            error_msg += f"**المشكلة:** {result['message']}\n\n"
+            
+            if 'solutions' in result:
+                error_msg += "**الحلول المقترحة:**\n"
+                for i, solution in enumerate(result['solutions'], 1):
+                    error_msg += f"{i}. {solution}\n"
+            elif 'solution' in result:
+                error_msg += f"**الحل:** {result['solution']}\n"
+            
+            await event.reply(error_msg)
+        else:
+            # إعداد رسالة النجاح
+            success_msg = f"✅ **معلومات قناة التخزين**\n\n"
+            success_msg += f"🏷️ **العنوان:** {result['title']}\n"
+            success_msg += f"🆔 **المعرف:** `{result['channel_id']}`\n"
+            success_msg += f"🔢 **ID الحقيقي:** `{result['entity_id']}`\n"
+            
+            if result.get('username'):
+                success_msg += f"👤 **اليوزر:** @{result['username']}\n"
+            
+            success_msg += f"📊 **النوع:** {result['channel_type']}\n"
+            success_msg += f"👥 **الأعضاء:** {result.get('participants_count', 'غير معروف')}\n"
+            success_msg += f"📺 **قناة:** {'نعم' if result.get('is_channel') else 'لا'}\n"
+            success_msg += f"🔓 **مجموعة كبيرة:** {'نعم' if result.get('is_megagroup') else 'لا'}\n\n"
+            
+            # صلاحيات الإرسال
+            if result.get('can_send'):
+                success_msg += "✅ **الصلاحيات:** البوت يمكنه الإرسال\n"
+            else:
+                success_msg += "❌ **الصلاحيات:** البوت لا يمكنه الإرسال\n"
+                if 'permission_error' in result:
+                    success_msg += f"**السبب:** {result['permission_error']}\n"
+            
+            # إحصائيات المحتوى
+            success_msg += f"\n📈 **إحصائيات المحتوى:**\n"
+            success_msg += f"• رسائل حديثة: {result.get('recent_messages', 0)}\n"
+            success_msg += f"• ملفات صوتية: {result.get('recent_audio_files', 0)}\n"
+            
+            # إضافة معلومات من قاعدة البيانات
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                
+                cursor.execute("SELECT COUNT(*) FROM channel_index")
+                total_cached = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM channel_index WHERE last_accessed > datetime('now', '-7 days')")
+                recent_accessed = cursor.fetchone()[0]
+                
+                conn.close()
+                
+                success_msg += f"\n💾 **قاعدة البيانات:**\n"
+                success_msg += f"• إجمالي المحفوظ: {total_cached}\n"
+                success_msg += f"• استُخدم مؤخراً: {recent_accessed}\n"
+                
+            except Exception as db_error:
+                success_msg += f"\n⚠️ **قاعدة البيانات:** خطأ في القراءة\n"
+            
+            await event.reply(success_msg)
+        
+    except Exception as e:
+        await event.reply(f"❌ **خطأ:** {e}")
+
+async def test_cache_channel_handler(event):
+    """معالج أمر المطور لاختبار قناة التخزين"""
+    if event.sender_id != config.OWNER_ID:
+        return
+    
+    try:
+        await event.reply("🧪 **بدء اختبار قناة التخزين...**")
+        
+        # فحص القناة أولاً
+        result = await verify_cache_channel(event.client)
+        
+        if result['status'] == 'error':
+            await event.reply(f"❌ **فشل الاختبار:** {result['message']}")
+            return
+        
+        # اختبار حفظ ملف تجريبي
+        import tempfile
+        import os
+        
+        # إنشاء ملف صوتي تجريبي
+        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+            # كتابة بيانات تجريبية (ملف فارغ)
+            temp_file.write(b'test audio data')
+            temp_path = temp_file.name
+        
+        try:
+            # محاولة حفظ في التخزين الذكي
+            test_result = {
+                'title': 'اختبار النظام الذكي',
+                'uploader': 'ZeMusic Test Bot',
+                'duration': 30,
+                'file_size': 1024,
+                'source': 'test_system',
+                'elapsed': 0.5
+            }
+            
+            success = await save_to_smart_cache(
+                event.client, 
+                temp_path, 
+                test_result, 
+                'اختبار النظام'
+            )
+            
+            if success:
+                await event.reply("✅ **نجح الاختبار!**\n\n🎯 تم حفظ ملف تجريبي بنجاح\n💾 قاعدة البيانات محدثة\n🚀 النظام جاهز للعمل")
+            else:
+                await event.reply("❌ **فشل الاختبار:** لم يتم حفظ الملف التجريبي")
+            
+        finally:
+            # حذف الملف التجريبي
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        
+    except Exception as e:
+        await event.reply(f"❌ **خطأ في الاختبار:** {e}")
+        import traceback
+        LOGGER(__name__).error(f"خطأ في اختبار القناة: {traceback.format_exc()}")
+
+# تحديث معالج البحث ليشمل فحص القناة التلقائي
+
+async def smart_download_handler(event):
+    """المعالج الذكي للتحميل الفوري المتوازي مع مزامنة تلقائية وفحص القناة"""
+    start_time = time.time()
+    user_id = event.sender_id
+    
+    try:
+        # تتبع معدل الطلبات (للإحصائيات فقط)
+        await check_rate_limit(user_id)
+        
+        # تهيئة قاعدة البيانات إذا لم تكن مهيأة
+        await ensure_database_initialized()
+        
+        # فحص قناة التخزين بشكل دوري (كل 50 طلب)
+        if PERFORMANCE_STATS['total_requests'] % 50 == 0:
+            asyncio.create_task(verify_cache_channel_periodic(event.client))
+        
+        # المزامنة التلقائية لقناة التخزين (في الخلفية)
+        asyncio.create_task(auto_sync_channel_if_needed(event.client))
+        
+        # تنظيف دوري للكوكيز المحظورة (كل 100 طلب)
+        if PERFORMANCE_STATS['total_requests'] % 100 == 0:
+            cleanup_blocked_cookies()
+        
+        # عرض إحصائيات الأداء (كل 50 طلب)
+        if PERFORMANCE_STATS['total_requests'] % 50 == 0:
+            log_performance_stats()
+        
+        # فحص الصلاحيات
+        chat_id = event.chat_id
+        if chat_id > 0:  # محادثة خاصة
+            if not await is_search_enabled1():
+                await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
+                return
+        else:  # مجموعة أو قناة
+            if not await is_search_enabled(chat_id):
+                await event.reply("⟡ عذراً عزيزي اليوتيوب معطل من قبل المطور")
+                return
+                
+        # معالجة فورية بدون حدود مع تحسينات إضافية
+        LOGGER(__name__).info(f"🚀 معالجة ذكية محسنة للمستخدم {user_id} - العمليات النشطة: {len(active_downloads)}")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في فحص الحمولة المحسن: {e}")
+        await update_performance_stats(False, time.time() - start_time)
+        return
+    
+    # تنفيذ المعالجة الفورية المتوازية المحسنة - كل طلب يبدأ فوراً
+    # إنشاء مهمة منفصلة لكل طلب بدون انتظار مع تحسينات الأداء
+    asyncio.create_task(process_unlimited_download_enhanced(event, user_id, start_time))
+    
+    # تسجيل بدء المهمة فوراً
+    LOGGER(__name__).info(f"⚡ تم إنشاء مهمة متوازية محسنة للمستخدم {user_id} - العمليات النشطة: {len(active_downloads) + 1}")
+
+async def verify_cache_channel_periodic(bot_client):
+    """فحص دوري لقناة التخزين في الخلفية"""
+    try:
+        result = await verify_cache_channel(bot_client)
+        
+        if result['status'] == 'error':
+            LOGGER(__name__).warning(f"⚠️ مشكلة في قناة التخزين: {result['message']}")
+        else:
+            LOGGER(__name__).info(f"✅ قناة التخزين تعمل بشكل طبيعي: {result['title']}")
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في الفحص الدوري لقناة التخزين: {e}")
+
+# إضافة دالة لعرض حالة النظام الشاملة
+async def system_status_handler(event):
+    """معالج أمر المطور لعرض حالة النظام الشاملة"""
+    if event.sender_id != config.OWNER_ID:
+        return
+    
+    try:
+        await event.reply("📊 **جاري فحص حالة النظام الشاملة...**")
+        
+        # فحص قناة التخزين
+        cache_status = await verify_cache_channel(event.client)
+        
+        # فحص قاعدة البيانات
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT COUNT(*) FROM channel_index")
+            total_cached = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM channel_index WHERE last_accessed > datetime('now', '-1 day')")
+            daily_accessed = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM channel_index WHERE created_at > datetime('now', '-1 day')")
+            daily_added = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT AVG(popularity_rank) FROM channel_index")
+            avg_popularity = cursor.fetchone()[0] or 0
+            
+            conn.close()
+            
+            db_status = {
+                'working': True,
+                'total_cached': total_cached,
+                'daily_accessed': daily_accessed,
+                'daily_added': daily_added,
+                'avg_popularity': avg_popularity
+            }
+            
+        except Exception as db_error:
+            db_status = {
+                'working': False,
+                'error': str(db_error)
+            }
+        
+        # فحص ملفات الكوكيز
+        cookies_stats = get_cookies_statistics()
+        
+        # إعداد رسالة الحالة الشاملة
+        status_msg = "📊 **حالة النظام الشاملة**\n\n"
+        
+        # حالة قناة التخزين
+        if cache_status['status'] == 'success':
+            status_msg += f"✅ **قناة التخزين:** تعمل بشكل طبيعي\n"
+            status_msg += f"   📝 العنوان: {cache_status['title']}\n"
+            status_msg += f"   🎵 ملفات صوتية: {cache_status.get('recent_audio_files', 0)}\n"
+            status_msg += f"   📤 صلاحية الإرسال: {'✅' if cache_status.get('can_send') else '❌'}\n"
+        else:
+            status_msg += f"❌ **قناة التخزين:** مشكلة\n"
+            status_msg += f"   ⚠️ {cache_status['message']}\n"
+        
+        status_msg += "\n"
+        
+        # حالة قاعدة البيانات
+        if db_status['working']:
+            status_msg += f"✅ **قاعدة البيانات:** تعمل بشكل طبيعي\n"
+            status_msg += f"   💾 إجمالي المحفوظ: {db_status['total_cached']}\n"
+            status_msg += f"   📈 استُخدم اليوم: {db_status['daily_accessed']}\n"
+            status_msg += f"   ➕ أُضيف اليوم: {db_status['daily_added']}\n"
+            status_msg += f"   ⭐ متوسط الشعبية: {db_status['avg_popularity']:.2f}\n"
+        else:
+            status_msg += f"❌ **قاعدة البيانات:** مشكلة\n"
+            status_msg += f"   ⚠️ {db_status['error']}\n"
+        
+        status_msg += "\n"
+        
+        # حالة ملفات الكوكيز
+        if cookies_stats:
+            status_msg += f"🍪 **ملفات الكوكيز:**\n"
+            status_msg += f"   📊 الإجمالي: {cookies_stats.get('total', 0)}\n"
+            status_msg += f"   ✅ المتاح: {cookies_stats.get('available', 0)}\n"
+            status_msg += f"   🚫 المحظور: {cookies_stats.get('blocked', 0)}\n"
+            status_msg += f"   🏆 الأكثر استخداماً: {cookies_stats.get('most_used_file', 'لا يوجد')}\n"
+        else:
+            status_msg += f"❌ **ملفات الكوكيز:** غير متاحة\n"
+        
+        status_msg += "\n"
+        
+        # إحصائيات الأداء
+        stats = PERFORMANCE_STATS
+        success_rate = (stats['successful_downloads'] / max(stats['total_requests'], 1)) * 100
+        cache_hit_rate = (stats['cache_hits'] / max(stats['total_requests'], 1)) * 100
+        
+        status_msg += f"⚡ **الأداء:**\n"
+        status_msg += f"   🔢 إجمالي الطلبات: {stats['total_requests']}\n"
+        status_msg += f"   ✅ نسبة النجاح: {success_rate:.1f}%\n"
+        status_msg += f"   💾 نسبة الكاش: {cache_hit_rate:.1f}%\n"
+        status_msg += f"   ⏱️ متوسط الوقت: {stats['avg_response_time']:.2f}s\n"
+        status_msg += f"   🔄 العمليات النشطة: {stats['current_concurrent']}\n"
+        status_msg += f"   🏔️ الذروة: {stats['peak_concurrent']}\n"
+        
+        # إضافة معلومات النظام
+        import psutil
+        memory = psutil.virtual_memory()
+        cpu = psutil.cpu_percent()
+        
+        status_msg += f"\n🖥️ **النظام:**\n"
+        status_msg += f"   🧠 الذاكرة: {memory.percent}% ({memory.used//1024//1024}MB)\n"
+        status_msg += f"   ⚙️ المعالج: {cpu}%\n"
+        status_msg += f"   🕐 وقت التشغيل: {time.time() - start_time:.0f}s\n"
+        
+        await event.reply(status_msg)
+        
+    except Exception as e:
+        await event.reply(f"❌ **خطأ في فحص النظام:** {e}")
+        import traceback
+        LOGGER(__name__).error(f"خطأ في فحص حالة النظام: {traceback.format_exc()}")
