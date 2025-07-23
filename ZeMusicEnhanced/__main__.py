@@ -166,19 +166,44 @@ class ZeMusicEnhanced:
         try:
             logger.info("📥 تحميل معالجات الأحداث...")
             
-            # سيتم تنفيذ هذا في المراحل التالية
-            # من خلال نظام الإضافات المحسن
+            try:
+                from handlers.basic_handlers import BasicHandlers
+                
+                self.basic_handlers = BasicHandlers(self.client, self.db, config)
+                self.basic_handlers.register_handlers()
+            except ImportError as e:
+                logger.warning(f"⚠️ لم يتم العثور على معالجات مخصصة: {e}")
+                # تسجيل معالجات أساسية مباشرة
+                await self._register_basic_handlers()
             
             logger.info("✅ تم تحميل جميع المعالجات")
             
         except Exception as e:
             logger.error(f"❌ فشل في تحميل المعالجات: {e}")
     
+    async def _register_basic_handlers(self):
+        """تسجيل معالجات أساسية مدمجة"""
+        from telethon import events
+        import time
+        
+        @self.client.client.on(events.NewMessage(pattern=r'^/start'))
+        async def start_handler(event):
+            await event.respond(f"🎵 مرحباً! البوت {config.BOT_NAME} يعمل بنجاح!\n\nاستخدم /help لرؤية الأوامر.")
+        
+        @self.client.client.on(events.NewMessage(pattern=r'^/ping'))
+        async def ping_handler(event):
+            start = time.time()
+            msg = await event.respond("🏓 جاري الفحص...")
+            end = time.time()
+            await msg.edit(f"🏓 Pong! {round((end - start) * 1000, 2)}ms")
+        
+        logger.info("✅ تم تسجيل المعالجات الأساسية")
+    
     async def _display_startup_stats(self):
         """عرض إحصائيات البدء"""
         try:
             # الحصول على الإحصائيات
-            db_stats = await self.database.get_stats()
+            db_stats = self.db.get_stats()
             assistant_stats = await self.assistant_manager.get_assistants_stats()
             bot_info = config.get_bot_info()
             
@@ -219,7 +244,7 @@ class ZeMusicEnhanced:
             
             # تشغيل العميل الرئيسي
             if self.client:
-                await self.client.run_until_disconnected()
+                await self.client.client.run_until_disconnected()
             
         except KeyboardInterrupt:
             logger.info("⌨️ تم إيقاف البوت بواسطة المستخدم")

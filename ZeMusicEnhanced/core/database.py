@@ -134,7 +134,10 @@ class DatabaseManager:
             'cache_hits': 0,
             'cache_misses': 0,
             'errors_count': 0,
-            'last_backup': None
+            'last_backup': None,
+            'total_users': 0,
+            'total_chats': 0,
+            'total_assistants': 0
         }
         
     async def initialize(self) -> bool:
@@ -885,6 +888,76 @@ class DatabaseManager:
             
         except Exception as e:
             logger.error(f"❌ فشل فحص صحة قاعدة البيانات: {e}")
+            return False
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """الحصول على إحصائيات قاعدة البيانات"""
+        try:
+            # تحديث الإحصائيات
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # عدد المستخدمين
+                cursor.execute("SELECT COUNT(*) FROM users")
+                self.stats['total_users'] = cursor.fetchone()[0]
+                
+                # عدد المجموعات
+                cursor.execute("SELECT COUNT(*) FROM chats")
+                self.stats['total_chats'] = cursor.fetchone()[0]
+                
+                # عدد الحسابات المساعدة
+                cursor.execute("SELECT COUNT(*) FROM assistants")
+                self.stats['total_assistants'] = cursor.fetchone()[0]
+                
+            return self.stats.copy()
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في جلب إحصائيات قاعدة البيانات: {e}")
+            return self.stats.copy()
+    
+    def close(self):
+        """إغلاق قاعدة البيانات"""
+        try:
+            # إيقاف مهام الصيانة
+            if hasattr(self, 'cleanup_task') and self.cleanup_task:
+                self.cleanup_task.cancel()
+            if hasattr(self, 'backup_task') and self.backup_task:
+                self.backup_task.cancel()
+            if hasattr(self, 'stats_task') and self.stats_task:
+                self.stats_task.cancel()
+                
+            # مسح الكاش
+            if self.cache_enabled:
+                self.cache.clear()
+                
+            # إغلاق الاتصالات
+            for conn in self._connection_pool.values():
+                if conn:
+                    conn.close()
+            self._connection_pool.clear()
+            
+            logger.info("✅ تم إغلاق قاعدة البيانات بنجاح")
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في إغلاق قاعدة البيانات: {e}")
+    
+    async def add_user(self, user_id: int, username: str = None, first_name: str = None) -> bool:
+        """إضافة مستخدم جديد"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO users 
+                    (user_id, username, first_name, created_at, last_seen)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (user_id, username, first_name, datetime.now(), datetime.now()))
+                conn.commit()
+                
+            logger.debug(f"✅ تم إضافة المستخدم: {user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في إضافة المستخدم {user_id}: {e}")
             return False
 
 # إنشاء مثيل عام لمدير قاعدة البيانات

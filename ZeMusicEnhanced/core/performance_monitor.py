@@ -118,7 +118,8 @@ class PerformanceMonitor:
             self.system_info['total_disk_gb'] = round(disk.total / (1024**3), 2)
             
             # معلومات النظام
-            self.system_info['platform'] = psutil.platform
+            import platform
+            self.system_info['platform'] = platform.system()
             self.system_info['boot_time'] = datetime.fromtimestamp(psutil.boot_time())
             
             logger.info(f"💻 معلومات النظام: {self.system_info}")

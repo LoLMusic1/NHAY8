@@ -23,6 +23,29 @@ try:
     from pytgcalls.exceptions import NoActiveGroupCall, GroupCallNotFound
     PYTGCALLS_AVAILABLE = True
 except ImportError:
+    # إنشاء فئات وهمية للتوافق
+    class PyTgCalls:
+        def __init__(self, client): pass
+        async def start(self): pass
+    
+    class StreamType:
+        pass
+    
+    class Update:
+        pass
+    
+    class AudioPiped:
+        pass
+    
+    class VideoPiped:
+        pass
+    
+    class NoActiveGroupCall(Exception):
+        pass
+    
+    class GroupCallNotFound(Exception):
+        pass
+    
     PYTGCALLS_AVAILABLE = False
 
 import sys

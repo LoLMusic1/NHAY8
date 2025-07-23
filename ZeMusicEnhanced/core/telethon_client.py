@@ -534,6 +534,21 @@ class TelethonClientManager:
             
         except Exception as e:
             logger.error(f"❌ خطأ في الإغلاق: {e}")
+    
+    async def run_until_disconnected(self):
+        """تشغيل العميل حتى الانقطاع"""
+        if self.client and self.is_connected:
+            await self.client.run_until_disconnected()
+    
+    async def disconnect(self):
+        """قطع اتصال العميل"""
+        try:
+            if self.client and self.is_connected:
+                await self.client.disconnect()
+                self.is_connected = False
+                logger.info(f"🔌 تم قطع اتصال العميل {self.session_name}")
+        except Exception as e:
+            logger.error(f"❌ خطأ في قطع الاتصال: {e}")
 
 # إنشاء مثيل عام لمدير العملاء
 telethon_manager = TelethonClientManager()
