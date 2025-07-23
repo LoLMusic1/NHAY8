@@ -13,17 +13,28 @@ async def register_all_handlers(bot_client):
         bot_client.add_event_handler(handle_owner_callbacks, events.CallbackQuery)
         LOGGER(__name__).info("✅ تم تسجيل معالج callbacks المطور")
         
-        # تسجيل معالج البحث المباشر (بدون تكرار)
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في تسجيل معالج المطور: {e}")
+    
+    try:
+        # تسجيل معالج البحث المباشر مع شروط محددة
         from ZeMusic.plugins.play.download import smart_download_handler
-        bot_client.add_event_handler(smart_download_handler, events.NewMessage)
+        bot_client.add_event_handler(
+            smart_download_handler, 
+            events.NewMessage(pattern=r'^/?(بحث|search|song|يوت|اغنية|تحميل)\s+(.+)$')
+        )
         LOGGER(__name__).info("✅ تم تسجيل معالج البحث المباشر")
         
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في تسجيل معالج البحث: {e}")
+    
+    try:
         # تسجيل معالج cookies callbacks
         bot_client.add_event_handler(handle_cookies_callbacks, events.CallbackQuery)
         LOGGER(__name__).info("✅ تم تسجيل معالج cookies callbacks")
         
     except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في تسجيل المعالجات: {e}")
+        LOGGER(__name__).error(f"❌ خطأ في تسجيل معالج cookies: {e}")
 
 async def handle_cookies_callbacks(event):
     """معالج callbacks أزرار cookies"""
