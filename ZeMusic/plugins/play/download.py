@@ -38,6 +38,49 @@ from contextlib import asynccontextmanager
 import orjson
 
 # تطبيق UVLoop لتحسين أداء asyncio
+
+def get_audio_duration(file_path: str) -> int:
+    """الحصول على مدة الملف الصوتي بالثواني"""
+    try:
+        if not os.path.exists(file_path):
+            return 0
+            
+        # محاولة استخدام yt-dlp للحصول على المعلومات
+        if yt_dlp:
+            try:
+                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                    info = ydl.extract_info(file_path, download=False)
+                    duration = info.get('duration', 0)
+                    if duration and duration > 0:
+                        return int(duration)
+            except:
+                pass
+        
+        # محاولة استخدام ffprobe
+        try:
+            import subprocess
+            result = subprocess.run([
+                'ffprobe', '-v', 'quiet', '-show_entries', 
+                'format=duration', '-of', 'csv=p=0', file_path
+            ], capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                return int(float(result.stdout.strip()))
+        except:
+            pass
+            
+        # تقدير تقريبي بناءً على حجم الملف (للملفات الصوتية)
+        try:
+            file_size = os.path.getsize(file_path)
+            # تقدير: 128kbps = 16KB/s تقريباً
+            estimated_duration = file_size // 16000
+            return max(1, estimated_duration)
+        except:
+            return 0
+            
+    except Exception as e:
+        LOGGER.warning(f"⚠️ خطأ في الحصول على مدة الصوت: {e}")
+        return 0
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 # استيراد المكتبات مع معالجة الأخطاء
@@ -3871,13 +3914,35 @@ async def sequential_external_search(query: str) -> Optional[Dict]:
         except Exception as e:
             LOGGER(__name__).warning(f"⚠️ YouTube Search فشل: {e}")
         
-        # الطريقة 2: YouTube API (إذا كان متاحاً)
+        # الطريقة 2: النظام المختلط (YouTube API + yt-dlp)
         try:
-            LOGGER(__name__).info("🔍 محاولة YouTube API...")
+            LOGGER(__name__).info("🔍 محاولة النظام المختلط (YouTube API + yt-dlp)...")
+            from .youtube_api_downloader import download_youtube_hybrid
+            
+            success, result = await download_youtube_hybrid(query, "downloads")
+            if success and result:
+                LOGGER(__name__).info(f"✅ النظام المختلط نجح: {result.get('title', 'غير محدد')}")
+                return {
+                    'id': result['video_id'],
+                    'title': result['title'],
+                    'channel': result.get('channel', 'غير محدد'),
+                    'duration': '0:00',  # سيتم الحصول عليها من الملف
+                    'views': 'غير محدد',
+                    'source': 'hybrid_api_ytdlp',
+                    'file_path': result['file_path'],
+                    'thumbnail': result.get('thumbnail', ''),
+                    'url': result['url']
+                }
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ النظام المختلط فشل: {e}")
+        
+        # الطريقة 3: YouTube API التقليدي (إذا كان متاحاً)
+        try:
+            LOGGER(__name__).info("🔍 محاولة YouTube API التقليدي...")
             import config
             
             if hasattr(config, 'YOUTUBE_API_KEY') and config.YOUTUBE_API_KEY:
-                # يمكن إضافة YouTube API هنا لاحقاً
+                # يمكن إضافة YouTube API التقليدي هنا لاحقاً
                 pass
         except Exception as e:
             LOGGER(__name__).warning(f"⚠️ YouTube API فشل: {e}")
@@ -3986,6 +4051,48 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
     
     try:
         LOGGER(__name__).info(f"⬇️ بدء التحميل الذكي مع معالجة أخطاء متقدمة")
+        
+        # التحقق من وجود ملف محمل من النظام المختلط
+        if video_info.get('source') == 'hybrid_api_ytdlp' and video_info.get('file_path'):
+            hybrid_file_path = video_info.get('file_path')
+            if os.path.exists(hybrid_file_path):
+                LOGGER(__name__).info(f"✅ استخدام ملف محمل من النظام المختلط: {hybrid_file_path}")
+                try:
+                    # إرسال الملف مباشرة
+                    await status_msg.edit("📤 **جاري إرسال الملف المحمل...**")
+                    
+                    # الحصول على معلومات الملف
+                    file_size = os.path.getsize(hybrid_file_path)
+                    duration = get_audio_duration(hybrid_file_path) if os.path.exists(hybrid_file_path) else 0
+                    
+                    # إرسال الملف
+                    sent_message = await message.reply_audio(
+                        audio=hybrid_file_path,
+                        caption=f"🎵 **{video_info.get('title', 'أغنية')}**\n👤 **{video_info.get('channel', 'قناة')}**",
+                        duration=duration,
+                        title=video_info.get('title', 'أغنية'),
+                        performer=video_info.get('channel', 'قناة')
+                    )
+                    
+                    if sent_message:
+                        # حفظ في قاعدة البيانات
+                        await save_to_database_enhanced(
+                            video_info.get('title', 'أغنية'),
+                            video_info.get('id', ''),
+                            sent_message.audio.file_id,
+                            duration,
+                            video_info.get('channel', 'قناة'),
+                            video_info.get('thumbnail', ''),
+                            hybrid_file_path
+                        )
+                        
+                        await status_msg.delete()
+                        LOGGER(__name__).info("✅ تم إرسال الملف من النظام المختلط بنجاح")
+                        return True
+                        
+                except Exception as e:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في إرسال الملف المختلط: {e}")
+                    # المتابعة للتحميل التقليدي
         
         # التحقق من صحة المدخلات
         if not video_info or not isinstance(video_info, dict):

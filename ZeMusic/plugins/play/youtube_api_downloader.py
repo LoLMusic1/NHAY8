@@ -1,6 +1,7 @@
 """
-نظام تحميل مختلط يستخدم YouTube API مع yt-dlp
-يدمج البحث بالمفاتيح والتحميل بالكوكيز
+نظام تحميل مختلط محسن - YouTube API + yt-dlp
+يستخدم YouTube API للبحث والحصول على معلومات الفيديو
+ثم يستخدم yt-dlp مع الكوكيز للتحميل الفعلي
 """
 
 import asyncio
@@ -9,8 +10,9 @@ import yt_dlp
 import os
 import time
 import random
+import json
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 
 # استيراد الإعدادات
 try:
@@ -21,22 +23,34 @@ except ImportError:
     YT_API_KEYS = []
     COOKIES_FILES = []
 
-from ZeMusic import LOGGER
+from ZeMusic import LOGGER as _LOGGER
+
+# إنشاء logger محلي للوحدة
+LOGGER = _LOGGER(__name__)
 
 class YouTubeAPIManager:
-    """مدير مفاتيح YouTube API مع تدوير ذكي"""
+    """مدير مفاتيح YouTube API مع تدوير ذكي وإحصائيات تفصيلية"""
     
     def __init__(self):
         self.api_keys = YT_API_KEYS.copy() if YT_API_KEYS else []
         self.current_key_index = 0
         self.key_usage_count = {}
         self.key_errors = {}
+        self.key_success_count = {}
         self.last_key_switch = 0
+        self.session = None
         
-        # إحصائيات الاستخدام
+        # إحصائيات مفصلة
         for key in self.api_keys:
             self.key_usage_count[key] = 0
             self.key_errors[key] = 0
+            self.key_success_count[key] = 0
+    
+    async def get_session(self):
+        """الحصول على جلسة aiohttp"""
+        if not self.session:
+            self.session = aiohttp.ClientSession()
+        return self.session
     
     def get_current_key(self):
         """الحصول على المفتاح الحالي"""
@@ -50,227 +64,246 @@ class YouTubeAPIManager:
             return None
             
         current_key = self.get_current_key()
-        
         if error_occurred and current_key:
             self.key_errors[current_key] += 1
-            LOGGER(__name__).warning(f"⚠️ خطأ في مفتاح API: {current_key[:10]}... (أخطاء: {self.key_errors[current_key]})")
+            LOGGER.warning(f"🔑 خطأ في المفتاح {current_key[-10:]}... (أخطاء: {self.key_errors[current_key]})")
         
-        # الانتقال للمفتاح التالي
+        # التبديل للمفتاح التالي
         self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
         self.last_key_switch = time.time()
         
         new_key = self.get_current_key()
-        LOGGER(__name__).info(f"🔄 تم التبديل لمفتاح API جديد: {new_key[:10]}...")
+        LOGGER.info(f"🔄 تم التبديل للمفتاح {new_key[-10:]}... (استخدام: {self.key_usage_count.get(new_key, 0)})")
         return new_key
     
-    def mark_key_used(self, key):
-        """تسجيل استخدام المفتاح"""
-        if key in self.key_usage_count:
-            self.key_usage_count[key] += 1
+    def record_success(self):
+        """تسجيل نجاح استخدام المفتاح"""
+        current_key = self.get_current_key()
+        if current_key:
+            self.key_success_count[current_key] += 1
+    
+    def get_stats(self):
+        """الحصول على إحصائيات المفاتيح"""
+        stats = {}
+        for key in self.api_keys:
+            key_short = key[-10:] + "..."
+            stats[key_short] = {
+                'usage': self.key_usage_count.get(key, 0),
+                'success': self.key_success_count.get(key, 0),
+                'errors': self.key_errors.get(key, 0),
+                'success_rate': (self.key_success_count.get(key, 0) / max(1, self.key_usage_count.get(key, 1))) * 100
+            }
+        return stats
+    
+    async def close(self):
+        """إغلاق الجلسة"""
+        if self.session:
+            await self.session.close()
 
 class HybridYouTubeDownloader:
-    """محمل مختلط يستخدم YouTube API + yt-dlp"""
+    """نظام تحميل مختلط محسن - YouTube API + yt-dlp"""
     
     def __init__(self):
         self.api_manager = YouTubeAPIManager()
-        self.session = None
         self.cookies_files = COOKIES_FILES.copy() if COOKIES_FILES else []
+        self.current_cookie_index = 0
+        self.download_stats = {
+            'total_searches': 0,
+            'api_searches': 0,
+            'successful_downloads': 0,
+            'failed_downloads': 0
+        }
     
-    async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.close()
-    
-    async def search_with_api(self, query: str, max_results: int = 5) -> Optional[Dict]:
-        """البحث باستخدام YouTube API"""
+    async def search_youtube_api(self, query: str, max_results: int = 5) -> Optional[List[Dict]]:
+        """البحث في YouTube باستخدام API مع تدوير المفاتيح"""
         api_key = self.api_manager.get_current_key()
         if not api_key:
-            LOGGER(__name__).warning("⚠️ لا توجد مفاتيح YouTube API متاحة")
+            LOGGER.warning("⚠️ لا توجد مفاتيح YouTube API متاحة")
             return None
         
-        url = "https://www.googleapis.com/youtube/v3/search"
-        params = {
-            'part': 'snippet',
-            'q': query,
-            'type': 'video',
-            'maxResults': max_results,
-            'key': api_key
-        }
+        self.api_manager.key_usage_count[api_key] += 1
+        self.download_stats['total_searches'] += 1
         
         try:
-            LOGGER(__name__).info(f"🔍 البحث بـ YouTube API: {query}")
-            async with self.session.get(url, params=params, timeout=10) as response:
+            session = await self.api_manager.get_session()
+            url = "https://www.googleapis.com/youtube/v3/search"
+            params = {
+                'part': 'snippet',
+                'q': query,
+                'type': 'video',
+                'maxResults': max_results,
+                'key': api_key,
+                'order': 'relevance',
+                'videoDefinition': 'any',
+                'videoDuration': 'any'
+            }
+            
+            LOGGER.info(f"🔍 البحث في YouTube API: {query}")
+            async with session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    self.api_manager.mark_key_used(api_key)
-                    LOGGER(__name__).info(f"✅ API نجح: {len(data.get('items', []))} نتيجة")
-                    return data
+                    results = []
+                    
+                    for item in data.get('items', []):
+                        video_info = {
+                            'id': item['id']['videoId'],
+                            'title': item['snippet']['title'],
+                            'url': f"https://www.youtube.com/watch?v={item['id']['videoId']}",
+                            'thumbnail': item['snippet']['thumbnails'].get('high', {}).get('url', ''),
+                            'description': item['snippet']['description'][:200],
+                            'channel': item['snippet']['channelTitle']
+                        }
+                        results.append(video_info)
+                    
+                    self.api_manager.record_success()
+                    self.download_stats['api_searches'] += 1
+                    LOGGER.info(f"✅ YouTube API نجح: وجد {len(results)} نتيجة")
+                    return results
+                    
                 elif response.status == 403:
-                    # المفتاح محظور أو منتهي الصلاحية
-                    LOGGER(__name__).warning(f"❌ مفتاح API محظور: {response.status}")
+                    LOGGER.warning(f"🔑 مفتاح API محظور مؤقتاً: {response.status}")
                     self.api_manager.rotate_key(error_occurred=True)
-                    # إعادة المحاولة مع مفتاح جديد
-                    if len(self.api_manager.api_keys) > 1:
-                        return await self.search_with_api(query, max_results)
                     return None
                 else:
-                    LOGGER(__name__).error(f"❌ خطأ في YouTube API: {response.status}")
+                    LOGGER.error(f"❌ خطأ في YouTube API: {response.status}")
                     return None
                     
-        except asyncio.TimeoutError:
-            LOGGER(__name__).warning("⏰ انتهت مهلة YouTube API")
-            return None
         except Exception as e:
-            LOGGER(__name__).error(f"❌ خطأ في الاتصال بـ YouTube API: {e}")
+            LOGGER.error(f"❌ خطأ في البحث بـ YouTube API: {e}")
             self.api_manager.rotate_key(error_occurred=True)
             return None
     
-    def get_best_cookie_file(self) -> Optional[str]:
-        """الحصول على أفضل ملف كوكيز متاح"""
+    def get_next_cookie_file(self) -> Optional[str]:
+        """الحصول على ملف الكوكيز التالي"""
         if not self.cookies_files:
             return None
+            
+        cookie_file = self.cookies_files[self.current_cookie_index]
+        self.current_cookie_index = (self.current_cookie_index + 1) % len(self.cookies_files)
         
-        # فلترة الملفات الموجودة
-        available_cookies = [f for f in self.cookies_files if os.path.exists(f)]
-        if not available_cookies:
-            return None
-        
-        # اختيار عشوائي لتوزيع الحمولة
-        return random.choice(available_cookies)
+        # التحقق من وجود الملف
+        if os.path.exists(cookie_file):
+            return cookie_file
+        return None
     
-    async def download_with_ytdlp(self, video_id: str, title: str = "") -> Optional[Dict]:
-        """التحميل باستخدام yt-dlp مع الكوكيز"""
-        downloads_dir = Path("downloads")
-        downloads_dir.mkdir(exist_ok=True)
-        
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-        cookie_file = self.get_best_cookie_file()
+    async def download_with_ytdlp(self, video_url: str, output_path: str) -> Tuple[bool, Optional[str]]:
+        """تحميل الفيديو باستخدام yt-dlp مع الكوكيز"""
+        cookie_file = self.get_next_cookie_file()
         
         # إعدادات yt-dlp محسنة
         ydl_opts = {
-            'format': 'bestaudio[filesize<25M]/best[filesize<25M]',
-            'outtmpl': str(downloads_dir / f'{video_id}_hybrid.%(ext)s'),
+            'format': 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio',
+            'outtmpl': output_path,
             'quiet': True,
             'no_warnings': True,
-            'noplaylist': True,
-            'socket_timeout': 20,
-            'retries': 2,
-            'concurrent_fragment_downloads': 2,
-            'http_chunk_size': 4194304,  # 4MB chunks
-            'prefer_ffmpeg': True,
+            'extractaudio': True,
+            'audioformat': 'mp3',
+            'audioquality': '192',
+            'embed_metadata': True,
+            'writeinfojson': False,
+            'writethumbnail': True,
+            'socket_timeout': 30,
+            'retries': 3,
         }
         
+        # إضافة الكوكيز إذا كانت متاحة
         if cookie_file:
             ydl_opts['cookiefile'] = cookie_file
-            LOGGER(__name__).info(f"🍪 استخدام كوكيز: {os.path.basename(cookie_file)}")
+            LOGGER.info(f"🍪 استخدام ملف الكوكيز: {cookie_file}")
         
         try:
-            LOGGER(__name__).info(f"⬇️ بدء التحميل المختلط: {title[:50]}...")
-            
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_url, download=True)
+                LOGGER.info(f"⬇️ بدء التحميل من: {video_url}")
+                await asyncio.get_event_loop().run_in_executor(None, ydl.download, [video_url])
                 
-                if info:
-                    # البحث عن الملف المحمل
-                    for file_path in downloads_dir.glob(f"{video_id}_hybrid.*"):
-                        if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4', '.opus']:
-                            LOGGER(__name__).info(f"✅ تم التحميل المختلط بنجاح")
-                            return {
-                                'success': True,
-                                'file_path': str(file_path),
-                                'title': info.get('title', title),
-                                'duration': info.get('duration', 0),
-                                'uploader': info.get('uploader', 'Unknown'),
-                                'video_id': video_id,
-                                'method': 'hybrid_api_ytdlp'
-                            }
-            
-            LOGGER(__name__).warning("⚠️ لم يتم العثور على ملف محمل")
-            return None
-            
+                # التحقق من نجاح التحميل
+                if os.path.exists(output_path):
+                    self.download_stats['successful_downloads'] += 1
+                    LOGGER.info(f"✅ تم التحميل بنجاح: {output_path}")
+                    return True, output_path
+                else:
+                    LOGGER.warning(f"⚠️ الملف غير موجود بعد التحميل: {output_path}")
+                    return False, None
+                    
         except Exception as e:
-            LOGGER(__name__).error(f"❌ خطأ في التحميل المختلط: {e}")
-            return None
+            self.download_stats['failed_downloads'] += 1
+            LOGGER.error(f"❌ فشل التحميل: {e}")
+            return False, None
     
-    async def hybrid_search_and_download(self, query: str) -> Optional[Dict]:
-        """البحث والتحميل المختلط (API + yt-dlp)"""
+    async def hybrid_search_and_download(self, query: str, output_dir: str = "downloads") -> Tuple[bool, Optional[Dict]]:
+        """البحث والتحميل المختلط - API للبحث، yt-dlp للتحميل"""
         try:
-            # الخطوة 1: البحث باستخدام YouTube API
-            search_results = await self.search_with_api(query, max_results=3)
+            # إنشاء مجلد التحميل
+            os.makedirs(output_dir, exist_ok=True)
             
-            if search_results and 'items' in search_results:
-                # جرب تحميل أول نتيجة
-                for item in search_results['items']:
-                    video_id = item['id']['videoId']
-                    title = item['snippet']['title']
-                    channel = item['snippet']['channelTitle']
-                    
-                    LOGGER(__name__).info(f"🎯 محاولة تحميل: {title[:50]}... | {channel}")
-                    
-                    # الخطوة 2: التحميل باستخدام yt-dlp
-                    download_result = await self.download_with_ytdlp(video_id, title)
-                    
-                    if download_result and download_result['success']:
-                        # إضافة معلومات من API
-                        download_result.update({
-                            'channel': channel,
-                            'description': item['snippet'].get('description', ''),
-                            'published_at': item['snippet'].get('publishedAt', ''),
-                            'api_enhanced': True
-                        })
-                        return download_result
-                    else:
-                        LOGGER(__name__).warning(f"⚠️ فشل تحميل: {title[:30]}...")
-                        continue
+            # البحث باستخدام YouTube API
+            search_results = await self.search_youtube_api(query, max_results=3)
+            if not search_results:
+                LOGGER.warning(f"❌ فشل البحث في YouTube API: {query}")
+                return False, None
             
-            LOGGER(__name__).warning("❌ فشل البحث والتحميل المختلط")
-            return None
+            # محاولة تحميل أول نتيجة
+            for result in search_results:
+                video_id = result['id']
+                video_title = result['title']
+                video_url = result['url']
+                
+                # تنظيف اسم الملف
+                safe_title = "".join(c for c in video_title if c.isalnum() or c in (' ', '-', '_')).rstrip()[:50]
+                output_path = os.path.join(output_dir, f"{video_id}.mp3")
+                
+                LOGGER.info(f"🎵 محاولة تحميل: {safe_title}")
+                
+                # التحميل باستخدام yt-dlp
+                success, file_path = await self.download_with_ytdlp(video_url, output_path)
+                
+                if success and file_path:
+                    # إرجاع معلومات النجاح
+                    return True, {
+                        'title': video_title,
+                        'video_id': video_id,
+                        'url': video_url,
+                        'file_path': file_path,
+                        'thumbnail': result.get('thumbnail', ''),
+                        'channel': result.get('channel', ''),
+                        'source': 'hybrid_api_ytdlp'
+                    }
+                else:
+                    LOGGER.warning(f"⚠️ فشل تحميل: {safe_title}")
+                    continue
+            
+            LOGGER.error(f"❌ فشل تحميل جميع النتائج لـ: {query}")
+            return False, None
             
         except Exception as e:
-            LOGGER(__name__).error(f"❌ خطأ في العملية المختلطة: {e}")
-            return None
+            LOGGER.error(f"❌ خطأ في النظام المختلط: {e}")
+            return False, None
     
-    def get_api_stats(self) -> Dict:
-        """إحصائيات استخدام المفاتيح"""
-        if not self.api_manager.api_keys:
-            return {'status': 'no_keys'}
-        
-        stats = {
-            'total_keys': len(self.api_manager.api_keys),
-            'current_key': self.api_manager.get_current_key()[:10] + "..." if self.api_manager.get_current_key() else "None",
-            'usage_stats': {},
-            'error_stats': {},
-            'cookies_available': len(self.cookies_files)
+    def get_download_stats(self) -> Dict:
+        """الحصول على إحصائيات التحميل"""
+        api_stats = self.api_manager.get_stats()
+        return {
+            'download_stats': self.download_stats,
+            'api_keys_stats': api_stats,
+            'cookies_count': len(self.cookies_files),
+            'current_cookie': self.current_cookie_index
         }
-        
-        for key in self.api_manager.api_keys:
-            key_short = key[:10] + "..."
-            stats['usage_stats'][key_short] = self.api_manager.key_usage_count[key]
-            stats['error_stats'][key_short] = self.api_manager.key_errors[key]
-        
-        return stats
+    
+    async def close(self):
+        """إغلاق الموارد"""
+        await self.api_manager.close()
 
 # إنشاء مثيل عام للاستخدام
-hybrid_downloader = None
+hybrid_downloader = HybridYouTubeDownloader()
 
-async def get_hybrid_downloader():
-    """الحصول على محمل مختلط"""
-    global hybrid_downloader
-    if hybrid_downloader is None:
-        hybrid_downloader = HybridYouTubeDownloader()
-        await hybrid_downloader.__aenter__()
-    return hybrid_downloader
+async def search_youtube_hybrid(query: str) -> Optional[List[Dict]]:
+    """البحث المختلط في YouTube"""
+    return await hybrid_downloader.search_youtube_api(query)
 
-async def search_and_download_hybrid(query: str) -> Optional[Dict]:
-    """وظيفة سهلة للبحث والتحميل المختلط"""
-    downloader = await get_hybrid_downloader()
-    return await downloader.hybrid_search_and_download(query)
+async def download_youtube_hybrid(query: str, output_dir: str = "downloads") -> Tuple[bool, Optional[Dict]]:
+    """تحميل مختلط من YouTube"""
+    return await hybrid_downloader.hybrid_search_and_download(query, output_dir)
 
-async def get_downloader_stats() -> Dict:
-    """الحصول على إحصائيات المحمل"""
-    if hybrid_downloader:
-        return hybrid_downloader.get_api_stats()
-    return {'status': 'not_initialized'}
+async def get_hybrid_stats() -> Dict:
+    """الحصول على إحصائيات النظام المختلط"""
+    return hybrid_downloader.get_download_stats()
