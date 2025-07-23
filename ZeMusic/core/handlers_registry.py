@@ -29,6 +29,18 @@ async def register_all_handlers(bot_client):
         LOGGER(__name__).error(f"❌ خطأ في تسجيل معالج البحث: {e}")
     
     try:
+        # تسجيل معالج أمر مزامنة القناة للمطور
+        from ZeMusic.plugins.play.download import force_channel_sync_handler
+        bot_client.add_event_handler(
+            force_channel_sync_handler,
+            events.NewMessage(pattern=r'^/sync_cache$')
+        )
+        LOGGER(__name__).info("✅ تم تسجيل معالج مزامنة القناة")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في تسجيل معالج المزامنة: {e}")
+    
+    try:
         # تسجيل معالج cookies callbacks
         bot_client.add_event_handler(handle_cookies_callbacks, events.CallbackQuery)
         LOGGER(__name__).info("✅ تم تسجيل معالج cookies callbacks")
