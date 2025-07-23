@@ -3900,21 +3900,27 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                 # إرسال الملف
                 await status_msg.edit("📤 **جاري الإرسال...**")
                 
-                audio_message = await message.reply(
-                    file=downloaded_file,
-                    message=f"🎵 **{title}**\n"
-                           f"👤 **القناة:** {channel}\n"
-                           f"⏱️ **المدة:** {duration // 60}:{duration % 60:02d}\n"
-                           f"🌐 **المصدر:** YouTube\n"
-                           f"🤖 **بواسطة:** ZeMusic Bot",
-                    attributes=[
-                        DocumentAttributeAudio(
-                            duration=duration,
-                            title=title,
-                            performer=channel
-                        )
-                    ]
-                )
+                try:
+                    LOGGER(__name__).info(f"📤 محاولة إرسال الملف: {downloaded_file}")
+                    audio_message = await message.reply(
+                        file=downloaded_file,
+                        message=f"🎵 **{title}**\n"
+                               f"👤 **القناة:** {channel}\n"
+                               f"⏱️ **المدة:** {duration // 60}:{duration % 60:02d}\n"
+                               f"🌐 **المصدر:** YouTube\n"
+                               f"🤖 **بواسطة:** ZeMusic Bot",
+                        attributes=[
+                            DocumentAttributeAudio(
+                                duration=duration,
+                                title=title,
+                                performer=channel
+                            )
+                        ]
+                    )
+                    LOGGER(__name__).info(f"✅ تم إرسال الملف بنجاح: {audio_message.id}")
+                except Exception as send_error:
+                    LOGGER(__name__).error(f"❌ خطأ في إرسال الملف: {send_error}")
+                    raise send_error
                 
                 # حفظ في الكاش للاستخدام المستقبلي
                 await save_to_cache(video_id, title, channel, duration, downloaded_file, audio_message)
