@@ -42,12 +42,11 @@ except ImportError:
     yt_dlp = None
     
 try:
-    from youtubesearchpython import VideosSearch as YoutubeSearch
+    from youtube_search import YoutubeSearch
+    YOUTUBE_SEARCH_AVAILABLE = True
 except ImportError:
-    try:
-        from youtube_search import YoutubeSearch
-    except ImportError:
-        YoutubeSearch = None
+    YoutubeSearch = None
+    YOUTUBE_SEARCH_AVAILABLE = False
 
 # استيراد Telethon
 from telethon import events
@@ -67,6 +66,19 @@ MAX_WORKERS = min(200, (psutil.cpu_count() * 10))  # ديناميكي حسب ا�
 
 # قناة التخزين الذكي (يوزر أو ID)
 SMART_CACHE_CHANNEL = config.CACHE_CHANNEL_ID
+DATABASE_PATH = "zemusic.db"
+
+def normalize_arabic_text(text: str) -> str:
+    """تطبيع النص العربي للبحث المحسن"""
+    if not text:
+        return ""
+    
+    # إزالة التشكيل والرموز الخاصة
+    import re
+    text = re.sub(r'[\u064B-\u065F\u0670\u0640]', '', text)  # إزالة التشكيل
+    text = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', text)  # الاحتفاظ بالعربية والإنجليزية فقط
+    text = re.sub(r'\s+', ' ', text).strip()  # إزالة المسافات الزائدة
+    return text
 
 # إعدادات العرض
 channel = getattr(config, 'STORE_LINK', '')
@@ -323,6 +335,48 @@ class HyperSpeedDownloader:
         
         # تسجيل بدء التشغيل
         LOGGER(__name__).info("🚀 بدء تشغيل نظام التحميل المحسن")
+    
+    async def search_in_smart_cache(self, query: str) -> Optional[Dict]:
+        """البحث في التخزين الذكي مع آلية متقدمة"""
+        try:
+            # البحث في قاعدة البيانات أولاً
+            normalized_query = normalize_arabic_text(query)
+            
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # البحث بالعنوان والفنان
+            cursor.execute("""
+                SELECT video_id, title, artist, duration, file_path, thumb, message_id, keywords
+                FROM cached_audio 
+                WHERE LOWER(title) LIKE ? OR LOWER(artist) LIKE ? OR LOWER(keywords) LIKE ?
+                ORDER BY created_at DESC LIMIT 5
+            """, (f'%{normalized_query.lower()}%', f'%{normalized_query.lower()}%', f'%{normalized_query.lower()}%'))
+            
+            results = cursor.fetchall()
+            conn.close()
+            
+            if results:
+                result = results[0]  # أخذ أول نتيجة
+                self.cache_hits += 1
+                return {
+                    "video_id": result[0],
+                    "title": result[1],
+                    "artist": result[2],
+                    "duration": result[3],
+                    "file_path": result[4],
+                    "thumb": result[5],
+                    "message_id": result[6],
+                    "source": "smart_cache"
+                }
+            
+            self.cache_misses += 1
+            return None
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في البحث السريع: {e}")
+            self.cache_misses += 1
+            return None
     
     async def health_check(self):
         """فحص صحة النظام بشكل دوري"""
@@ -584,33 +638,23 @@ class HyperSpeedDownloader:
         start_time = time.time()
             
         try:
-            # استخدام youtubesearchpython مع معالجة محسنة
-            search = YoutubeSearch(query, limit=1)
+            # التحقق من توفر مكتبة البحث
+            if not YOUTUBE_SEARCH_AVAILABLE or not YoutubeSearch:
+                return None
             
-            # التحقق من نوع المكتبة المستخدمة
-            if hasattr(search, 'result'):
-                # youtubesearchpython
-                results = search.result()
-                if not results or not results.get('result'):
-                    return None
-                result = results['result'][0]
-                video_id = result.get('id', '')
-                title = result.get('title', 'Unknown Title')
-                channel = result.get('channel', {})
-                artist = channel.get('name', 'Unknown Artist') if isinstance(channel, dict) else str(channel)
-                duration_text = result.get('duration', '0:00')
-                thumb = result.get('thumbnails', [{}])[0].get('url') if result.get('thumbnails') else None
-            else:
-                # youtube_search (fallback)
-                results = search.to_dict() if hasattr(search, 'to_dict') else []
-                if not results:
-                    return None
-                result = results[0]
-                video_id = result.get('id', '') or result.get('link', '').split('=')[-1] if result.get('link') else ''
-                title = result.get('title', 'Unknown Title')
-                artist = result.get('channel', 'Unknown Artist')
-                duration_text = result.get('duration', '0:00')
-                thumb = result.get('thumbnails', [None])[0] if result.get('thumbnails') else None
+            # استخدام youtube_search
+            search = YoutubeSearch(query, max_results=1)
+            results = search.to_dict()
+            
+            if not results:
+                return None
+                
+            result = results[0]
+            video_id = result.get('id', '') or result.get('link', '').split('=')[-1] if result.get('link') else ''
+            title = result.get('title', 'Unknown Title')
+            artist = result.get('channel', 'Unknown Artist')
+            duration_text = result.get('duration', '0:00')
+            thumb = result.get('thumbnails', [None])[0] if result.get('thumbnails') else None
             
             # معالجة المدة
             duration = 0
