@@ -1943,7 +1943,7 @@ async def send_cached_from_database(event, status_msg, db_result: Dict, bot_clie
         
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في إرسال الملف من قاعدة البيانات: {e}")
-        await status_msg.edit("❌ **خطأ في إرسال الملف من الكاش - جاري التحميل من يوتيوب...**")
+        # إزالة الرسالة المزعجة - الانتقال مباشرة للتحميل
         return False
 
 async def send_cached_from_telegram(event, status_msg, cache_result: Dict, bot_client):
@@ -1998,7 +1998,7 @@ async def send_cached_from_telegram(event, status_msg, cache_result: Dict, bot_c
         
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في إرسال الملف من التخزين الذكي: {e}")
-        await status_msg.edit("❌ **خطأ في إرسال الملف من التخزين - جاري التحميل من يوتيوب...**")
+        # إزالة الرسالة المزعجة - الانتقال مباشرة للتحميل
         return False
 
 async def save_to_database_cache(file_id: str, file_unique_id: str, message_id: int, result: Dict, query: str) -> bool:
@@ -3192,12 +3192,12 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
                     else:
                         LOGGER(__name__).warning("⚠️ فشل الإرسال من التخزين الذكي - سيتم التحميل من يوتيوب")
             else:
-                # لم يتم العثور في الكاش - إظهار رسالة واضحة
-                await status_msg.edit("❌ **لم يتم العثور في الكاش**\n\n🔍 **جاري البحث والتحميل من يوتيوب...**")
+                # لم يتم العثور في الكاش - الانتقال مباشرة للتحميل بدون إزعاج
+                pass
                 
         except Exception as e:
             LOGGER(__name__).warning(f"⚠️ خطأ في البحث المتوازي: {e}")
-            await status_msg.edit("⚠️ **خطأ في البحث بالكاش**\n\n🔍 **جاري البحث والتحميل من يوتيوب...**")
+            # إزالة الرسالة المزعجة - الانتقال مباشرة للتحميل
             
         # البديل: استخدام النظام الذكي المطور
         try:
