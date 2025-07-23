@@ -1234,6 +1234,171 @@ def get_cookies_statistics():
         LOGGER(__name__).error(f"❌ خطأ في إحصائيات الكوكيز: {e}")
         return {}
 
+# === نظام البحث في قاعدة البيانات الذكية ===
+
+async def search_in_database_cache(query: str) -> Optional[Dict]:
+    """البحث في قاعدة البيانات الذكية (الكاش)"""
+    try:
+        # تنظيف النص للبحث
+        normalized_query = normalize_search_text(query)
+        search_keywords = normalized_query.split()
+        
+        LOGGER(__name__).info(f"🗄️ البحث في قاعدة البيانات: {normalized_query}")
+        
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # البحث باستخدام LIKE لكل كلمة مفتاحية
+        search_conditions = []
+        search_params = []
+        
+        for keyword in search_keywords:
+            search_conditions.append("(title_normalized LIKE ? OR artist_normalized LIKE ? OR keywords_vector LIKE ?)")
+            search_params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+        
+        # استعلام البحث مع ترتيب حسب الشعبية وآخر وصول
+        query_sql = f"""
+        SELECT message_id, file_id, file_unique_id, original_title, original_artist, 
+               duration, file_size, access_count, last_accessed, popularity_rank,
+               title_normalized, artist_normalized
+        FROM channel_index 
+        WHERE ({' OR '.join(search_conditions)})
+        ORDER BY popularity_rank DESC, access_count DESC, last_accessed DESC
+        LIMIT 5
+        """
+        
+        cursor.execute(query_sql, search_params)
+        results = cursor.fetchall()
+        
+        if results:
+            # اختيار أفضل نتيجة
+            best_result = results[0]
+            
+            # تحديث إحصائيات الوصول
+            cursor.execute("""
+                UPDATE channel_index 
+                SET access_count = access_count + 1, 
+                    last_accessed = CURRENT_TIMESTAMP,
+                    popularity_rank = popularity_rank + 0.1
+                WHERE message_id = ?
+            """, (best_result[0],))
+            
+            conn.commit()
+            conn.close()
+            
+            # حساب نسبة التطابق
+            title_words = set(best_result[10].split())  # title_normalized
+            artist_words = set(best_result[11].split())  # artist_normalized
+            query_words = set(search_keywords)
+            
+            all_content_words = title_words | artist_words
+            match_ratio = len(query_words & all_content_words) / len(query_words) if query_words else 0
+            
+            LOGGER(__name__).info(f"✅ تم العثور على مطابقة في قاعدة البيانات: {match_ratio:.1%}")
+            
+            return {
+                'success': True,
+                'cached': True,
+                'from_database': True,
+                'message_id': best_result[0],
+                'file_id': best_result[1],
+                'file_unique_id': best_result[2],
+                'title': best_result[3],  # original_title
+                'uploader': best_result[4],  # original_artist
+                'duration': best_result[5],
+                'file_size': best_result[6],
+                'access_count': best_result[7] + 1,
+                'match_ratio': match_ratio
+            }
+        
+        conn.close()
+        LOGGER(__name__).info("❌ لم يتم العثور على مطابقة في قاعدة البيانات")
+        return None
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في البحث بقاعدة البيانات: {e}")
+        return None
+
+async def send_cached_from_database(event, status_msg, db_result: Dict, bot_client):
+    """إرسال الملف من قاعدة البيانات باستخدام file_id"""
+    try:
+        await status_msg.edit("📤 **إرسال من الكاش...**")
+        
+        # تحضير التسمية التوضيحية
+        duration = db_result.get('duration', 0)
+        duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
+        
+        user_caption = f"""🎵 **{db_result.get('title', 'مقطع صوتي')[:60]}**
+🎤 **{db_result.get('uploader', 'غير معروف')[:40]}**
+⏱️ **{duration_str}** | ⚡ **من الكاش السريع**
+
+💾 **تطابق:** {db_result.get('match_ratio', 0):.1%} | 📊 **مرات الوصول:** {db_result.get('access_count', 1)}
+💡 **مُحمّل بواسطة:** ZeMusic Bot"""
+        
+        # إرسال الملف باستخدام file_id
+        await event.respond(
+            user_caption,
+            file=db_result['file_id'],
+            attributes=[
+                DocumentAttributeAudio(
+                    duration=duration,
+                    title=db_result.get('title', 'Unknown')[:60],
+                    performer=db_result.get('uploader', 'Unknown')[:40]
+                )
+            ]
+        )
+        
+        await status_msg.delete()
+        LOGGER(__name__).info(f"✅ تم إرسال الملف من قاعدة البيانات (مرات الوصول: {db_result.get('access_count', 1)})")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في إرسال الملف من قاعدة البيانات: {e}")
+        await status_msg.edit("❌ **خطأ في إرسال الملف من الكاش**")
+
+async def save_to_database_cache(file_id: str, file_unique_id: str, message_id: int, result: Dict, query: str) -> bool:
+    """حفظ معلومات الملف في قاعدة البيانات الذكية"""
+    try:
+        # تنظيف وتطبيع البيانات
+        title = result.get('title', 'Unknown')
+        artist = result.get('uploader', 'Unknown')
+        duration = result.get('duration', 0)
+        file_size = result.get('file_size', 0)
+        
+        title_normalized = normalize_search_text(title)
+        artist_normalized = normalize_search_text(artist)
+        
+        # إنشاء vector الكلمات المفتاحية
+        keywords_vector = f"{title_normalized} {artist_normalized} {normalize_search_text(query)}"
+        
+        # إنشاء هاش البحث
+        search_hash = hashlib.md5((title_normalized + artist_normalized).encode()).hexdigest()
+        
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # إدخال البيانات (أو تحديثها إذا كانت موجودة)
+        cursor.execute("""
+            INSERT OR REPLACE INTO channel_index 
+            (message_id, file_id, file_unique_id, search_hash, title_normalized, 
+             artist_normalized, keywords_vector, original_title, original_artist, 
+             duration, file_size, access_count, popularity_rank)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1.0)
+        """, (
+            message_id, file_id, file_unique_id, search_hash,
+            title_normalized, artist_normalized, keywords_vector,
+            title, artist, duration, file_size
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        LOGGER(__name__).info(f"✅ تم حفظ الملف في قاعدة البيانات: {title[:30]}")
+        return True
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في حفظ قاعدة البيانات: {e}")
+        return False
+
 # === نظام التخزين الذكي في قناة التيليجرام ===
 
 async def search_in_smart_cache(query: str, bot_client) -> Optional[Dict]:
@@ -1397,7 +1562,7 @@ async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: s
 #تخزين_ذكي #موسيقى #{normalize_search_text(query).replace(' ', '_')}"""
         
         # إرسال الملف مع النص المفصل
-        await bot_client.send_file(
+        sent_message = await bot_client.send_file(
             cache_channel,
             file_path,
             caption=cache_text,
@@ -1410,7 +1575,24 @@ async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: s
             ]
         )
         
-        LOGGER(__name__).info(f"✅ تم حفظ الملف في التخزين الذكي: {os.path.basename(file_path)}")
+        # حفظ معلومات الملف في قاعدة البيانات أيضاً
+        if sent_message and sent_message.file:
+            file_info = {
+                'title': title,
+                'uploader': uploader,
+                'duration': duration,
+                'file_size': sent_message.file.size if sent_message.file.size else 0
+            }
+            
+            await save_to_database_cache(
+                sent_message.file.id,
+                sent_message.file.unique_id,
+                sent_message.id,
+                file_info,
+                query
+            )
+        
+        LOGGER(__name__).info(f"✅ تم حفظ الملف في التخزين الذكي وقاعدة البيانات: {os.path.basename(file_path)}")
         return True
         
     except Exception as e:
@@ -1938,8 +2120,18 @@ async def smart_download_handler(event):
     status_msg = await event.reply("🔍 **جاري البحث في التخزين الذكي...**")
     
     try:
-        # المرحلة 1: البحث في التخزين الذكي أولاً
-        LOGGER(__name__).info(f"🔍 بدء البحث في التخزين الذكي: {query}")
+        # المرحلة 1: البحث في قاعدة البيانات (الكاش) أولاً
+        LOGGER(__name__).info(f"🔍 بدء البحث في قاعدة البيانات الذكية: {query}")
+        db_result = await search_in_database_cache(query)
+        
+        if db_result and db_result.get('success'):
+            LOGGER(__name__).info(f"✅ تم العثور على المقطع في قاعدة البيانات")
+            await status_msg.edit("📤 **تم العثور في الكاش - جاري الإرسال...**")
+            await send_cached_from_database(event, status_msg, db_result, bot_client)
+            return
+        
+        # المرحلة 2: البحث في قناة التخزين الذكي
+        await status_msg.edit("🔍 **لم يوجد في الكاش - جاري البحث في التخزين الذكي...**")
         cache_result = await search_in_smart_cache(query, bot_client)
         
         if cache_result and cache_result.get('success'):
@@ -1947,7 +2139,7 @@ async def smart_download_handler(event):
             await send_cached_audio(event, status_msg, cache_result, bot_client)
             return
         
-        # المرحلة 2: إذا لم يجد في التخزين، ابدأ البحث العادي
+        # المرحلة 3: إذا لم يجد في أي مكان، ابدأ البحث العادي
         await status_msg.edit("🔍 **لم يوجد في التخزين - جاري البحث في يوتيوب...**")
         
     except Exception as e:
