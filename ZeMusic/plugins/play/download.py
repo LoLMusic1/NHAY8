@@ -3165,6 +3165,15 @@ async def process_unlimited_download_enhanced(event, user_id: int, start_time: f
         if task_id in active_downloads:
             active_downloads[task_id]['status'] = 'completed_enhanced'
             del active_downloads[task_id]
+            LOGGER(__name__).info(f"🧹 تم تنظيف العملية المكتملة: {task_id} - العمليات النشطة: {len(active_downloads)}")
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في المعالجة المحسنة: {e}")
+        # تنظيف العملية عند الخطأ أيضاً
+        if task_id in active_downloads:
+            del active_downloads[task_id]
+            LOGGER(__name__).info(f"🧹 تم تنظيف العملية بعد الخطأ: {task_id} - العمليات النشطة: {len(active_downloads)}")
+        await update_performance_stats(False, time.time() - start_time)
 
 async def execute_parallel_download_enhanced(event, user_id: int, start_time: float, task_id: str):
     """تنفيذ التحميل المتوازي الكامل مع التحسينات الذكية"""
@@ -4828,12 +4837,37 @@ async def smart_download_handler(event):
         await update_performance_stats(False, time.time() - start_time)
         return
     
+    # تنظيف دوري للعمليات القديمة (كل 50 طلب)
+    if len(active_downloads) % 50 == 0:
+        asyncio.create_task(cleanup_old_downloads())
+    
     # تنفيذ المعالجة الفورية المتوازية المحسنة - كل طلب يبدأ فوراً
     # إنشاء مهمة منفصلة لكل طلب بدون انتظار مع تحسينات الأداء
     asyncio.create_task(process_unlimited_download_enhanced(event, user_id, start_time))
     
     # تسجيل بدء المهمة فوراً
     LOGGER(__name__).info(f"⚡ تم إنشاء مهمة متوازية محسنة للمستخدم {user_id} - العمليات النشطة: {len(active_downloads) + 1}")
+
+async def cleanup_old_downloads():
+    """تنظيف دوري للعمليات القديمة لمنع تراكمها"""
+    try:
+        current_time = time.time()
+        old_tasks = []
+        
+        for task_id, task_info in active_downloads.items():
+            # إذا مرت أكثر من 10 دقائق على العملية، احذفها
+            if current_time - task_info.get('start_time', current_time) > 600:
+                old_tasks.append(task_id)
+        
+        for task_id in old_tasks:
+            del active_downloads[task_id]
+            LOGGER(__name__).info(f"🧹 تم تنظيف عملية قديمة: {task_id}")
+            
+        if old_tasks:
+            LOGGER(__name__).info(f"🧹 تم تنظيف {len(old_tasks)} عملية قديمة - العمليات النشطة: {len(active_downloads)}")
+            
+    except Exception as e:
+        LOGGER(__name__).warning(f"⚠️ خطأ في تنظيف العمليات القديمة: {e}")
 
 async def verify_cache_channel_periodic(bot_client):
     """فحص دوري لقناة التخزين في الخلفية"""
