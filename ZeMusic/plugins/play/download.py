@@ -1333,4 +1333,142 @@ async def shutdown_system():
 import atexit
 atexit.register(lambda: asyncio.run(shutdown_system()))
 
+# دالة التحميل الذكي للاستخدام الخارجي
+async def download_song_smart(message, query: str):
+    """
+    دالة التحميل الذكي الرئيسية
+    تستخدم من قبل معالجات البحث الخارجية
+    """
+    try:
+        # رسالة الحالة
+        status_msg = await message.reply_text(
+            "⚡ **النظام الذكي**\n\n"
+            "🔍 جاري البحث..."
+        )
+        
+        # تحديد الجودة
+        quality = "medium"
+        
+        # البحث عن الفيديو
+        await status_msg.edit("🔍 **جاري البحث عن الأغنية...**")
+        video_info = None
+        
+        # محاولة البحث بطرق مختلفة
+        try:
+            from youtubesearchpython import VideosSearch
+            search = VideosSearch(query, limit=1)
+            results = search.result()
+            if results.get('result'):
+                video_info = results['result'][0]
+        except:
+            try:
+                from youtube_search import YoutubeSearch
+                search = YoutubeSearch(query, max_results=1)
+                search_results = search.to_dict()
+                if search_results:
+                    video_info = search_results[0]
+            except:
+                pass
+        
+        if not video_info:
+            await status_msg.edit(
+                "❌ **لم يتم العثور على نتائج**\n\n"
+                "💡 **جرب:**\n"
+                "• كلمات مختلفة\n"
+                "• اسم الفنان\n"
+                "• جزء من كلمات الأغنية"
+            )
+            return
+        
+        # استخراج معلومات الفيديو
+        title = video_info.get('title', 'أغنية')
+        video_id = video_info.get('id', '')
+        duration_text = video_info.get('duration', '0:00')
+        
+        # تحويل المدة إلى ثوان
+        duration = 0
+        try:
+            if ':' in duration_text:
+                parts = duration_text.split(':')
+                if len(parts) == 2:
+                    duration = int(parts[0]) * 60 + int(parts[1])
+                elif len(parts) == 3:
+                    duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        except:
+            duration = 0
+        
+        # التحميل
+        await status_msg.edit("📥 **جاري التحميل...**")
+        
+        # استخدام yt-dlp للتحميل
+        if not yt_dlp:
+            await status_msg.edit("❌ **خطأ:** yt-dlp غير متاح")
+            return
+        
+        # إعدادات التحميل
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': f'downloads/{video_id}.%(ext)s',
+            'noplaylist': True,
+        }
+        
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                video_url = f"https://www.youtube.com/watch?v={video_id}"
+                info = ydl.extract_info(video_url, download=True)
+                
+                # البحث عن الملف المحمل
+                downloaded_file = None
+                for ext in ['mp3', 'webm', 'm4a', 'ogg']:
+                    file_path = f'downloads/{video_id}.{ext}'
+                    if os.path.exists(file_path):
+                        downloaded_file = file_path
+                        break
+                
+                if not downloaded_file:
+                    await status_msg.edit("❌ **خطأ:** فشل في تحميل الملف")
+                    return
+                
+                # إرسال الملف
+                await status_msg.edit("📤 **جاري الإرسال...**")
+                
+                await message.reply_audio(
+                    audio=downloaded_file,
+                    caption=f"🎵 **{title}**\n\n"
+                           f"⏱️ المدة: {duration // 60}:{duration % 60:02d}\n"
+                           f"🤖 بواسطة: ZeMusic Bot",
+                    duration=duration,
+                    title=title,
+                    performer="ZeMusic Bot"
+                )
+                
+                # حذف رسالة الحالة
+                try:
+                    await status_msg.delete()
+                except:
+                    pass
+                
+                # حذف الملف المؤقت
+                try:
+                    os.remove(downloaded_file)
+                except:
+                    pass
+                
+                LOGGER(__name__).info(f"✅ تم إرسال الأغنية: {title}")
+                
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في التحميل: {e}")
+            await status_msg.edit("❌ **خطأ في التحميل**")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"خطأ في download_song_smart: {e}")
+        try:
+            await message.reply_text(
+                "❌ **خطأ في البحث**\n\n"
+                "حدث خطأ أثناء معالجة طلبك\n"
+                "يرجى المحاولة مرة أخرى"
+            )
+        except:
+            pass
+
 LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي الخارق المتطور V2")

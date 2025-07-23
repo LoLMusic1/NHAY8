@@ -1793,4 +1793,94 @@ def format_duration(seconds: int) -> str:
         seconds = seconds % 60
         return f"{hours}:{minutes:02d}:{seconds:02d}"
 
+# دالة التحميل المحسن الرئيسية للاستخدام الخارجي
+async def download_enhanced_song(message, query: str):
+    """
+    دالة التحميل المحسن الرئيسية
+    تستخدم من قبل معالجات البحث الخارجية
+    """
+    try:
+        # إنشاء مثيل من نظام التحميل المحسن
+        downloader = HyperDownloader()
+        await downloader.initialize()
+        
+        # رسالة الحالة
+        status_msg = await message.reply_text(
+            "⚡ **النظام الذكي المطور**\n\n"
+            "🔍 بحث متقدم في جميع المصادر..."
+        )
+        
+        # تحديد الجودة بناء على نوع المحادثة
+        if hasattr(message.chat, 'type'):
+            if message.chat.type in ['private']:
+                quality = "high"
+            else:
+                quality = "medium"
+        else:
+            quality = "medium"
+        
+        # تشغيل التحميل المحسن
+        result = await downloader.hyper_download(query, quality)
+        
+        if not result:
+            await status_msg.edit(
+                "❌ **لم يتم العثور على نتائج**\n\n"
+                "💡 **جرب:**\n"
+                "• كلمات مختلفة\n"
+                "• اسم الفنان\n"
+                "• جزء من كلمات الأغنية"
+            )
+            return
+        
+        # إرسال الملف
+        await status_msg.edit("📤 **جاري الإرسال...**")
+        
+        # تحضير معلومات الملف
+        title = result.get('title', 'أغنية')
+        duration = result.get('duration', 0)
+        thumbnail = result.get('thumbnail')
+        file_path = result.get('file_path')
+        
+        if not file_path or not os.path.exists(file_path):
+            await status_msg.edit("❌ **خطأ:** الملف غير موجود")
+            return
+        
+        # إرسال الملف الصوتي
+        await message.reply_audio(
+            audio=file_path,
+            caption=f"🎵 **{title}**\n\n"
+                   f"⏱️ المدة: {duration // 60}:{duration % 60:02d}\n"
+                   f"🤖 بواسطة: ZeMusic Bot",
+            duration=duration,
+            thumb=thumbnail,
+            title=title,
+            performer="ZeMusic Bot"
+        )
+        
+        # حذف رسالة الحالة
+        try:
+            await status_msg.delete()
+        except:
+            pass
+        
+        # تنظيف الملفات المؤقتة
+        try:
+            if thumbnail and os.path.exists(thumbnail):
+                os.remove(thumbnail)
+        except:
+            pass
+            
+        LOGGER(__name__).info(f"✅ تم إرسال الأغنية بنجاح: {title}")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"خطأ في download_enhanced_song: {e}")
+        try:
+            await message.reply_text(
+                "❌ **خطأ في التحميل**\n\n"
+                "حدث خطأ أثناء معالجة طلبك\n"
+                "يرجى المحاولة مرة أخرى"
+            )
+        except:
+            pass
+
 LOGGER(__name__).info("🚀 تم تحميل نظام التحميل الذكي المطور الخارق")
