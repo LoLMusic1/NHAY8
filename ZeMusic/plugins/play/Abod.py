@@ -11,7 +11,6 @@ from ZeMusic.pyrogram_compatibility import Client
 from ZeMusic.pyrogram_compatibility import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 from strings.filters import command
 from ZeMusic import (Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app)
-from ZeMusic import app
 from random import  choice, randint
 
 
@@ -19,7 +18,7 @@ lnk= "https://t.me/" +config.CHANNEL_LINK
 Nb = BOT_NAME + " غنيلي"
 
 @app.on_message(filters.regex(r"^(غنيلي|‹ غنيلي ›|" + re.escape(Nb) + r")$"))
-async def ihd(client: Client, message: Message):
+async def sing_voice_handler(client: Client, message: Message):
     rl = random.randint(2, 90)
     url = f"https://t.me/BE_19/{rl}"
     await client.send_voice(
@@ -41,7 +40,7 @@ async def ihd(client: Client, message: Message):
 
 
 @app.on_message(command(["‹ صور ›","صور"]) & filters.private)
-async def ihd(client: Client, message: Message):
+async def photos_handler(client: Client, message: Message):
     rl = random.randint(2,50)
     url = f"https://t.me/vnnkli/{rl}"
     await client.send_photo(message.chat.id,url,caption="↯ : تم اختيار صوره اليك",
@@ -57,7 +56,7 @@ async def ihd(client: Client, message: Message):
 
 
 @app.on_message(command(["‹ انمي ›", "انمي"]) & filters.private)
-async def ihd(client: Client, message: Message):
+async def anime_handler(client: Client, message: Message):
     rl = random.randint(2,90)
     url = f"https://t.me/LoreBots7/{rl}"
     await client.send_photo(message.chat.id,url,caption="↯ : تم اختيار انمي اليك",
@@ -73,7 +72,7 @@ async def ihd(client: Client, message: Message):
 
 
 @app.on_message(command(["‹ متحركه ›", "متحركه"]) & filters.private)
-async def ihd(client: Client, message: Message):
+async def gif_handler(client: Client, message: Message):
     rl = random.randint(2,90)
     url = f"https://t.me/GifWaTaN/{rl}"
     await client.send_animation(message.chat.id,url,caption="↯ : تم اختيار المتحركه اليك",
@@ -88,7 +87,7 @@ async def ihd(client: Client, message: Message):
     )
 
 @app.on_message(command(["‹ اقتباسات ›", "اقتباسات"]) & filters.private)
-async def ihd(client: Client, message: Message):
+async def quotes_handler(client: Client, message: Message):
     rl = random.randint(2,90)
     url = f"https://t.me/LoreBots9/{rl}"
     await client.send_photo(message.chat.id,url,caption="↯ : تم اختيار اقتباس اليك",
@@ -103,7 +102,7 @@ async def ihd(client: Client, message: Message):
     )
 
 @app.on_message(command(["هيدرات", "‹ هيدرات ›"]) & filters.private)
-async def ihd(client: Client, message: Message):
+async def headers_handler(client: Client, message: Message):
     rl = random.randint(2,90)
     url = f"https://t.me/flflfldld/{rl}"
     await client.send_photo(message.chat.id,url,caption="↯ : تم اختيار هيدرات اليك",
@@ -118,7 +117,7 @@ async def ihd(client: Client, message: Message):
     )
 
 @app.on_message(command(["‹ افتارات شباب ›"]) & filters.private)
-async def ihd(client: Client, message: Message):
+async def boys_avatars_handler(client: Client, message: Message):
     rl = random.randint(2,90)
     url = f"https://t.me/QrQsQ/{rl}"
     await client.send_photo(message.chat.id,url,caption="↯ : تم اختيار صوره اليك",
@@ -133,7 +132,7 @@ async def ihd(client: Client, message: Message):
     )
 
 @app.on_message(command(["‹ افتار بنات ›"]) & filters.private)
-async def ihd(client: Client, message: Message):
+async def girls_avatars_handler(client: Client, message: Message):
     rl = random.randint(2,90)
     url = f"https://t.me/vvyuol/{rl}"
     await client.send_photo(message.chat.id,url,caption="↯ : تم اختيار صوره اليك",
@@ -149,7 +148,7 @@ async def ihd(client: Client, message: Message):
 
 
 @app.on_message(command(["‹ قران ›", "قران"]) & filters.private)
-async def ihd(client: Client, message: Message):
+async def quran_handler(client: Client, message: Message):
     rl = random.randint(1,90)
     url = f"https://t.me/lllIIlIllIlIIlI/{rl}"
     await client.send_voice(message.chat.id,url,caption="↯ : تم اختيار ايـه قرآنيه اليك",

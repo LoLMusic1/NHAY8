@@ -1603,19 +1603,197 @@ class OwnerPanel:
         
         setting_type = data.replace("settings_", "")
         
-        messages = {
-            'assistants': "📱 **إعدادات الحسابات المساعدة**\n\n🚧 هذه الميزة قيد التطوير...",
-            'music': "🎵 **إعدادات الموسيقى**\n\n🚧 هذه الميزة قيد التطوير...",
-            'security': "🛡️ **إعدادات الأمان**\n\n🚧 هذه الميزة قيد التطوير...",
-            'general': "🌐 **إعدادات عامة**\n\n🚧 هذه الميزة قيد التطوير..."
-        }
-        
-        return {
-            'success': True,
-            'message': messages.get(setting_type, "⚠️ إعداد غير معروف"),
-            'keyboard': [[{'text': '🔙 العودة للإعدادات', 'callback_data': 'owner_settings'}]]
-        }
+        if setting_type == 'assistants':
+            return await self._show_assistants_settings_detailed(user_id)
+        elif setting_type == 'music':
+            return await self._show_music_settings(user_id)
+        elif setting_type == 'security':
+            return await self._show_security_settings(user_id)
+        elif setting_type == 'general':
+            return await self._show_general_settings(user_id)
+        else:
+            return {
+                'success': True,
+                'message': f"⚠️ إعداد غير معروف: {setting_type}",
+                'keyboard': [[{'text': '🔙 العودة للإعدادات', 'callback_data': 'owner_settings'}]]
+            }
     
+    async def _show_assistants_settings_detailed(self, user_id: int) -> Dict:
+        """إعدادات متقدمة للحسابات المساعدة"""
+        try:
+            # الحصول على الإعدادات الحالية
+            auto_leave = getattr(config, 'AUTO_LEAVING_ASSISTANT', 'True') == 'True'
+            max_calls_per_assistant = getattr(config, 'MAX_CALLS_PER_ASSISTANT', 3)
+            assistant_timeout = getattr(config, 'ASSISTANT_TIMEOUT', 300)
+            
+            message = f"""📱 **إعدادات الحسابات المساعدة المتقدمة**
+
+🔧 **الإعدادات الحالية:**
+• المغادرة التلقائية: `{'✅ مفعل' if auto_leave else '❌ معطل'}`
+• الحد الأقصى للمكالمات لكل حساب: `{max_calls_per_assistant}`
+• مهلة انتظار الاتصال: `{assistant_timeout} ثانية`
+
+⚙️ **الإعدادات المتاحة:**"""
+
+            keyboard = [
+                [
+                    {'text': f'🚪 المغادرة التلقائية: {"✅" if auto_leave else "❌"}', 'callback_data': 'toggle_auto_leave'},
+                    {'text': '📞 حد المكالمات', 'callback_data': 'set_max_calls'}
+                ],
+                [
+                    {'text': '⏱️ مهلة الاتصال', 'callback_data': 'set_timeout'},
+                    {'text': '🔄 إعادة تعيين الإعدادات', 'callback_data': 'reset_assistant_settings'}
+                ],
+                [
+                    {'text': '🔙 العودة للإعدادات', 'callback_data': 'owner_settings'}
+                ]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إعدادات الحسابات المتقدمة: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض الإعدادات: {str(e)}"
+            }
+    
+    async def _show_music_settings(self, user_id: int) -> Dict:
+        """إعدادات الموسيقى"""
+        try:
+            # الحصول على إعدادات الموسيقى
+            duration_limit = getattr(config, 'DURATION_LIMIT_MIN', 480)
+            playlist_limit = getattr(config, 'PLAYLIST_FETCH_LIMIT', 25)
+            audio_quality = getattr(config, 'AUDIO_QUALITY', 'high')
+            
+            message = f"""🎵 **إعدادات الموسيقى**
+
+🔧 **الإعدادات الحالية:**
+• الحد الأقصى لمدة الأغنية: `{duration_limit} دقيقة`
+• حد جلب قوائم التشغيل: `{playlist_limit} أغنية`
+• جودة الصوت: `{audio_quality}`
+
+⚙️ **تعديل الإعدادات:**"""
+
+            keyboard = [
+                [
+                    {'text': '⏱️ مدة الأغاني', 'callback_data': 'set_duration_limit'},
+                    {'text': '📋 حد القوائم', 'callback_data': 'set_playlist_limit'}
+                ],
+                [
+                    {'text': '🎧 جودة الصوت', 'callback_data': 'set_audio_quality'},
+                    {'text': '🔄 إعادة تعيين', 'callback_data': 'reset_music_settings'}
+                ],
+                [
+                    {'text': '🔙 العودة للإعدادات', 'callback_data': 'owner_settings'}
+                ]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إعدادات الموسيقى: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض إعدادات الموسيقى: {str(e)}"
+            }
+    
+    async def _show_security_settings(self, user_id: int) -> Dict:
+        """إعدادات الأمان"""
+        try:
+            # الحصول على إعدادات الأمان
+            banned_users = len(getattr(config, 'BANNED_USERS_LIST', []))
+            maintenance_mode = getattr(config, 'MAINTENANCE_MODE', False)
+            private_mode = getattr(config, 'PRIVATE_MODE', False)
+            
+            message = f"""🛡️ **إعدادات الأمان**
+
+🔧 **الحالة الحالية:**
+• المستخدمين المحظورين: `{banned_users}`
+• وضع الصيانة: `{'✅ مفعل' if maintenance_mode else '❌ معطل'}`
+• الوضع الخاص: `{'✅ مفعل' if private_mode else '❌ معطل'}`
+
+⚙️ **إدارة الأمان:**"""
+
+            keyboard = [
+                [
+                    {'text': '🚫 إدارة المحظورين', 'callback_data': 'manage_banned_users'},
+                    {'text': f'🔧 وضع الصيانة: {"✅" if maintenance_mode else "❌"}', 'callback_data': 'toggle_maintenance'}
+                ],
+                [
+                    {'text': f'🔒 الوضع الخاص: {"✅" if private_mode else "❌"}', 'callback_data': 'toggle_private_mode'},
+                    {'text': '🛡️ إعدادات الحماية', 'callback_data': 'protection_settings'}
+                ],
+                [
+                    {'text': '🔙 العودة للإعدادات', 'callback_data': 'owner_settings'}
+                ]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إعدادات الأمان: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض إعدادات الأمان: {str(e)}"
+            }
+    
+    async def _show_general_settings(self, user_id: int) -> Dict:
+        """الإعدادات العامة"""
+        try:
+            # الحصول على الإعدادات العامة
+            language = getattr(config, 'LANGUAGE', 'ar')
+            bot_name = getattr(config, 'BOT_NAME', 'ZeMusic')
+            logs_enabled = getattr(config, 'ENABLE_LOGS', True)
+            
+            message = f"""🌐 **الإعدادات العامة**
+
+🔧 **الإعدادات الحالية:**
+• لغة البوت: `{language}`
+• اسم البوت: `{bot_name}`
+• تفعيل السجلات: `{'✅ مفعل' if logs_enabled else '❌ معطل'}`
+
+⚙️ **تعديل الإعدادات:**"""
+
+            keyboard = [
+                [
+                    {'text': '🌍 تغيير اللغة', 'callback_data': 'change_language'},
+                    {'text': '📝 تغيير اسم البوت', 'callback_data': 'change_bot_name'}
+                ],
+                [
+                    {'text': f'📋 السجلات: {"✅" if logs_enabled else "❌"}', 'callback_data': 'toggle_logs'},
+                    {'text': '🔄 إعادة تحميل الإعدادات', 'callback_data': 'reload_config'}
+                ],
+                [
+                    {'text': '🔙 العودة للإعدادات', 'callback_data': 'owner_settings'}
+                ]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في الإعدادات العامة: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض الإعدادات العامة: {str(e)}"
+            }
+
     async def handle_maintenance_callback(self, user_id: int, data: str) -> Dict:
         """معالج أزرار الصيانة"""
         if user_id != config.OWNER_ID:
@@ -1623,19 +1801,380 @@ class OwnerPanel:
         
         maintenance_type = data.replace("maintenance_", "")
         
-        messages = {
-            'cleanup': "🧹 **تنظيف النظام**\n\n🚧 هذه الميزة قيد التطوير...",
-            'update': "🔄 **تحديث النظام**\n\n🚧 هذه الميزة قيد التطوير...",
-            'check': "🔍 **فحص النظام**\n\n🚧 هذه الميزة قيد التطوير...",
-            'optimize': "⚡ **تحسين الأداء**\n\n🚧 هذه الميزة قيد التطوير..."
-        }
-        
-        return {
-            'success': True,
-            'message': messages.get(maintenance_type, "⚠️ عملية صيانة غير معروفة"),
-            'keyboard': [[{'text': '🔙 العودة للصيانة', 'callback_data': 'owner_maintenance'}]]
-        }
+        if maintenance_type == 'cleanup':
+            return await self._execute_system_cleanup(user_id)
+        elif maintenance_type == 'update':
+            return await self._execute_system_update(user_id)
+        elif maintenance_type == 'check':
+            return await self._execute_system_check(user_id)
+        elif maintenance_type == 'optimize':
+            return await self._execute_system_optimize(user_id)
+        else:
+            return {
+                'success': True,
+                'message': f"⚠️ عملية صيانة غير معروفة: {maintenance_type}",
+                'keyboard': [[{'text': '🔙 العودة للصيانة', 'callback_data': 'owner_maintenance'}]]
+            }
     
+    async def _execute_system_cleanup(self, user_id: int) -> Dict:
+        """تنظيف النظام"""
+        try:
+            import os
+            import shutil
+            import tempfile
+            
+            cleanup_results = []
+            total_freed = 0
+            
+            # تنظيف الملفات المؤقتة
+            temp_dir = tempfile.gettempdir()
+            temp_files = 0
+            temp_size = 0
+            
+            try:
+                for root, dirs, files in os.walk(temp_dir):
+                    for file in files:
+                        if file.startswith('zemusic_') or file.endswith('.tmp'):
+                            file_path = os.path.join(root, file)
+                            try:
+                                size = os.path.getsize(file_path)
+                                os.remove(file_path)
+                                temp_files += 1
+                                temp_size += size
+                            except:
+                                pass
+                cleanup_results.append(f"🗑️ ملفات مؤقتة: {temp_files} ملف ({temp_size/1024/1024:.1f} MB)")
+                total_freed += temp_size
+            except Exception as e:
+                cleanup_results.append(f"❌ خطأ في تنظيف الملفات المؤقتة: {str(e)[:50]}")
+            
+            # تنظيف ذاكرة التخزين المؤقت
+            cache_freed = 0
+            try:
+                if hasattr(music_manager, 'clear_cache'):
+                    cache_freed = await music_manager.clear_cache()
+                    cleanup_results.append(f"💾 ذاكرة التخزين المؤقت: {cache_freed/1024/1024:.1f} MB")
+                    total_freed += cache_freed
+            except Exception as e:
+                cleanup_results.append(f"❌ خطأ في تنظيف الكاش: {str(e)[:50]}")
+            
+            # تنظيف سجلات قديمة
+            logs_cleaned = 0
+            try:
+                log_files = ['bot_log.txt', 'final_bot_log.txt']
+                for log_file in log_files:
+                    if os.path.exists(log_file):
+                        size = os.path.getsize(log_file)
+                        if size > 10 * 1024 * 1024:  # أكبر من 10 MB
+                            # الاحتفاظ بآخر 1000 سطر فقط
+                            with open(log_file, 'r') as f:
+                                lines = f.readlines()
+                            with open(log_file, 'w') as f:
+                                f.writelines(lines[-1000:])
+                            logs_cleaned += 1
+                cleanup_results.append(f"📋 سجلات منظفة: {logs_cleaned} ملف")
+            except Exception as e:
+                cleanup_results.append(f"❌ خطأ في تنظيف السجلات: {str(e)[:50]}")
+            
+            message = f"""🧹 **تم تنظيف النظام بنجاح!**
+
+📊 **النتائج:**
+{chr(10).join(cleanup_results)}
+
+💾 **إجمالي المساحة المحررة:** {total_freed/1024/1024:.1f} MB
+
+✨ **تم تحسين أداء النظام!**"""
+
+            keyboard = [
+                [
+                    {'text': '🔄 تنظيف إضافي', 'callback_data': 'maintenance_cleanup'},
+                    {'text': '⚡ تحسين الأداء', 'callback_data': 'maintenance_optimize'}
+                ],
+                [{'text': '🔙 العودة للصيانة', 'callback_data': 'owner_maintenance'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تنظيف النظام: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في تنظيف النظام: {str(e)}"
+            }
+    
+    async def _execute_system_update(self, user_id: int) -> Dict:
+        """تحديث النظام"""
+        try:
+            import subprocess
+            import sys
+            
+            update_results = []
+            
+            # فحص التحديثات المتاحة
+            try:
+                result = subprocess.run([sys.executable, '-m', 'pip', 'list', '--outdated'], 
+                                      capture_output=True, text=True, timeout=30)
+                outdated_packages = result.stdout.count('\n') - 1 if result.stdout else 0
+                update_results.append(f"📦 حزم قابلة للتحديث: {outdated_packages}")
+            except Exception as e:
+                update_results.append(f"❌ خطأ في فحص التحديثات: {str(e)[:50]}")
+            
+            # تحديث المتطلبات الأساسية
+            try:
+                essential_packages = ['telethon', 'aiofiles', 'aiosqlite']
+                updated_count = 0
+                for package in essential_packages:
+                    try:
+                        result = subprocess.run([sys.executable, '-m', 'pip', 'install', '--upgrade', package], 
+                                              capture_output=True, text=True, timeout=60)
+                        if result.returncode == 0:
+                            updated_count += 1
+                    except:
+                        pass
+                update_results.append(f"✅ حزم محدثة: {updated_count}/{len(essential_packages)}")
+            except Exception as e:
+                update_results.append(f"❌ خطأ في تحديث الحزم: {str(e)[:50]}")
+            
+            # إعادة تحميل الإعدادات
+            try:
+                import importlib
+                importlib.reload(config)
+                update_results.append("🔄 تم إعادة تحميل الإعدادات")
+            except Exception as e:
+                update_results.append(f"❌ خطأ في إعادة تحميل الإعدادات: {str(e)[:50]}")
+            
+            message = f"""🔄 **تحديث النظام**
+
+📊 **النتائج:**
+{chr(10).join(update_results)}
+
+💡 **ملاحظة:** قد تحتاج لإعادة تشغيل البوت لتطبيق بعض التحديثات"""
+
+            keyboard = [
+                [
+                    {'text': '🔄 إعادة تشغيل البوت', 'callback_data': 'owner_restart'},
+                    {'text': '🔍 فحص النظام', 'callback_data': 'maintenance_check'}
+                ],
+                [{'text': '🔙 العودة للصيانة', 'callback_data': 'owner_maintenance'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تحديث النظام: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في تحديث النظام: {str(e)}"
+            }
+    
+    async def _execute_system_check(self, user_id: int) -> Dict:
+        """فحص سلامة النظام"""
+        try:
+            import psutil
+            import os
+            import sys
+            
+            check_results = []
+            issues_found = 0
+            
+            # فحص موارد النظام
+            try:
+                cpu_percent = psutil.cpu_percent(interval=1)
+                memory = psutil.virtual_memory()
+                disk = psutil.disk_usage('/')
+                
+                check_results.append(f"🖥️ **موارد النظام:**")
+                check_results.append(f"   • المعالج: {cpu_percent}%")
+                check_results.append(f"   • الذاكرة: {memory.percent}% ({memory.available/1024/1024/1024:.1f}GB متاح)")
+                check_results.append(f"   • التخزين: {disk.percent}% ({disk.free/1024/1024/1024:.1f}GB متاح)")
+                
+                if cpu_percent > 80:
+                    issues_found += 1
+                    check_results.append("⚠️ استخدام عالي للمعالج")
+                if memory.percent > 85:
+                    issues_found += 1
+                    check_results.append("⚠️ استخدام عالي للذاكرة")
+                if disk.percent > 90:
+                    issues_found += 1
+                    check_results.append("⚠️ مساحة تخزين منخفضة")
+                    
+            except Exception as e:
+                check_results.append(f"❌ خطأ في فحص الموارد: {str(e)[:50]}")
+                issues_found += 1
+            
+            # فحص الملفات الأساسية
+            try:
+                essential_files = ['config.py', 'requirements.txt', 'ZeMusic/__init__.py']
+                missing_files = []
+                for file in essential_files:
+                    if not os.path.exists(file):
+                        missing_files.append(file)
+                        issues_found += 1
+                
+                check_results.append(f"\n📁 **الملفات الأساسية:**")
+                if missing_files:
+                    check_results.append(f"❌ ملفات مفقودة: {', '.join(missing_files)}")
+                else:
+                    check_results.append("✅ جميع الملفات الأساسية موجودة")
+                    
+            except Exception as e:
+                check_results.append(f"❌ خطأ في فحص الملفات: {str(e)[:50]}")
+                issues_found += 1
+            
+            # فحص قاعدة البيانات
+            try:
+                stats = await db.get_stats()
+                check_results.append(f"\n🗃️ **قاعدة البيانات:**")
+                check_results.append(f"✅ متصلة وتعمل بشكل طبيعي")
+                check_results.append(f"   • المستخدمين: {stats['users']}")
+                check_results.append(f"   • المجموعات: {stats['chats']}")
+            except Exception as e:
+                check_results.append(f"❌ خطأ في قاعدة البيانات: {str(e)[:50]}")
+                issues_found += 1
+            
+            # فحص الحسابات المساعدة
+            try:
+                assistants = await db.get_all_assistants()
+                connected_count = telethon_manager.get_connected_assistants_count()
+                check_results.append(f"\n🤖 **الحسابات المساعدة:**")
+                check_results.append(f"   • إجمالي: {len(assistants)}")
+                check_results.append(f"   • متصل: {connected_count}")
+                
+                if len(assistants) == 0:
+                    issues_found += 1
+                    check_results.append("⚠️ لا توجد حسابات مساعدة")
+                elif connected_count < len(assistants) / 2:
+                    issues_found += 1
+                    check_results.append("⚠️ معظم الحسابات المساعدة غير متصلة")
+                else:
+                    check_results.append("✅ الحسابات المساعدة تعمل بشكل طبيعي")
+                    
+            except Exception as e:
+                check_results.append(f"❌ خطأ في فحص الحسابات المساعدة: {str(e)[:50]}")
+                issues_found += 1
+            
+            status_emoji = "✅" if issues_found == 0 else "⚠️" if issues_found < 3 else "❌"
+            status_text = "ممتاز" if issues_found == 0 else "جيد مع تحذيرات" if issues_found < 3 else "يحتاج إصلاح"
+            
+            message = f"""{status_emoji} **فحص سلامة النظام**
+
+{chr(10).join(check_results)}
+
+📊 **الملخص:**
+• المشاكل المكتشفة: {issues_found}
+• حالة النظام: {status_text}"""
+
+            keyboard = [
+                [
+                    {'text': '🔄 إعادة الفحص', 'callback_data': 'maintenance_check'},
+                    {'text': '🧹 تنظيف النظام', 'callback_data': 'maintenance_cleanup'}
+                ],
+                [{'text': '🔙 العودة للصيانة', 'callback_data': 'owner_maintenance'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في فحص النظام: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في فحص النظام: {str(e)}"
+            }
+    
+    async def _execute_system_optimize(self, user_id: int) -> Dict:
+        """تحسين أداء النظام"""
+        try:
+            import gc
+            import asyncio
+            
+            optimization_results = []
+            
+            # تنظيف الذاكرة
+            try:
+                before_gc = len(gc.get_objects())
+                collected = gc.collect()
+                after_gc = len(gc.get_objects())
+                optimization_results.append(f"🧹 تنظيف الذاكرة: حُرر {collected} كائن")
+                optimization_results.append(f"   • قبل: {before_gc} كائن")
+                optimization_results.append(f"   • بعد: {after_gc} كائن")
+            except Exception as e:
+                optimization_results.append(f"❌ خطأ في تنظيف الذاكرة: {str(e)[:50]}")
+            
+            # تحسين قاعدة البيانات
+            try:
+                if hasattr(db, 'optimize'):
+                    await db.optimize()
+                    optimization_results.append("✅ تم تحسين قاعدة البيانات")
+                else:
+                    optimization_results.append("ℹ️ تحسين قاعدة البيانات غير متاح")
+            except Exception as e:
+                optimization_results.append(f"❌ خطأ في تحسين قاعدة البيانات: {str(e)[:50]}")
+            
+            # تحسين الحسابات المساعدة
+            try:
+                restart_result = await telethon_manager.restart_all_assistants()
+                if restart_result.get('success'):
+                    optimization_results.append("✅ تم تحسين الحسابات المساعدة")
+                else:
+                    optimization_results.append("⚠️ تحذير في تحسين الحسابات المساعدة")
+            except Exception as e:
+                optimization_results.append(f"❌ خطأ في تحسين الحسابات: {str(e)[:50]}")
+            
+            # تحسين جلسات الموسيقى
+            try:
+                if hasattr(music_manager, 'optimize_sessions'):
+                    optimized_sessions = await music_manager.optimize_sessions()
+                    optimization_results.append(f"🎵 تم تحسين {optimized_sessions} جلسة موسيقى")
+                else:
+                    optimization_results.append("ℹ️ تحسين جلسات الموسيقى غير متاح")
+            except Exception as e:
+                optimization_results.append(f"❌ خطأ في تحسين الجلسات: {str(e)[:50]}")
+            
+            message = f"""⚡ **تحسين أداء النظام**
+
+📊 **النتائج:**
+{chr(10).join(optimization_results)}
+
+🚀 **تم تحسين أداء النظام بنجاح!**
+
+💡 **توصيات:**
+• قم بتشغيل التحسين بانتظام
+• راقب استخدام الموارد
+• نظف النظام دورياً"""
+
+            keyboard = [
+                [
+                    {'text': '🔄 تحسين إضافي', 'callback_data': 'maintenance_optimize'},
+                    {'text': '🔍 فحص النظام', 'callback_data': 'maintenance_check'}
+                ],
+                [{'text': '🔙 العودة للصيانة', 'callback_data': 'owner_maintenance'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تحسين النظام: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في تحسين النظام: {str(e)}"
+            }
+
     async def handle_logs_callback(self, user_id: int, data: str) -> Dict:
         """معالج أزرار السجلات"""
         if user_id != config.OWNER_ID:
@@ -1643,19 +2182,255 @@ class OwnerPanel:
         
         log_type = data.replace("logs_", "")
         
-        messages = {
-            'full': "📄 **السجل الكامل**\n\n🚧 هذه الميزة قيد التطوير...",
-            'errors': "⚠️ **الأخطاء فقط**\n\n🚧 هذه الميزة قيد التطوير...",
-            'stats': "📊 **إحصائيات السجل**\n\n🚧 هذه الميزة قيد التطوير...",
-            'clear': "🗑️ **مسح السجلات**\n\n🚧 هذه الميزة قيد التطوير..."
-        }
-        
-        return {
-            'success': True,
-            'message': messages.get(log_type, "⚠️ نوع سجل غير معروف"),
-            'keyboard': [[{'text': '🔙 العودة للسجلات', 'callback_data': 'owner_logs'}]]
-        }
+        if log_type == 'full':
+            return await self._show_full_logs(user_id)
+        elif log_type == 'errors':
+            return await self._show_error_logs(user_id)
+        elif log_type == 'stats':
+            return await self._show_logs_stats(user_id)
+        elif log_type == 'clear':
+            return await self._clear_logs(user_id)
+        else:
+            return {
+                'success': True,
+                'message': f"⚠️ نوع سجل غير معروف: {log_type}",
+                'keyboard': [[{'text': '🔙 العودة للسجلات', 'callback_data': 'owner_logs'}]]
+            }
     
+    async def _show_full_logs(self, user_id: int) -> Dict:
+        """عرض السجل الكامل"""
+        try:
+            import os
+            
+            log_files = ['final_bot_log.txt', 'bot_log.txt']
+            log_content = ""
+            
+            for log_file in log_files:
+                if os.path.exists(log_file):
+                    try:
+                        with open(log_file, 'r', encoding='utf-8') as f:
+                            lines = f.readlines()
+                            # آخر 50 سطر
+                            recent_lines = lines[-50:] if len(lines) > 50 else lines
+                            log_content += f"\n📄 **{log_file}:**\n"
+                            log_content += "```\n" + "".join(recent_lines) + "\n```\n"
+                    except Exception as e:
+                        log_content += f"\n❌ خطأ في قراءة {log_file}: {str(e)}\n"
+            
+            if not log_content:
+                log_content = "❌ لا توجد سجلات متاحة"
+            
+            # تحديد الطول لتجنب تجاوز حد الرسائل
+            if len(log_content) > 3500:
+                log_content = log_content[:3500] + "\n... (تم اقتطاع السجل)"
+            
+            message = f"📄 **السجل الكامل (آخر 50 سطر)**{log_content}"
+            
+            keyboard = [
+                [
+                    {'text': '🔄 تحديث', 'callback_data': 'logs_full'},
+                    {'text': '⚠️ الأخطاء فقط', 'callback_data': 'logs_errors'}
+                ],
+                [{'text': '🔙 العودة للسجلات', 'callback_data': 'owner_logs'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في عرض السجل الكامل: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض السجل: {str(e)}"
+            }
+    
+    async def _show_error_logs(self, user_id: int) -> Dict:
+        """عرض الأخطاء فقط"""
+        try:
+            import os
+            
+            log_files = ['final_bot_log.txt', 'bot_log.txt']
+            error_lines = []
+            
+            for log_file in log_files:
+                if os.path.exists(log_file):
+                    try:
+                        with open(log_file, 'r', encoding='utf-8') as f:
+                            lines = f.readlines()
+                            # البحث عن الأخطاء
+                            for line in lines[-200:]:  # آخر 200 سطر
+                                if any(keyword in line.lower() for keyword in ['error', 'exception', 'traceback', 'failed', 'خطأ']):
+                                    error_lines.append(line.strip())
+                    except Exception as e:
+                        error_lines.append(f"❌ خطأ في قراءة {log_file}: {str(e)}")
+            
+            if not error_lines:
+                message = "✅ **لا توجد أخطاء في السجلات الحديثة**\n\nالنظام يعمل بشكل طبيعي!"
+            else:
+                # أحدث 20 خطأ
+                recent_errors = error_lines[-20:] if len(error_lines) > 20 else error_lines
+                error_content = "```\n" + "\n".join(recent_errors) + "\n```"
+                
+                # تحديد الطول
+                if len(error_content) > 3000:
+                    error_content = error_content[:3000] + "\n... (تم اقتطاع)"
+                
+                message = f"⚠️ **الأخطاء الحديثة ({len(recent_errors)} من {len(error_lines)}):**\n{error_content}"
+            
+            keyboard = [
+                [
+                    {'text': '🔄 تحديث', 'callback_data': 'logs_errors'},
+                    {'text': '📄 السجل الكامل', 'callback_data': 'logs_full'}
+                ],
+                [
+                    {'text': '🗑️ مسح السجلات', 'callback_data': 'logs_clear'},
+                    {'text': '🔙 العودة للسجلات', 'callback_data': 'owner_logs'}
+                ]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في عرض سجل الأخطاء: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض سجل الأخطاء: {str(e)}"
+            }
+    
+    async def _show_logs_stats(self, user_id: int) -> Dict:
+        """إحصائيات السجلات"""
+        try:
+            import os
+            from datetime import datetime, timedelta
+            
+            log_files = ['final_bot_log.txt', 'bot_log.txt']
+            stats = {
+                'total_lines': 0,
+                'error_lines': 0,
+                'warning_lines': 0,
+                'info_lines': 0,
+                'file_sizes': {},
+                'recent_activity': 0
+            }
+            
+            for log_file in log_files:
+                if os.path.exists(log_file):
+                    try:
+                        # حجم الملف
+                        file_size = os.path.getsize(log_file)
+                        stats['file_sizes'][log_file] = file_size
+                        
+                        # تحليل محتوى السجل
+                        with open(log_file, 'r', encoding='utf-8') as f:
+                            lines = f.readlines()
+                            stats['total_lines'] += len(lines)
+                            
+                            # تحليل نوع الرسائل
+                            for line in lines:
+                                line_lower = line.lower()
+                                if 'error' in line_lower or 'خطأ' in line_lower:
+                                    stats['error_lines'] += 1
+                                elif 'warning' in line_lower or 'تحذير' in line_lower:
+                                    stats['warning_lines'] += 1
+                                elif 'info' in line_lower:
+                                    stats['info_lines'] += 1
+                                
+                                # النشاط الحديث (آخر ساعة)
+                                try:
+                                    if datetime.now().strftime('%Y-%m-%d %H') in line:
+                                        stats['recent_activity'] += 1
+                                except:
+                                    pass
+                                    
+                    except Exception as e:
+                        LOGGER(__name__).warning(f"خطأ في تحليل {log_file}: {e}")
+            
+            message = f"""📊 **إحصائيات السجلات**
+
+📁 **ملفات السجلات:**"""
+            
+            for file, size in stats['file_sizes'].items():
+                message += f"\n• {file}: {size/1024:.1f} KB"
+            
+            message += f"""
+
+📋 **محتوى السجلات:**
+• إجمالي الأسطر: {stats['total_lines']:,}
+• رسائل الأخطاء: {stats['error_lines']:,}
+• رسائل التحذير: {stats['warning_lines']:,}
+• رسائل المعلومات: {stats['info_lines']:,}
+
+⚡ **النشاط الحديث:**
+• آخر ساعة: {stats['recent_activity']} رسالة
+
+📈 **الإحصائيات:**
+• معدل الأخطاء: {(stats['error_lines']/max(stats['total_lines'], 1)*100):.1f}%
+• معدل التحذيرات: {(stats['warning_lines']/max(stats['total_lines'], 1)*100):.1f}%"""
+
+            keyboard = [
+                [
+                    {'text': '🔄 تحديث الإحصائيات', 'callback_data': 'logs_stats'},
+                    {'text': '⚠️ عرض الأخطاء', 'callback_data': 'logs_errors'}
+                ],
+                [{'text': '🔙 العودة للسجلات', 'callback_data': 'owner_logs'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إحصائيات السجلات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في إحصائيات السجلات: {str(e)}"
+            }
+    
+    async def _clear_logs(self, user_id: int) -> Dict:
+        """مسح السجلات"""
+        try:
+            import os
+            
+            message = """🗑️ **مسح السجلات**
+
+⚠️ **تحذير:** سيتم مسح جميع السجلات القديمة!
+
+📋 **ما سيحدث:**
+• مسح السجلات الأقدم من أسبوع
+• الاحتفاظ بآخر 1000 سطر من كل ملف
+• إنشاء نسخة احتياطية قبل المسح
+
+❓ **هل أنت متأكد؟**"""
+
+            keyboard = [
+                [
+                    {'text': '✅ نعم، امسح السجلات', 'callback_data': 'confirm_clear_logs'},
+                    {'text': '❌ إلغاء', 'callback_data': 'owner_logs'}
+                ]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في مسح السجلات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في مسح السجلات: {str(e)}"
+            }
+
     async def handle_database_callback(self, user_id: int, data: str) -> Dict:
         """معالج أزرار قاعدة البيانات"""
         if user_id != config.OWNER_ID:
@@ -1663,20 +2438,281 @@ class OwnerPanel:
         
         db_type = data.replace("db_", "")
         
-        messages = {
-            'backup': "💾 **نسخة احتياطية**\n\n🚧 هذه الميزة قيد التطوير...",
-            'restore': "📤 **استيراد نسخة**\n\n🚧 هذه الميزة قيد التطوير...",
-            'cleanup': "🧹 **تنظيف البيانات**\n\n🚧 هذه الميزة قيد التطوير...",
-            'optimize': "🔧 **تحسين قاعدة البيانات**\n\n🚧 هذه الميزة قيد التطوير...",
-            'detailed_stats': "📊 **إحصائيات مفصلة**\n\n🚧 هذه الميزة قيد التطوير...",
-            'integrity_check': "🔍 **فحص سلامة البيانات**\n\n🚧 هذه الميزة قيد التطوير..."
-        }
-        
-        return {
-            'success': True,
-            'message': messages.get(db_type, "⚠️ عملية قاعدة بيانات غير معروفة"),
-            'keyboard': [[{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}]]
-        }
+        if db_type == 'backup':
+            return await self._create_database_backup(user_id)
+        elif db_type == 'restore':
+            return await self._show_restore_options(user_id)
+        elif db_type == 'cleanup':
+            return await self._cleanup_database(user_id)
+        elif db_type == 'optimize':
+            return await self._optimize_database(user_id)
+        elif db_type == 'detailed_stats':
+            return await self._show_detailed_database_stats(user_id)
+        elif db_type == 'integrity_check':
+            return await self._check_database_integrity(user_id)
+        else:
+            return {
+                'success': True,
+                'message': f"⚠️ عملية قاعدة بيانات غير معروفة: {db_type}",
+                'keyboard': [[{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}]]
+            }
+    
+    async def _create_database_backup(self, user_id: int) -> Dict:
+        """إنشاء نسخة احتياطية من قاعدة البيانات"""
+        try:
+            import shutil
+            import os
+            from datetime import datetime
+            
+            # إنشاء اسم ملف النسخة الاحتياطية
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"backup_zemusic_{timestamp}.db"
+            
+            # نسخ قاعدة البيانات
+            if os.path.exists(config.DATABASE_PATH):
+                shutil.copy2(config.DATABASE_PATH, backup_filename)
+                
+                # الحصول على حجم النسخة الاحتياطية
+                backup_size = os.path.getsize(backup_filename)
+                
+                message = f"""💾 **تم إنشاء نسخة احتياطية بنجاح!**
+
+📁 **تفاصيل النسخة الاحتياطية:**
+• اسم الملف: `{backup_filename}`
+• الحجم: `{backup_size/1024:.1f} KB`
+• التاريخ: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`
+
+✅ **النسخة الاحتياطية جاهزة للاستخدام**
+
+💡 **ملاحظة:** احتفظ بالنسخة في مكان آمن"""
+
+                keyboard = [
+                    [
+                        {'text': '💾 نسخة أخرى', 'callback_data': 'db_backup'},
+                        {'text': '🔍 فحص سلامة البيانات', 'callback_data': 'db_integrity_check'}
+                    ],
+                    [{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}]
+                ]
+                
+                return {
+                    'success': True,
+                    'message': message,
+                    'keyboard': keyboard
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': "❌ ملف قاعدة البيانات غير موجود"
+                }
+                
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إنشاء نسخة احتياطية: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في إنشاء النسخة الاحتياطية: {str(e)}"
+            }
+    
+    async def _show_detailed_database_stats(self, user_id: int) -> Dict:
+        """إحصائيات مفصلة لقاعدة البيانات"""
+        try:
+            import os
+            import sqlite3
+            
+            if not os.path.exists(config.DATABASE_PATH):
+                return {
+                    'success': False,
+                    'message': "❌ ملف قاعدة البيانات غير موجود"
+                }
+            
+            # الحصول على معلومات الملف
+            file_size = os.path.getsize(config.DATABASE_PATH)
+            file_modified = os.path.getmtime(config.DATABASE_PATH)
+            
+            # الاتصال بقاعدة البيانات للحصول على إحصائيات مفصلة
+            with sqlite3.connect(config.DATABASE_PATH) as conn:
+                cursor = conn.cursor()
+                
+                # الحصول على قائمة الجداول
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = cursor.fetchall()
+                
+                table_stats = {}
+                total_records = 0
+                
+                for table in tables:
+                    table_name = table[0]
+                    try:
+                        # عدد السجلات في كل جدول
+                        cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                        count = cursor.fetchone()[0]
+                        table_stats[table_name] = count
+                        total_records += count
+                    except Exception as e:
+                        table_stats[table_name] = f"خطأ: {str(e)[:30]}"
+            
+            # تنسيق الرسالة
+            message = f"""📊 **إحصائيات قاعدة البيانات المفصلة**
+
+📁 **معلومات الملف:**
+• الحجم: `{file_size/1024:.1f} KB`
+• آخر تعديل: `{datetime.fromtimestamp(file_modified).strftime('%Y-%m-%d %H:%M:%S')}`
+• المسار: `{config.DATABASE_PATH}`
+
+📋 **الجداول والسجلات:**"""
+
+            for table_name, count in table_stats.items():
+                if isinstance(count, int):
+                    message += f"\n• {table_name}: `{count:,}` سجل"
+                else:
+                    message += f"\n• {table_name}: `{count}`"
+            
+            message += f"""
+
+📈 **الملخص:**
+• إجمالي الجداول: `{len(tables)}`
+• إجمالي السجلات: `{total_records:,}`
+• متوسط السجلات لكل جدول: `{total_records//len(tables) if tables else 0}`
+
+💾 **الأداء:**
+• حجم متوسط للسجل: `{file_size/max(total_records, 1):.1f} بايت`
+• كثافة البيانات: `{(total_records*100)//max(file_size, 1):.1f}` سجل/KB"""
+
+            keyboard = [
+                [
+                    {'text': '🔄 تحديث الإحصائيات', 'callback_data': 'db_detailed_stats'},
+                    {'text': '🔍 فحص سلامة البيانات', 'callback_data': 'db_integrity_check'}
+                ],
+                [
+                    {'text': '🧹 تنظيف البيانات', 'callback_data': 'db_cleanup'},
+                    {'text': '🔧 تحسين قاعدة البيانات', 'callback_data': 'db_optimize'}
+                ],
+                [{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في إحصائيات قاعدة البيانات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في إحصائيات قاعدة البيانات: {str(e)}"
+            }
+    
+    async def _check_database_integrity(self, user_id: int) -> Dict:
+        """فحص سلامة قاعدة البيانات"""
+        try:
+            import sqlite3
+            import os
+            
+            if not os.path.exists(config.DATABASE_PATH):
+                return {
+                    'success': False,
+                    'message': "❌ ملف قاعدة البيانات غير موجود"
+                }
+            
+            check_results = []
+            issues_found = 0
+            
+            with sqlite3.connect(config.DATABASE_PATH) as conn:
+                cursor = conn.cursor()
+                
+                # فحص سلامة قاعدة البيانات
+                try:
+                    cursor.execute("PRAGMA integrity_check")
+                    integrity_result = cursor.fetchone()[0]
+                    if integrity_result == "ok":
+                        check_results.append("✅ فحص السلامة: قاعدة البيانات سليمة")
+                    else:
+                        check_results.append(f"❌ فحص السلامة: {integrity_result}")
+                        issues_found += 1
+                except Exception as e:
+                    check_results.append(f"❌ خطأ في فحص السلامة: {str(e)}")
+                    issues_found += 1
+                
+                # فحص الجداول المطلوبة
+                required_tables = ['users', 'chats', 'assistants', 'sudoers']
+                try:
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                    existing_tables = [row[0] for row in cursor.fetchall()]
+                    
+                    missing_tables = []
+                    for table in required_tables:
+                        if table not in existing_tables:
+                            missing_tables.append(table)
+                            issues_found += 1
+                    
+                    if missing_tables:
+                        check_results.append(f"❌ جداول مفقودة: {', '.join(missing_tables)}")
+                    else:
+                        check_results.append("✅ جميع الجداول المطلوبة موجودة")
+                        
+                except Exception as e:
+                    check_results.append(f"❌ خطأ في فحص الجداول: {str(e)}")
+                    issues_found += 1
+                
+                # فحص الفهارس
+                try:
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='index'")
+                    indexes = cursor.fetchall()
+                    check_results.append(f"ℹ️ الفهارس المتاحة: {len(indexes)}")
+                except Exception as e:
+                    check_results.append(f"❌ خطأ في فحص الفهارس: {str(e)}")
+                
+                # فحص الاتصال والاستعلامات
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM users")
+                    users_count = cursor.fetchone()[0]
+                    cursor.execute("SELECT COUNT(*) FROM chats")
+                    chats_count = cursor.fetchone()[0]
+                    check_results.append(f"✅ الاستعلامات تعمل: {users_count} مستخدم، {chats_count} مجموعة")
+                except Exception as e:
+                    check_results.append(f"❌ خطأ في الاستعلامات: {str(e)}")
+                    issues_found += 1
+            
+            status_emoji = "✅" if issues_found == 0 else "⚠️" if issues_found < 3 else "❌"
+            status_text = "ممتازة" if issues_found == 0 else "جيدة مع تحذيرات" if issues_found < 3 else "تحتاج إصلاح"
+            
+            message = f"""{status_emoji} **فحص سلامة قاعدة البيانات**
+
+📋 **نتائج الفحص:**
+{chr(10).join(check_results)}
+
+📊 **الملخص:**
+• المشاكل المكتشفة: `{issues_found}`
+• حالة قاعدة البيانات: `{status_text}`
+
+💡 **التوصيات:**
+{'• قم بإنشاء نسخة احتياطية دورياً' if issues_found == 0 else '• قم بإصلاح المشاكل المكتشفة'}
+{'• قم بتحسين قاعدة البيانات دورياً' if issues_found == 0 else '• تواصل مع المطور إذا استمرت المشاكل'}"""
+
+            keyboard = [
+                [
+                    {'text': '🔄 إعادة الفحص', 'callback_data': 'db_integrity_check'},
+                    {'text': '💾 نسخة احتياطية', 'callback_data': 'db_backup'}
+                ],
+                [
+                    {'text': '🔧 تحسين قاعدة البيانات', 'callback_data': 'db_optimize'},
+                    {'text': '🧹 تنظيف البيانات', 'callback_data': 'db_cleanup'}
+                ],
+                [{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في فحص سلامة قاعدة البيانات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في فحص سلامة قاعدة البيانات: {str(e)}"
+            }
 
     async def _restart_process(self):
         """عملية إعادة التشغيل"""
@@ -1690,6 +2726,419 @@ class OwnerPanel:
         import sys
         await asyncio.sleep(3)  # انتظار 3 ثواني
         sys.exit(0)
+
+    async def _show_restore_options(self, user_id: int) -> Dict:
+        """عرض خيارات استيراد النسخ الاحتياطية"""
+        try:
+            import os
+            import glob
+            
+            # البحث عن ملفات النسخ الاحتياطية
+            backup_files = glob.glob("backup_zemusic_*.db")
+            
+            if not backup_files:
+                return {
+                    'success': True,
+                    'message': "❌ **لا توجد نسخ احتياطية**\n\nلم يتم العثور على أي نسخ احتياطية في المجلد الحالي.",
+                    'keyboard': [
+                        [{'text': '💾 إنشاء نسخة احتياطية', 'callback_data': 'db_backup'}],
+                        [{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}]
+                    ]
+                }
+            
+            # ترتيب الملفات حسب التاريخ (الأحدث أولاً)
+            backup_files.sort(reverse=True)
+            
+            message = f"📤 **استيراد نسخة احتياطية**\n\n📋 **النسخ المتاحة:** ({len(backup_files)})\n\n"
+            
+            keyboard = []
+            for i, backup_file in enumerate(backup_files[:5]):  # أول 5 نسخ فقط
+                file_size = os.path.getsize(backup_file) / 1024
+                # استخراج التاريخ من اسم الملف
+                timestamp = backup_file.replace('backup_zemusic_', '').replace('.db', '')
+                try:
+                    from datetime import datetime
+                    date_obj = datetime.strptime(timestamp, '%Y%m%d_%H%M%S')
+                    date_str = date_obj.strftime('%Y-%m-%d %H:%M')
+                except:
+                    date_str = timestamp
+                
+                message += f"📁 **{i+1}.** {date_str} (`{file_size:.1f} KB`)\n"
+                keyboard.append([{
+                    'text': f'📤 استيراد {i+1}',
+                    'callback_data': f'restore_backup_{backup_file}'
+                }])
+            
+            keyboard.append([{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}])
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في عرض خيارات الاستيراد: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في عرض خيارات الاستيراد: {str(e)}"
+            }
+    
+    async def _cleanup_database(self, user_id: int) -> Dict:
+        """تنظيف قاعدة البيانات"""
+        try:
+            import sqlite3
+            import os
+            from datetime import datetime, timedelta
+            
+            if not os.path.exists(config.DATABASE_PATH):
+                return {
+                    'success': False,
+                    'message': "❌ ملف قاعدة البيانات غير موجود"
+                }
+            
+            cleanup_results = []
+            
+            with sqlite3.connect(config.DATABASE_PATH) as conn:
+                cursor = conn.cursor()
+                
+                # تنظيف المستخدمين غير النشطين (أكثر من 30 يوم)
+                try:
+                    thirty_days_ago = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                    cursor.execute("SELECT COUNT(*) FROM users WHERE last_seen < ?", (thirty_days_ago,))
+                    inactive_users = cursor.fetchone()[0]
+                    
+                    if inactive_users > 0:
+                        cursor.execute("DELETE FROM users WHERE last_seen < ?", (thirty_days_ago,))
+                        cleanup_results.append(f"🧹 مستخدمين غير نشطين: حُذف {inactive_users}")
+                    else:
+                        cleanup_results.append("✅ لا توجد مستخدمين غير نشطين للحذف")
+                except Exception as e:
+                    cleanup_results.append(f"❌ خطأ في تنظيف المستخدمين: {str(e)[:50]}")
+                
+                # تنظيف المجموعات المحذوفة أو المغادرة
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM chats WHERE is_active = 0")
+                    inactive_chats = cursor.fetchone()[0]
+                    
+                    if inactive_chats > 0:
+                        cursor.execute("DELETE FROM chats WHERE is_active = 0")
+                        cleanup_results.append(f"🧹 مجموعات غير نشطة: حُذف {inactive_chats}")
+                    else:
+                        cleanup_results.append("✅ لا توجد مجموعات غير نشطة للحذف")
+                except Exception as e:
+                    cleanup_results.append(f"❌ خطأ في تنظيف المجموعات: {str(e)[:50]}")
+                
+                # تنظيف السجلات المكررة
+                try:
+                    cursor.execute("""
+                        DELETE FROM users WHERE rowid NOT IN (
+                            SELECT MIN(rowid) FROM users GROUP BY user_id
+                        )
+                    """)
+                    duplicates_removed = cursor.rowcount
+                    cleanup_results.append(f"🧹 سجلات مكررة: حُذف {duplicates_removed}")
+                except Exception as e:
+                    cleanup_results.append(f"❌ خطأ في حذف المكررات: {str(e)[:50]}")
+                
+                # ضغط قاعدة البيانات
+                try:
+                    cursor.execute("VACUUM")
+                    cleanup_results.append("✅ تم ضغط قاعدة البيانات")
+                except Exception as e:
+                    cleanup_results.append(f"❌ خطأ في الضغط: {str(e)[:50]}")
+                
+                conn.commit()
+            
+            message = f"""🧹 **تنظيف قاعدة البيانات**
+
+📊 **النتائج:**
+{chr(10).join(cleanup_results)}
+
+✨ **تم تنظيف قاعدة البيانات بنجاح!**
+
+💡 **الفوائد:**
+• تحسين سرعة الاستعلامات
+• توفير مساحة التخزين
+• إزالة البيانات المكررة والقديمة"""
+
+            keyboard = [
+                [
+                    {'text': '🔧 تحسين قاعدة البيانات', 'callback_data': 'db_optimize'},
+                    {'text': '📊 إحصائيات مفصلة', 'callback_data': 'db_detailed_stats'}
+                ],
+                [{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تنظيف قاعدة البيانات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في تنظيف قاعدة البيانات: {str(e)}"
+            }
+    
+    async def _optimize_database(self, user_id: int) -> Dict:
+        """تحسين قاعدة البيانات"""
+        try:
+            import sqlite3
+            import os
+            
+            if not os.path.exists(config.DATABASE_PATH):
+                return {
+                    'success': False,
+                    'message': "❌ ملف قاعدة البيانات غير موجود"
+                }
+            
+            optimization_results = []
+            original_size = os.path.getsize(config.DATABASE_PATH)
+            
+            with sqlite3.connect(config.DATABASE_PATH) as conn:
+                cursor = conn.cursor()
+                
+                # تحليل الجداول
+                try:
+                    cursor.execute("ANALYZE")
+                    optimization_results.append("✅ تم تحليل الجداول")
+                except Exception as e:
+                    optimization_results.append(f"❌ خطأ في التحليل: {str(e)[:50]}")
+                
+                # إعادة فهرسة
+                try:
+                    cursor.execute("REINDEX")
+                    optimization_results.append("✅ تم إعادة فهرسة قاعدة البيانات")
+                except Exception as e:
+                    optimization_results.append(f"❌ خطأ في الفهرسة: {str(e)[:50]}")
+                
+                # ضغط قاعدة البيانات
+                try:
+                    cursor.execute("VACUUM")
+                    optimization_results.append("✅ تم ضغط قاعدة البيانات")
+                except Exception as e:
+                    optimization_results.append(f"❌ خطأ في الضغط: {str(e)[:50]}")
+                
+                # تحسين إعدادات الأداء
+                try:
+                    cursor.execute("PRAGMA optimize")
+                    optimization_results.append("✅ تم تحسين الإعدادات")
+                except Exception as e:
+                    optimization_results.append(f"❌ خطأ في تحسين الإعدادات: {str(e)[:50]}")
+                
+                conn.commit()
+            
+            # حساب التوفير في المساحة
+            new_size = os.path.getsize(config.DATABASE_PATH)
+            space_saved = original_size - new_size
+            
+            message = f"""🔧 **تحسين قاعدة البيانات**
+
+📊 **النتائج:**
+{chr(10).join(optimization_results)}
+
+💾 **الأداء:**
+• الحجم الأصلي: `{original_size/1024:.1f} KB`
+• الحجم الجديد: `{new_size/1024:.1f} KB`
+• المساحة المُوفرة: `{space_saved/1024:.1f} KB`
+
+🚀 **تم تحسين قاعدة البيانات بنجاح!**
+
+💡 **التحسينات:**
+• تسريع الاستعلامات
+• تحسين استخدام الذاكرة
+• تقليل حجم الملف"""
+
+            keyboard = [
+                [
+                    {'text': '🔍 فحص سلامة البيانات', 'callback_data': 'db_integrity_check'},
+                    {'text': '📊 إحصائيات مفصلة', 'callback_data': 'db_detailed_stats'}
+                ],
+                [{'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تحسين قاعدة البيانات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في تحسين قاعدة البيانات: {str(e)}"
+            }
+
+    async def _execute_clear_logs(self, user_id: int) -> Dict:
+        """تنفيذ مسح السجلات"""
+        try:
+            import os
+            import shutil
+            from datetime import datetime
+            
+            log_files = ['final_bot_log.txt', 'bot_log.txt']
+            cleared_files = []
+            backup_created = False
+            
+            for log_file in log_files:
+                if os.path.exists(log_file):
+                    try:
+                        # إنشاء نسخة احتياطية
+                        if not backup_created:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            backup_dir = f"logs_backup_{timestamp}"
+                            os.makedirs(backup_dir, exist_ok=True)
+                            backup_created = True
+                        
+                        # نسخ الملف للنسخة الاحتياطية
+                        backup_path = os.path.join(backup_dir, log_file)
+                        shutil.copy2(log_file, backup_path)
+                        
+                        # قراءة آخر 1000 سطر
+                        with open(log_file, 'r', encoding='utf-8') as f:
+                            lines = f.readlines()
+                        
+                        # الكتابة مرة أخرى مع آخر 1000 سطر فقط
+                        with open(log_file, 'w', encoding='utf-8') as f:
+                            f.writelines(lines[-1000:])
+                        
+                        cleared_files.append(f"✅ {log_file}: احتُفظ بآخر 1000 سطر")
+                        
+                    except Exception as e:
+                        cleared_files.append(f"❌ خطأ في {log_file}: {str(e)[:50]}")
+            
+            if not cleared_files:
+                message = "❌ لم يتم العثور على ملفات سجلات للمسح"
+            else:
+                message = f"""🗑️ **تم مسح السجلات بنجاح!**
+
+📊 **النتائج:**
+{chr(10).join(cleared_files)}
+
+💾 **النسخة الاحتياطية:**
+• المجلد: `{backup_dir if backup_created else 'لم يتم إنشاؤها'}`
+• الحالة: {'✅ تم إنشاؤها' if backup_created else '❌ فشل الإنشاء'}
+
+✨ **تم تنظيف السجلات مع الحفاظ على البيانات المهمة!**"""
+
+            keyboard = [
+                [
+                    {'text': '📄 عرض السجل الجديد', 'callback_data': 'logs_full'},
+                    {'text': '📊 إحصائيات السجل', 'callback_data': 'logs_stats'}
+                ],
+                [{'text': '🔙 العودة للسجلات', 'callback_data': 'owner_logs'}]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في تنفيذ مسح السجلات: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في مسح السجلات: {str(e)}"
+            }
+    
+    async def _restore_database_backup(self, user_id: int, backup_file: str) -> Dict:
+        """استيراد نسخة احتياطية من قاعدة البيانات"""
+        try:
+            import os
+            import shutil
+            from datetime import datetime
+            
+            if not os.path.exists(backup_file):
+                return {
+                    'success': False,
+                    'message': f"❌ ملف النسخة الاحتياطية غير موجود: {backup_file}"
+                }
+            
+            # إنشاء نسخة احتياطية من قاعدة البيانات الحالية
+            current_backup = f"current_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+            if os.path.exists(config.DATABASE_PATH):
+                shutil.copy2(config.DATABASE_PATH, current_backup)
+            
+            # استيراد النسخة الاحتياطية
+            shutil.copy2(backup_file, config.DATABASE_PATH)
+            
+            # التحقق من سلامة النسخة المستوردة
+            try:
+                import sqlite3
+                with sqlite3.connect(config.DATABASE_PATH) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("PRAGMA integrity_check")
+                    integrity_result = cursor.fetchone()[0]
+                    
+                    if integrity_result != "ok":
+                        # استعادة النسخة الأصلية في حالة الفشل
+                        if os.path.exists(current_backup):
+                            shutil.copy2(current_backup, config.DATABASE_PATH)
+                        return {
+                            'success': False,
+                            'message': f"❌ النسخة الاحتياطية تالفة: {integrity_result}"
+                        }
+            except Exception as e:
+                # استعادة النسخة الأصلية في حالة الفشل
+                if os.path.exists(current_backup):
+                    shutil.copy2(current_backup, config.DATABASE_PATH)
+                return {
+                    'success': False,
+                    'message': f"❌ خطأ في فحص النسخة الاحتياطية: {str(e)}"
+                }
+            
+            # حساب معلومات النسخة المستوردة
+            backup_size = os.path.getsize(backup_file) / 1024
+            timestamp = backup_file.replace('backup_zemusic_', '').replace('.db', '')
+            try:
+                date_obj = datetime.strptime(timestamp, '%Y%m%d_%H%M%S')
+                date_str = date_obj.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                date_str = timestamp
+            
+            message = f"""📤 **تم استيراد النسخة الاحتياطية بنجاح!**
+
+📁 **تفاصيل النسخة المستوردة:**
+• الملف: `{backup_file}`
+• الحجم: `{backup_size:.1f} KB`
+• التاريخ: `{date_str}`
+
+💾 **النسخة الاحتياطية الحالية:**
+• تم حفظها في: `{current_backup}`
+• للعودة إليها في حالة الحاجة
+
+✅ **قاعدة البيانات جاهزة للاستخدام!**
+
+⚠️ **ملاحظة:** قد تحتاج لإعادة تشغيل البوت لتطبيق التغييرات"""
+
+            keyboard = [
+                [
+                    {'text': '🔄 إعادة تشغيل البوت', 'callback_data': 'owner_restart'},
+                    {'text': '🔍 فحص سلامة البيانات', 'callback_data': 'db_integrity_check'}
+                ],
+                [
+                    {'text': '📊 إحصائيات قاعدة البيانات', 'callback_data': 'db_detailed_stats'},
+                    {'text': '🔙 العودة لقاعدة البيانات', 'callback_data': 'owner_database'}
+                ]
+            ]
+            
+            return {
+                'success': True,
+                'message': message,
+                'keyboard': keyboard
+            }
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"خطأ في استيراد النسخة الاحتياطية: {e}")
+            return {
+                'success': False,
+                'message': f"❌ خطأ في استيراد النسخة الاحتياطية: {str(e)}"
+            }
 
 # إنشاء مثيل عام للوحة التحكم
 owner_panel = OwnerPanel()
@@ -1797,6 +3246,11 @@ async def handle_owner_callbacks(event):
         # معالجة أزرار قاعدة البيانات
         elif data.startswith("db_"):
             result = await owner_panel.handle_database_callback(user_id, data)
+        elif data.startswith("restore_backup_"):
+            backup_file = data.replace("restore_backup_", "")
+            result = await owner_panel._restore_database_backup(user_id, backup_file)
+        elif data == "confirm_clear_logs":
+            result = await owner_panel._execute_clear_logs(user_id)
         
         else:
             # رسالة واضحة للأزرار غير المُنفذة

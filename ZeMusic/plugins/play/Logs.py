@@ -1,11 +1,11 @@
 from ZeMusic.pyrogram_compatibility import Client, filters
-from ZeMusic.core.userbot import Userbot
+# from ZeMusic.core.userbot import Userbot  # غير موجود
 from ZeMusic.pyrogram_compatibility import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from config import LOGGER_ID as LOG_ID
 from ZeMusic import app
 
 
-userbot = Userbot()
+# userbot = Userbot()  # غير موجود
 
 
 async def new_message(chat_id: int, message: str, reply_markup=None):
@@ -30,5 +30,5 @@ async def on_left_chat_member(client: Client, message: Message):
 
         
         await new_message(LOG_ID, rirurubye, reply_markup)
-        await userbot.one.start()
-        await userbot.one.leave_chat(chat_id)
+        # await userbot.one.start()  # معطل - userbot غير موجود
+        # await userbot.one.leave_chat(chat_id)  # معطل - userbot غير موجود

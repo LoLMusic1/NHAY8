@@ -122,7 +122,7 @@ class TelethonSimpleHandlers:
                 return
             
             # في Telethon v1.36+، event.data هو نص مباشرة
-        callback_data = event.data if isinstance(event.data, str) else event.data.decode('utf-8')
+            callback_data = event.data if isinstance(event.data, str) else event.data.decode('utf-8')
             user_id = event.sender_id
             
             # معالجة بيانات callback مختلفة
