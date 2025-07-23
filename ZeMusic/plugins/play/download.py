@@ -1105,6 +1105,17 @@ BLOCKED_COOKIES = set()
 COOKIES_USAGE_COUNT = {}
 LAST_COOKIE_USED = None
 
+# إحصائيات البحث المتوازي
+PARALLEL_SEARCH_STATS = {
+    'database_wins': 0,
+    'smart_cache_wins': 0,
+    'total_searches': 0,
+    'avg_database_time': 0,
+    'avg_smart_cache_time': 0,
+    'database_times': [],
+    'smart_cache_times': []
+}
+
 def get_available_cookies():
     """الحصول على قائمة ملفات الكوكيز المتاحة مع تدوير ذكي"""
     try:
@@ -1273,6 +1284,107 @@ def get_cookies_statistics():
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في إحصائيات الكوكيز: {e}")
         return {}
+
+async def parallel_search_with_monitoring(query: str, bot_client) -> Optional[Dict]:
+    """البحث المتوازي مع مراقبة الأداء"""
+    start_time = time.time()
+    
+    try:
+        LOGGER(__name__).info(f"🚀 بدء البحث المتوازي: {query}")
+        
+        # إنشاء مهام متوازية مع تتبع الوقت
+        db_task = asyncio.create_task(search_in_database_cache(query))
+        cache_task = asyncio.create_task(search_in_smart_cache(query, bot_client))
+        
+        # تسجيل بدء المهام
+        db_start = time.time()
+        cache_start = time.time()
+        
+        # انتظار أول نتيجة ناجحة
+        done, pending = await asyncio.wait(
+            [db_task, cache_task], 
+            return_when=asyncio.FIRST_COMPLETED,
+            timeout=10  # مهلة زمنية 10 ثوان
+        )
+        
+        # فحص النتائج
+        for task in done:
+            try:
+                result = await task
+                if result and result.get('success'):
+                    elapsed = time.time() - start_time
+                    
+                    # تحديث الإحصائيات
+                    PARALLEL_SEARCH_STATS['total_searches'] += 1
+                    
+                    if task == db_task:
+                        LOGGER(__name__).info(f"🏆 قاعدة البيانات فازت! ({elapsed:.2f}s)")
+                        result['search_source'] = 'database'
+                        result['search_time'] = elapsed
+                        
+                        # تحديث إحصائيات قاعدة البيانات
+                        PARALLEL_SEARCH_STATS['database_wins'] += 1
+                        PARALLEL_SEARCH_STATS['database_times'].append(elapsed)
+                        if len(PARALLEL_SEARCH_STATS['database_times']) > 100:
+                            PARALLEL_SEARCH_STATS['database_times'].pop(0)
+                        PARALLEL_SEARCH_STATS['avg_database_time'] = sum(PARALLEL_SEARCH_STATS['database_times']) / len(PARALLEL_SEARCH_STATS['database_times'])
+                        
+                    elif task == cache_task:
+                        LOGGER(__name__).info(f"🏆 التخزين الذكي فاز! ({elapsed:.2f}s)")
+                        result['search_source'] = 'smart_cache'
+                        result['search_time'] = elapsed
+                        
+                        # تحديث إحصائيات التخزين الذكي
+                        PARALLEL_SEARCH_STATS['smart_cache_wins'] += 1
+                        PARALLEL_SEARCH_STATS['smart_cache_times'].append(elapsed)
+                        if len(PARALLEL_SEARCH_STATS['smart_cache_times']) > 100:
+                            PARALLEL_SEARCH_STATS['smart_cache_times'].pop(0)
+                        PARALLEL_SEARCH_STATS['avg_smart_cache_time'] = sum(PARALLEL_SEARCH_STATS['smart_cache_times']) / len(PARALLEL_SEARCH_STATS['smart_cache_times'])
+                    
+                    # إلغاء المهام المتبقية
+                    for pending_task in pending:
+                        pending_task.cancel()
+                    
+                    return result
+                    
+            except Exception as e:
+                LOGGER(__name__).warning(f"❌ خطأ في مهمة البحث: {e}")
+        
+        # إذا لم تنجح المهام المكتملة، انتظر الباقي
+        if pending:
+            LOGGER(__name__).info("⏳ انتظار المهام المتبقية...")
+            try:
+                remaining_results = await asyncio.gather(*pending, return_exceptions=True)
+                
+                for i, result in enumerate(remaining_results):
+                    if isinstance(result, Exception):
+                        continue
+                        
+                    if result and result.get('success'):
+                        elapsed = time.time() - start_time
+                        remaining_tasks = list(pending)
+                        
+                        if remaining_tasks[i] == db_task:
+                            LOGGER(__name__).info(f"✅ قاعدة البيانات نجحت (متأخرة: {elapsed:.2f}s)")
+                            result['search_source'] = 'database'
+                        elif remaining_tasks[i] == cache_task:
+                            LOGGER(__name__).info(f"✅ التخزين الذكي نجح (متأخر: {elapsed:.2f}s)")
+                            result['search_source'] = 'smart_cache'
+                        
+                        result['search_time'] = elapsed
+                        return result
+                        
+            except asyncio.TimeoutError:
+                LOGGER(__name__).warning("⏰ انتهت مهلة البحث المتوازي")
+        
+        total_time = time.time() - start_time
+        LOGGER(__name__).info(f"❌ فشل البحث المتوازي ({total_time:.2f}s)")
+        return None
+        
+    except Exception as e:
+        total_time = time.time() - start_time
+        LOGGER(__name__).error(f"❌ خطأ في البحث المتوازي ({total_time:.2f}s): {e}")
+        return None
 
 # === نظام البحث في قاعدة البيانات الذكية ===
 
@@ -2162,6 +2274,12 @@ async def smart_download_handler(event):
         if stats:
             LOGGER(__name__).info(f"📊 كوكيز: {stats['available']}/{stats['total']} متاح | توزيع: أساسي={stats['distribution']['primary']}, ثانوي={stats['distribution']['secondary']}, متبقي={stats['distribution']['remaining']}")
         
+        # عرض إحصائيات البحث المتوازي
+        if PARALLEL_SEARCH_STATS['total_searches'] > 0:
+            db_win_rate = (PARALLEL_SEARCH_STATS['database_wins'] / PARALLEL_SEARCH_STATS['total_searches']) * 100
+            cache_win_rate = (PARALLEL_SEARCH_STATS['smart_cache_wins'] / PARALLEL_SEARCH_STATS['total_searches']) * 100
+            LOGGER(__name__).info(f"🏁 بحث متوازي: قاعدة={db_win_rate:.1f}% ({PARALLEL_SEARCH_STATS['avg_database_time']:.2f}s) | تخزين={cache_win_rate:.1f}% ({PARALLEL_SEARCH_STATS['avg_smart_cache_time']:.2f}s)")
+        
         chat_id = event.chat_id
         if chat_id > 0:  # محادثة خاصة
             if not await is_search_enabled1():
@@ -2196,30 +2314,31 @@ async def smart_download_handler(event):
     status_msg = await event.reply("🔍 **جاري البحث في التخزين الذكي...**")
     
     try:
-        # المرحلة 1: البحث في قاعدة البيانات (الكاش) أولاً
-        LOGGER(__name__).info(f"🔍 بدء البحث في قاعدة البيانات الذكية: {query}")
-        db_result = await search_in_database_cache(query)
+        # البحث المتوازي في الكاش وقناة التخزين الذكي
+        await status_msg.edit("🔍 **البحث المتوازي في الكاش والتخزين الذكي...**")
         
-        if db_result and db_result.get('success'):
-            LOGGER(__name__).info(f"✅ تم العثور على المقطع في قاعدة البيانات")
-            await status_msg.edit("📤 **تم العثور في الكاش - جاري الإرسال...**")
-            await send_cached_from_database(event, status_msg, db_result, bot_client)
-            return
+        # استخدام دالة البحث المتوازي المحسنة
+        parallel_result = await parallel_search_with_monitoring(query, bot_client)
         
-        # المرحلة 2: البحث في قناة التخزين الذكي
-        await status_msg.edit("🔍 **لم يوجد في الكاش - جاري البحث في التخزين الذكي...**")
-        cache_result = await search_in_smart_cache(query, bot_client)
+        if parallel_result and parallel_result.get('success'):
+            search_source = parallel_result.get('search_source', 'unknown')
+            search_time = parallel_result.get('search_time', 0)
+            
+            if search_source == 'database':
+                await status_msg.edit(f"📤 **تم العثور في الكاش ({search_time:.2f}s) - جاري الإرسال...**")
+                await send_cached_from_database(event, status_msg, parallel_result, bot_client)
+                return
+            elif search_source == 'smart_cache':
+                await status_msg.edit(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s) - جاري الإرسال...**")
+                await send_cached_audio(event, status_msg, parallel_result, bot_client)
+                return
         
-        if cache_result and cache_result.get('success'):
-            LOGGER(__name__).info(f"✅ تم العثور على المقطع في التخزين الذكي")
-            await send_cached_audio(event, status_msg, cache_result, bot_client)
-            return
-        
-        # المرحلة 3: إذا لم يجد في أي مكان، ابدأ البحث العادي
+        # إذا لم يجد في أي مكان، ابدأ البحث العادي
+        LOGGER(__name__).info("❌ لم يتم العثور على المقطع في الكاش أو التخزين الذكي")
         await status_msg.edit("🔍 **لم يوجد في التخزين - جاري البحث في يوتيوب...**")
         
     except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في البحث بالتخزين الذكي: {e}")
+        LOGGER(__name__).error(f"❌ خطأ في البحث المتوازي: {e}")
         await status_msg.edit("🔍 **جاري البحث في يوتيوب...**")
     
     try:
@@ -2414,7 +2533,7 @@ async def smart_download_handler(event):
         if forced_result and forced_result.get('success'):
             audio_file = forced_result.get('file_path')
             if audio_file and Path(audio_file).exists():
-                                    await send_audio_file(event, status_msg, audio_file, forced_result, query, bot_client)
+                await send_audio_file(event, status_msg, audio_file, forced_result, query, bot_client)
                 return
         
         # إذا فشل كل شيء، نرسل رسالة فشل بدون رابط
