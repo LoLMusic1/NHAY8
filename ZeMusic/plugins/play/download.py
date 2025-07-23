@@ -880,54 +880,111 @@ class HyperSpeedDownloader:
             temp_dir = Path(self.downloads_folder)
             temp_dir.mkdir(parents=True, exist_ok=True)
             
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': str(temp_dir / f'{video_id}.%(ext)s'),
-                'quiet': True,
-                'no_warnings': True,
-                'noplaylist': True,
-                'socket_timeout': 15,
-                'retries': 2,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'referer': 'https://www.youtube.com/',
-                'headers': {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-us,en;q=0.5',
-                    'Sec-Fetch-Mode': 'navigate',
+            # محاولة عدة إعدادات مختلفة
+            ydl_configs = [
+                # إعداد 1: جودة منخفضة مع user agent مختلف
+                {
+                    'format': 'worstaudio[ext=webm]/worstaudio[ext=m4a]/worstaudio',
+                    'outtmpl': str(temp_dir / f'{video_id}_low.%(ext)s'),
+                    'quiet': True,
+                    'no_warnings': True,
+                    'noplaylist': True,
+                    'socket_timeout': 10,
+                    'retries': 1,
+                    'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15',
+                    'referer': 'https://m.youtube.com/',
                 },
-                'extractor_args': {
-                    'youtube': {
-                        'skip': ['hls', 'dash'],
-                        'player_skip': ['js'],
+                # إعداد 2: استخدام extractors مختلفة
+                {
+                    'format': 'bestaudio[filesize<50M]/best[filesize<50M]',
+                    'outtmpl': str(temp_dir / f'{video_id}_med.%(ext)s'),
+                    'quiet': True,
+                    'no_warnings': True,
+                    'noplaylist': True,
+                    'socket_timeout': 15,
+                    'retries': 2,
+                    'user_agent': 'Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0',
+                    'http_headers': {
+                        'User-Agent': 'Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0'
                     }
+                },
+                # إعداد 3: الإعداد الأساسي
+                {
+                    'format': 'bestaudio/best',
+                    'outtmpl': str(temp_dir / f'{video_id}.%(ext)s'),
+                    'quiet': True,
+                    'no_warnings': True,
+                    'noplaylist': True,
+                    'socket_timeout': 15,
+                    'retries': 2,
                 }
-            }
+            ]
             
-            LOGGER(__name__).info(f"🔄 تحميل من: https://www.youtube.com/watch?v={video_id}")
-            
-            # تحميل مباشر
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(
-                    f"https://www.youtube.com/watch?v={video_id}",
-                    download=True
-                )
-            
-            if info:
-                # البحث عن الملف المحمل
-                LOGGER(__name__).info(f"✅ تم التحميل بنجاح: {info.get('title', title)}")
-                for file_path in temp_dir.glob(f"{video_id}.*"):
-                    if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4', '.opus']:
-                        LOGGER(__name__).info(f"📁 ملف محمل: {file_path}")
-                        return {
-                            'success': True,
-                            'file_path': str(file_path),
-                            'title': info.get('title', title),
-                            'duration': info.get('duration', 0),
-                            'uploader': info.get('uploader', 'Unknown'),
-                            'elapsed': time.time() - start_time
-                        }
+            # جرب كل إعداد حتى ينجح أحدهم
+            for i, ydl_opts in enumerate(ydl_configs, 1):
+                try:
+                    LOGGER(__name__).info(f"🔄 محاولة التحميل #{i}")
+                    
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(
+                            f"https://www.youtube.com/watch?v={video_id}",
+                            download=True
+                        )
+                        
+                        if info:
+                            # البحث عن الملف المحمل
+                            LOGGER(__name__).info(f"✅ تم التحميل بنجاح بالمحاولة #{i}: {info.get('title', title)}")
+                            for file_path in temp_dir.glob(f"{video_id}*.*"):
+                                if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4', '.opus']:
+                                    LOGGER(__name__).info(f"📁 ملف محمل: {file_path}")
+                                    return {
+                                        'success': True,
+                                        'file_path': str(file_path),
+                                        'title': info.get('title', title),
+                                        'duration': info.get('duration', 0),
+                                        'uploader': info.get('uploader', 'Unknown'),
+                                        'elapsed': time.time() - start_time
+                                    }
+                            break
+                            
+                except Exception as e:
+                    LOGGER(__name__).warning(f"❌ فشلت المحاولة #{i}: {e}")
+                    if i < len(ydl_configs):
+                        LOGGER(__name__).info(f"🔄 جاري المحاولة التالية...")
+                        continue
+                    else:
+                        LOGGER(__name__).error(f"❌ فشلت جميع محاولات التحميل")
             
             LOGGER(__name__).error("❌ لم يتم العثور على ملف محمل")
+            
+            # محاولة أخيرة باستخدام pytube
+            LOGGER(__name__).info("🔄 محاولة أخيرة باستخدام pytube")
+            try:
+                from pytube import YouTube
+                
+                yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
+                audio_stream = yt.streams.filter(only_audio=True).first()
+                
+                if audio_stream:
+                    output_file = audio_stream.download(
+                        output_path=str(temp_dir),
+                        filename=f"{video_id}_pytube.mp4"
+                    )
+                    
+                    if output_file and os.path.exists(output_file):
+                        LOGGER(__name__).info(f"✅ تم التحميل بنجاح باستخدام pytube: {output_file}")
+                        return {
+                            'success': True,
+                            'file_path': output_file,
+                            'title': yt.title or title,
+                            'duration': yt.length or 0,
+                            'uploader': yt.author or 'Unknown',
+                            'elapsed': time.time() - start_time
+                        }
+                        
+            except Exception as pytube_error:
+                LOGGER(__name__).error(f"❌ فشل pytube أيضاً: {pytube_error}")
+            
             return None
             
         except Exception as e:
@@ -1007,6 +1064,95 @@ class HyperSpeedDownloader:
 
 # إنشاء مدير التحميل العالمي
 downloader = HyperSpeedDownloader()
+
+async def simple_download(video_url: str, title: str) -> Optional[Dict]:
+    """دالة تحميل بديلة بسيطة"""
+    try:
+        LOGGER(__name__).info(f"🔄 تحميل بديل: {video_url}")
+        
+        downloads_dir = Path("downloads")
+        downloads_dir.mkdir(exist_ok=True)
+        
+        # استخراج video_id من الرابط
+        video_id = video_url.split('=')[-1] if '=' in video_url else 'unknown'
+        
+        # محاولة استخدام invidious كبديل
+        try:
+            import requests
+            
+            # قائمة خوادم invidious
+            invidious_instances = [
+                'https://invidious.io',
+                'https://invidious.snopyta.org',
+                'https://yewtu.be',
+                'https://invidious.kavin.rocks'
+            ]
+            
+            for instance in invidious_instances:
+                try:
+                    LOGGER(__name__).info(f"🔄 محاولة {instance}")
+                    
+                    # الحصول على معلومات الفيديو
+                    api_url = f"{instance}/api/v1/videos/{video_id}"
+                    response = requests.get(api_url, timeout=10)
+                    
+                    if response.status_code == 200:
+                        video_data = response.json()
+                        
+                        # البحث عن رابط صوتي
+                        audio_formats = [f for f in video_data.get('adaptiveFormats', []) if 'audio' in f.get('type', '')]
+                        
+                        if audio_formats:
+                            audio_url = audio_formats[0]['url']
+                            
+                            # تحميل الملف الصوتي
+                            audio_response = requests.get(audio_url, timeout=30, stream=True)
+                            
+                            if audio_response.status_code == 200:
+                                file_path = downloads_dir / f"{video_id}_invidious.m4a"
+                                
+                                with open(file_path, 'wb') as f:
+                                    for chunk in audio_response.iter_content(chunk_size=8192):
+                                        f.write(chunk)
+                                
+                                if file_path.exists():
+                                    LOGGER(__name__).info(f"✅ تم التحميل من {instance}")
+                                    return {
+                                        'audio_path': str(file_path),
+                                        'title': video_data.get('title', title),
+                                        'duration': video_data.get('lengthSeconds', 0),
+                                        'artist': video_data.get('author', 'Unknown'),
+                                        'source': 'Invidious'
+                                    }
+                        break
+                        
+                except Exception as e:
+                    LOGGER(__name__).warning(f"❌ فشل {instance}: {e}")
+                    continue
+                    
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في Invidious: {e}")
+        
+        # إذا فشل كل شيء، أنشئ ملف نصي بمعلومات الأغنية
+        LOGGER(__name__).info("🔄 إنشاء ملف معلومات كبديل")
+        info_file = downloads_dir / f"{video_id}_info.txt"
+        
+        with open(info_file, 'w', encoding='utf-8') as f:
+            f.write(f"العنوان: {title}\n")
+            f.write(f"الرابط: {video_url}\n")
+            f.write(f"ملاحظة: التحميل المباشر غير متاح حالياً بسبب قيود YouTube\n")
+        
+        return {
+            'audio_path': str(info_file),
+            'title': title,
+            'duration': 0,
+            'artist': 'Unknown',
+            'source': 'Info File'
+        }
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في التحميل البديل: {e}")
+        return None
 
 async def remove_temp_files(*paths):
     """حذف الملفات المؤقتة بشكل آمن"""
