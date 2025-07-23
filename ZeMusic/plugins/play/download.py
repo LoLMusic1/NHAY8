@@ -1377,33 +1377,21 @@ async def smart_download_handler(event):
                     if audio_file.endswith('.txt'):
                         LOGGER(__name__).warning("❌ الملف المحمل هو ملف نصي، لن يتم إرساله")
                         # قراءة محتوى الملف النصي وإرسال الرسالة
-                        try:
-                            with open(audio_file, 'r', encoding='utf-8') as f:
-                                file_content = f.read()
-                            
-                            await status_msg.edit(f"""❌ **فشل التحميل**
-
-📝 **العنوان:** {result.get('title', 'غير معروف')}
-🔗 **الرابط:** https://youtu.be/{video_id}
-
-⚠️ **جميع طرق التحميل فشلت:**
-• yt-dlp: قيود YouTube
-• pytube: خطأ في الطلب
-• Invidious: خوادم غير متاحة
-
-💡 **يمكنك:**
-• مشاهدة الفيديو من الرابط أعلاه
-• المحاولة لاحقاً
-• جرب أغنية أخرى
-
-🔧 **للمطور:** تحديث cookies مطلوب""")
-                            
-                            # حذف الملف النصي
-                            await remove_temp_files(audio_file)
-                            return
-                            
-                        except Exception as e:
-                            LOGGER(__name__).error(f"خطأ في قراءة الملف النصي: {e}")
+                        # إذا كان ملف TXT، نحاول طرق تحميل إضافية
+                        LOGGER(__name__).warning("❌ الملف المحمل هو ملف نصي، محاولة طرق إضافية")
+                        await status_msg.edit("🔄 **محاولة طرق تحميل إضافية...**")
+                        
+                        # حذف الملف النصي
+                        await remove_temp_files(audio_file)
+                        
+                        # محاولة تحميل باستخدام طرق أخرى
+                        alternative_result = await try_alternative_downloads(video_id, video_info.get('title', 'Unknown'))
+                        if alternative_result and alternative_result.get('success'):
+                            audio_file = alternative_result.get('file_path')
+                            if audio_file and Path(audio_file).exists() and not audio_file.endswith('.txt'):
+                                # إرسال الملف البديل
+                                await send_audio_file(event, status_msg, audio_file, alternative_result)
+                                return
                     
                     else:
                         # الملف صوتي حقيقي - إرساله
@@ -1438,25 +1426,34 @@ async def smart_download_handler(event):
         except Exception as e:
             LOGGER(__name__).warning(f"فشل التحميل بالنظام الخارق: {e}")
         
-        # التحميل فشل كلياً - عرض معلومات الفيديو
-        result_text = f"""🔍 **تم العثور على الأغنية:**
+        # التحميل فشل - محاولة أخيرة بطرق قوية
+        await status_msg.edit("🔄 **محاولة تحميل قسري...**")
+        LOGGER(__name__).info("🔄 محاولة تحميل قسري بجميع الطرق المتاحة")
+        
+        # محاولة تحميل قسري
+        forced_result = await force_download_any_way(video_id, video_info.get('title', 'Unknown'))
+        if forced_result and forced_result.get('success'):
+            audio_file = forced_result.get('file_path')
+            if audio_file and Path(audio_file).exists():
+                await send_audio_file(event, status_msg, audio_file, forced_result)
+                return
+        
+        # إذا فشل كل شيء، نرسل رسالة فشل بدون رابط
+        await status_msg.edit(f"""❌ **فشل التحميل نهائياً**
 
 📝 **العنوان:** {video_info.get('title', 'غير معروف')}
-🎤 **الفنان:** {video_info.get('channel', {}).get('name', 'غير معروف') if isinstance(video_info.get('channel'), dict) else video_info.get('channel', 'غير معروف')}
-⏱️ **المدة:** {video_info.get('duration', 'غير معروف')}
-👁️ **المشاهدات:** {video_info.get('viewCount', {}).get('short', 'غير معروف') if isinstance(video_info.get('viewCount'), dict) else video_info.get('viewCount', 'غير معروف')}
 
-🔗 **الرابط:** https://youtu.be/{video_id}
+⚠️ **جميع طرق التحميل فشلت:**
+• yt-dlp بجميع الإعدادات
+• pytube
+• youtube-dl مباشر
+• Invidious API
+• التحميل القسري
 
-⚠️ **التحميل غير متاح حالياً:**
-• انتهت صلاحية ملفات الكوكيز
-• قيود أمنية من YouTube
-• مشكلة مؤقتة في الخدمة
-
-💡 **الحل:** يمكنك مشاهدة الفيديو من الرابط أعلاه
-🔧 **للمطور:** تحديث ملفات الكوكيز مطلوب"""
-        
-        await status_msg.edit(result_text)
+🔄 **يرجى المحاولة:**
+• مرة أخرى لاحقاً
+• مع أغنية أخرى
+• تحديث البوت قد يكون مطلوباً""")
         
     except Exception as e:
         LOGGER(__name__).error(f"خطأ في المعالج: {e}")
