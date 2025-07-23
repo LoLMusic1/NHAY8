@@ -114,7 +114,7 @@ class TelethonCommandHandler:
                 should_check_subscription = True
             elif is_group_or_channel:
                 is_bot_command = text.startswith('/')
-                is_bot_mention = f"@{telethon_manager.bot_client.me.username}" in text if telethon_manager.bot_client else False
+                is_bot_mention = f"@{config.BOT_USERNAME}" in text if config.BOT_USERNAME else False
                 is_reply_to_bot = message.reply_to_msg_id and hasattr(message.reply_to, 'sender_id') and message.reply_to.sender_id == int(config.BOT_ID)
                 
                 bot_keywords = [
