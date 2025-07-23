@@ -1060,9 +1060,16 @@ async def smart_download_handler(event):
     except:
         pass
     
-    # استخراج الاستعلام
-    message_text = event.message.text or ""
-    query = re.sub(r'^(بحث|/search|/song|يوت|اغنية|تحميل)\s*', '', message_text, flags=re.IGNORECASE).strip()
+    # التحقق من أن المرسل ليس بوت
+    if event.sender.bot:
+        return
+    
+    # استخراج الاستعلام من pattern
+    match = event.pattern_match
+    if not match:
+        return
+    
+    query = match.group(2) if match.group(2) else ""
     
     if not query:
         await event.reply("📝 **الاستخدام:** `بحث اسم الأغنية`")
