@@ -29,6 +29,7 @@ import uvloop
 import psutil
 import random
 import string
+import atexit
 from contextlib import asynccontextmanager
 import orjson
 
@@ -1286,11 +1287,6 @@ PARALLEL_SEARCH_STATS = {
 }
 
 # نظام إدارة الحمولة العالية
-import asyncio
-from asyncio import Semaphore
-from collections import defaultdict, deque
-import threading
-from concurrent.futures import ThreadPoolExecutor
 
 # إعدادات الحمولة العالية (لا نهائية)
 MAX_CONCURRENT_DOWNLOADS = float('inf')  # لا حد أقصى للتحميلات
@@ -2954,13 +2950,6 @@ async def download_thumbnail(url: str, title: str) -> Optional[str]:
     
     return None
 
-# تم حذف التعريف المكرر - يوجد تعريف آخر في نهاية الملف
-    # إنشاء مهمة منفصلة لكل طلب بدون انتظار مع تحسينات الأداء
-    asyncio.create_task(process_unlimited_download_enhanced(event, user_id, start_time))
-    
-    # تسجيل بدء المهمة فوراً
-    LOGGER(__name__).info(f"⚡ تم إنشاء مهمة متوازية محسنة للمستخدم {user_id} - العمليات النشطة: {len(active_downloads) + 1}")
-
 async def process_unlimited_download_enhanced(event, user_id: int, start_time: float):
     """معالجة التحميل المتوازي المحسن مع ذكاء اصطناعي"""
     task_id = f"{user_id}_{int(time.time() * 1000000)}"  # دقة عالية جداً
@@ -3231,7 +3220,6 @@ async def shutdown_system():
         LOGGER(__name__).error(f"خطأ في إيقاف النظام: {e}")
 
 # تسجيل معالج الإغلاق
-import atexit
 atexit.register(lambda: asyncio.run(shutdown_system()))
 
 # دالة التحميل الذكي المتوازي المطور
@@ -3261,7 +3249,7 @@ async def download_song_smart(message, query: str):
             LOGGER(__name__).info("✅ تم العثور على المقطع في الكاش المحلي")
             await status_msg.edit("📁 **تم العثور في الكاش!**\n📤 جاري الإرسال...")
             
-            success = await send_cached_audio(message, cache_result, status_msg)
+            success = await send_local_cached_audio(message, cache_result, status_msg)
             if success:
                 return
                 
@@ -3655,7 +3643,7 @@ async def sequential_external_search(query: str) -> Optional[Dict]:
         LOGGER(__name__).error(f"❌ خطأ في البحث الخارجي: {e}")
         return None
 
-async def send_cached_audio(message, cache_result: Dict, status_msg) -> bool:
+async def send_local_cached_audio(message, cache_result: Dict, status_msg) -> bool:
     """إرسال المقطع الصوتي من الكاش المحلي"""
     try:
         LOGGER(__name__).info(f"📤 إرسال من الكاش المحلي: {cache_result.get('title', 'غير محدد')}")
