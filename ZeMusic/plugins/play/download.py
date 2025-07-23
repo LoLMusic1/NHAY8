@@ -1292,10 +1292,10 @@ PARALLEL_SEARCH_STATS = {
 
 # نظام إدارة الحمولة العالية
 
-# إعدادات الحمولة العالية (لا نهائية)
-MAX_CONCURRENT_DOWNLOADS = float('inf')  # لا حد أقصى للتحميلات
-MAX_CONCURRENT_SEARCHES = float('inf')   # لا حد أقصى للبحث
-MAX_QUEUE_SIZE = float('inf')           # لا حد أقصى للطابور
+# إعدادات الحمولة العالية (محسنة للأداء)
+MAX_CONCURRENT_DOWNLOADS = 20          # حد معقول للتحميلات المتوازية
+MAX_CONCURRENT_SEARCHES = 30           # حد معقول للبحث المتوازي
+MAX_QUEUE_SIZE = float('inf')          # لا حد أقصى للطابور
 RATE_LIMIT_WINDOW = 60                  # نافزة زمنية بالثواني
 MAX_REQUESTS_PER_WINDOW = 1000          # حد مرن للطلبات (مضاعف)
 
@@ -2696,10 +2696,10 @@ async def download_with_api_info(video_id: str, snippet: dict, fallback_title: s
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
-            'socket_timeout': 15,  # تقليل الوقت المسموح
-            'retries': 1,  # تقليل المحاولات
-            'concurrent_fragment_downloads': 4,  # تحميل متوازي
-            'http_chunk_size': 10485760,  # 10MB chunks
+            'socket_timeout': 20,  # وقت معقول للاستقرار
+            'retries': 2,  # محاولات معقولة
+            'concurrent_fragment_downloads': 2,  # تحميل متوازي معتدل
+            'http_chunk_size': 5242880,  # 5MB chunks للاستقرار
             'prefer_ffmpeg': True,  # استخدام ffmpeg للسرعة
         }
         
@@ -2961,10 +2961,10 @@ async def try_alternative_downloads(video_id: str, title: str) -> Optional[Dict]
                     'no_warnings': True,
                     'noplaylist': True,
                     'cookiefile': cookie_file,
-                    'socket_timeout': 12,  # تسريع الاتصال
-                    'retries': 1,
-                    'concurrent_fragment_downloads': 4,
-                    'http_chunk_size': 8388608,  # 8MB chunks
+                    'socket_timeout': 18,  # وقت معقول للاستقرار
+                    'retries': 2,
+                    'concurrent_fragment_downloads': 2,
+                    'http_chunk_size': 4194304,  # 4MB chunks
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -3043,11 +3043,11 @@ async def force_download_any_way(video_id: str, title: str) -> Optional[Dict]:
                     'no_warnings': True,
                     'noplaylist': True,
                     'cookiefile': cookie_file,
-                    'socket_timeout': 12,  # تسريع الاتصال
-                    'retries': 1,  # تقليل المحاولات
+                    'socket_timeout': 18,  # وقت معقول
+                    'retries': 2,  # محاولات معقولة
                     'ignore_errors': True,
-                    'concurrent_fragment_downloads': 4,
-                    'http_chunk_size': 8388608,  # 8MB chunks
+                    'concurrent_fragment_downloads': 2,
+                    'http_chunk_size': 4194304,  # 4MB chunks
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -4832,12 +4832,26 @@ async def smart_download_handler(event):
     # if len(active_downloads) % 50 == 0:
     #     asyncio.create_task(cleanup_old_downloads())
     
-    # تنفيذ المعالجة الفورية المتوازية المحسنة - كل طلب يبدأ فوراً
-    # إنشاء مهمة منفصلة لكل طلب بدون انتظار مع تحسينات الأداء
-    asyncio.create_task(process_unlimited_download_enhanced(event, user_id, start_time))
+    # تحكم ذكي في العمليات المتوازية
+    current_downloads = len(active_downloads)
     
-    # تسجيل بدء المهمة فوراً
-    LOGGER(__name__).info(f"⚡ تم إنشاء مهمة متوازية محسنة للمستخدم {user_id} - العمليات النشطة: {len(active_downloads) + 1}")
+    if current_downloads < MAX_CONCURRENT_DOWNLOADS:
+        # تنفيذ المعالجة الفورية المتوازية المحسنة
+        asyncio.create_task(process_unlimited_download_enhanced(event, user_id, start_time))
+        LOGGER(__name__).info(f"⚡ تم إنشاء مهمة متوازية محسنة للمستخدم {user_id} - العمليات النشطة: {current_downloads + 1}")
+    else:
+        # إذا تجاوزنا الحد، ننتظر قليلاً ثم نحاول مرة أخرى
+        LOGGER(__name__).info(f"⏳ تأجيل الطلب - العمليات النشطة: {current_downloads} (الحد الأقصى: {MAX_CONCURRENT_DOWNLOADS})")
+        
+        async def delayed_process():
+            await asyncio.sleep(0.5)  # انتظار نصف ثانية
+            if len(active_downloads) < MAX_CONCURRENT_DOWNLOADS:
+                await process_unlimited_download_enhanced(event, user_id, start_time)
+            else:
+                # إذا لا يزال مزدحماً، ننشئ المهمة بأي حال
+                asyncio.create_task(process_unlimited_download_enhanced(event, user_id, start_time))
+        
+        asyncio.create_task(delayed_process())
 
 async def cleanup_old_downloads():
     """تنظيف دوري للعمليات القديمة لمنع تراكمها"""
