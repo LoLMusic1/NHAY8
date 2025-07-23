@@ -3038,6 +3038,9 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
                     await send_cached_from_database(event, status_msg, parallel_result, event.client)
                     return
                 elif search_source == 'smart_cache':
+                    await status_msg.edit(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n🚀 **جاري الإرسال...**")
+                    await send_cached_from_telegram(event, status_msg, parallel_result, event.client)
+                    return
         except Exception as e:
             LOGGER(__name__).warning(f"⚠️ خطأ في البحث المتوازي: {e}")
             
@@ -3048,10 +3051,6 @@ async def execute_parallel_download_enhanced(event, user_id: int, start_time: fl
             return
         except Exception as e:
             LOGGER(__name__).error(f"❌ فشل النظام الذكي المطور: {e}")
-                cache_info = f"من {processed_msgs} رسالة" if processed_msgs else ""
-                await status_msg.edit(f"📤 **تم العثور في التخزين الذكي ({search_time:.2f}s)**\n\n📊 **{cache_info}**\n🚀 **جاري الإرسال...**")
-                await send_cached_audio(event, status_msg, parallel_result, event.client)
-                return
         
         # إذا لم يجد في التخزين، ابدأ التحميل الذكي
         await status_msg.edit("🔍 **لم يوجد في التخزين - جاري البحث الذكي في يوتيوب...**")
