@@ -1890,6 +1890,8 @@ async def search_in_database_cache(query: str) -> Optional[Dict]:
 async def send_cached_from_database(event, status_msg, db_result: Dict, bot_client):
     """إرسال الملف من قاعدة البيانات باستخدام file_id"""
     try:
+        import config
+        
         LOGGER(__name__).info(f"📤 محاولة إرسال من قاعدة البيانات: {db_result.get('title', 'Unknown')}")
         await status_msg.edit("📤 **إرسال من الكاش المحلي...**")
         
@@ -1899,12 +1901,33 @@ async def send_cached_from_database(event, status_msg, db_result: Dict, bot_clie
         
         user_caption = f"✦ @{config.BOT_USERNAME}"
         
+        # محاولة تحميل الصورة المصغرة إذا كانت متاحة
+        thumb_path = None
+        try:
+            title = db_result.get('title', 'Unknown')
+            # البحث عن الصورة المصغرة في قناة التخزين
+            if 'message_id' in db_result and bot_client:
+                try:
+                    if hasattr(config, 'CACHE_CHANNEL_ID') and config.CACHE_CHANNEL_ID:
+                        # الحصول على الرسالة من قناة التخزين للحصول على الصورة المصغرة
+                        channel_msg = await bot_client.get_messages(config.CACHE_CHANNEL_ID, ids=db_result['message_id'])
+                        if channel_msg and channel_msg.media and hasattr(channel_msg.media, 'document'):
+                            # استخراج الصورة المصغرة من الملف
+                            if hasattr(channel_msg.media.document, 'thumbs') and channel_msg.media.document.thumbs:
+                                thumb_path = channel_msg.media.document.thumbs[0]
+                                LOGGER(__name__).info(f"📸 تم العثور على الصورة المصغرة من قناة التخزين")
+                except Exception as thumb_error:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في الحصول على الصورة المصغرة: {thumb_error}")
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في معالجة الصورة المصغرة: {e}")
+        
         LOGGER(__name__).info(f"📋 معلومات الإرسال: file_id={db_result['file_id'][:20]}..., duration={duration}")
         
-        # إرسال الملف باستخدام file_id
-        sent_message = await event.respond(
+        # إرسال الملف كرد على رسالة المستخدم
+        sent_message = await event.reply(
             user_caption,
             file=db_result['file_id'],
+            thumb=thumb_path,
             attributes=[
                 DocumentAttributeAudio(
                     duration=duration,
@@ -1915,7 +1938,7 @@ async def send_cached_from_database(event, status_msg, db_result: Dict, bot_clie
         )
         
         await status_msg.delete()
-        LOGGER(__name__).info(f"✅ تم إرسال الملف من قاعدة البيانات بنجاح: {sent_message.id}")
+        LOGGER(__name__).info(f"✅ تم إرسال الملف من قاعدة البيانات كرد بنجاح: {sent_message.id}")
         return True
         
     except Exception as e:
@@ -1926,6 +1949,8 @@ async def send_cached_from_database(event, status_msg, db_result: Dict, bot_clie
 async def send_cached_from_telegram(event, status_msg, cache_result: Dict, bot_client):
     """إرسال الملف من التخزين الذكي (قناة التخزين)"""
     try:
+        import config
+        
         LOGGER(__name__).info(f"📤 محاولة إرسال من التخزين الذكي: {cache_result.get('title', 'Unknown')}")
         await status_msg.edit("📤 **إرسال من التخزين الذكي...**")
         
@@ -1933,12 +1958,31 @@ async def send_cached_from_telegram(event, status_msg, cache_result: Dict, bot_c
         duration = cache_result.get('duration', 0)
         user_caption = f"✦ @{config.BOT_USERNAME}"
         
+        # محاولة الحصول على الصورة المصغرة من قناة التخزين
+        thumb_path = None
+        try:
+            if 'message_id' in cache_result and bot_client:
+                try:
+                    if hasattr(config, 'CACHE_CHANNEL_ID') and config.CACHE_CHANNEL_ID:
+                        # الحصول على الرسالة من قناة التخزين للحصول على الصورة المصغرة
+                        channel_msg = await bot_client.get_messages(config.CACHE_CHANNEL_ID, ids=cache_result['message_id'])
+                        if channel_msg and channel_msg.media and hasattr(channel_msg.media, 'document'):
+                            # استخراج الصورة المصغرة من الملف
+                            if hasattr(channel_msg.media.document, 'thumbs') and channel_msg.media.document.thumbs:
+                                thumb_path = channel_msg.media.document.thumbs[0]
+                                LOGGER(__name__).info(f"📸 تم العثور على الصورة المصغرة من قناة التخزين")
+                except Exception as thumb_error:
+                    LOGGER(__name__).warning(f"⚠️ خطأ في الحصول على الصورة المصغرة: {thumb_error}")
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في معالجة الصورة المصغرة: {e}")
+        
         LOGGER(__name__).info(f"📋 معلومات الإرسال: file_id={cache_result['file_id'][:20]}..., duration={duration}")
         
-        # إرسال الملف باستخدام file_id
-        sent_message = await event.respond(
+        # إرسال الملف كرد على رسالة المستخدم
+        sent_message = await event.reply(
             user_caption,
             file=cache_result['file_id'],
+            thumb=thumb_path,
             attributes=[
                 DocumentAttributeAudio(
                     duration=duration,
@@ -1949,7 +1993,7 @@ async def send_cached_from_telegram(event, status_msg, cache_result: Dict, bot_c
         )
         
         await status_msg.delete()
-        LOGGER(__name__).info(f"✅ تم إرسال الملف من التخزين الذكي بنجاح: {sent_message.id}")
+        LOGGER(__name__).info(f"✅ تم إرسال الملف من التخزين الذكي كرد بنجاح: {sent_message.id}")
         return True
         
     except Exception as e:
