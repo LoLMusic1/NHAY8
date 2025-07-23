@@ -1076,7 +1076,54 @@ async def simple_download(video_url: str, title: str) -> Optional[Dict]:
         # استخراج video_id من الرابط
         video_id = video_url.split('=')[-1] if '=' in video_url else 'unknown'
         
-        # محاولة استخدام invidious كبديل
+        # محاولة 1: تحميل مباشر باستخدام youtube-dl بسيط
+        try:
+            import subprocess
+            import json
+            
+            LOGGER(__name__).info("🔄 محاولة youtube-dl مباشر")
+            
+            # استخدام youtube-dl للحصول على رابط مباشر
+            cmd = ['youtube-dl', '-j', '--no-playlist', f'https://www.youtube.com/watch?v={video_id}']
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                video_data = json.loads(result.stdout)
+                
+                # البحث عن رابط صوتي مباشر
+                formats = video_data.get('formats', [])
+                audio_formats = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
+                
+                if audio_formats:
+                    # اختيار أفضل جودة صوتية
+                    best_audio = sorted(audio_formats, key=lambda x: x.get('abr', 0), reverse=True)[0]
+                    audio_url = best_audio['url']
+                    
+                    # تحميل الملف الصوتي
+                    import requests
+                    response = requests.get(audio_url, timeout=60, stream=True)
+                    
+                    if response.status_code == 200:
+                        file_path = downloads_dir / f"{video_id}_direct.{best_audio.get('ext', 'm4a')}"
+                        
+                        with open(file_path, 'wb') as f:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                        
+                        if file_path.exists() and file_path.stat().st_size > 1000:  # على الأقل 1KB
+                            LOGGER(__name__).info(f"✅ تم التحميل المباشر بنجاح")
+                            return {
+                                'audio_path': str(file_path),
+                                'title': video_data.get('title', title),
+                                'duration': video_data.get('duration', 0),
+                                'artist': video_data.get('uploader', 'Unknown'),
+                                'source': 'Direct Download'
+                            }
+                            
+        except Exception as e:
+            LOGGER(__name__).warning(f"❌ فشل التحميل المباشر: {e}")
+        
+        # محاولة 2: استخدام invidious كبديل
         try:
             import requests
             
@@ -1133,22 +1180,9 @@ async def simple_download(video_url: str, title: str) -> Optional[Dict]:
         except Exception as e:
             LOGGER(__name__).error(f"❌ خطأ في Invidious: {e}")
         
-        # إذا فشل كل شيء، أنشئ ملف نصي بمعلومات الأغنية
-        LOGGER(__name__).info("🔄 إنشاء ملف معلومات كبديل")
-        info_file = downloads_dir / f"{video_id}_info.txt"
-        
-        with open(info_file, 'w', encoding='utf-8') as f:
-            f.write(f"العنوان: {title}\n")
-            f.write(f"الرابط: {video_url}\n")
-            f.write(f"ملاحظة: التحميل المباشر غير متاح حالياً بسبب قيود YouTube\n")
-        
-        return {
-            'audio_path': str(info_file),
-            'title': title,
-            'duration': 0,
-            'artist': 'Unknown',
-            'source': 'Info File'
-        }
+        # إذا فشل كل شيء، لا ننشئ ملف TXT
+        LOGGER(__name__).error("❌ فشل جميع طرق التحميل البديلة")
+        return None
         
     except Exception as e:
         LOGGER(__name__).error(f"❌ خطأ في التحميل البديل: {e}")
@@ -1339,36 +1373,67 @@ async def smart_download_handler(event):
             if result:
                 audio_file = result['audio_path']
                 if Path(audio_file).exists():
-                    # إعداد التسمية التوضيحية
-                    duration = result.get('duration', 0)
-                    duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
+                    # التحقق من نوع الملف - لا نرسل ملفات TXT كصوت
+                    if audio_file.endswith('.txt'):
+                        LOGGER(__name__).warning("❌ الملف المحمل هو ملف نصي، لن يتم إرساله")
+                        # قراءة محتوى الملف النصي وإرسال الرسالة
+                        try:
+                            with open(audio_file, 'r', encoding='utf-8') as f:
+                                file_content = f.read()
+                            
+                            await status_msg.edit(f"""❌ **فشل التحميل**
+
+📝 **العنوان:** {result.get('title', 'غير معروف')}
+🔗 **الرابط:** https://youtu.be/{video_id}
+
+⚠️ **جميع طرق التحميل فشلت:**
+• yt-dlp: قيود YouTube
+• pytube: خطأ في الطلب
+• Invidious: خوادم غير متاحة
+
+💡 **يمكنك:**
+• مشاهدة الفيديو من الرابط أعلاه
+• المحاولة لاحقاً
+• جرب أغنية أخرى
+
+🔧 **للمطور:** تحديث cookies مطلوب""")
+                            
+                            # حذف الملف النصي
+                            await remove_temp_files(audio_file)
+                            return
+                            
+                        except Exception as e:
+                            LOGGER(__name__).error(f"خطأ في قراءة الملف النصي: {e}")
                     
-                    caption = f"""🎵 **{result.get('title', 'مقطع صوتي')}**
+                    else:
+                        # الملف صوتي حقيقي - إرساله
+                        # إعداد التسمية التوضيحية
+                        duration = result.get('duration', 0)
+                        duration_str = f"{duration//60}:{duration%60:02d}" if duration > 0 else "غير معروف"
+                        
+                        caption = f"""🎵 **{result.get('title', 'مقطع صوتي')}**
 🎤 **{result.get('artist', 'غير معروف')}**
 ⏱️ **{duration_str}** | 📦 **{result.get('source', '')}**
 
-💡 **مُحمّل بواسطة:** @{config.BOT_USERNAME}"""
-                    
-                    # إرسال الملف
-                    await telethon_manager.bot_client.send_file(
-                        event.chat_id,
-                        audio_file,
-                        caption=caption,
-                        reply_to=event.message.id,
-                        supports_streaming=True,
-                        attributes=[
-                            DocumentAttributeAudio(
-                                duration=duration,
-                                title=result.get('title', '')[60],
-                                performer=result.get('artist', '')[:40]
-                            )
-                        ]
-                    )
-                    
-                    await status_msg.delete()
-                    # حذف الملف المؤقت
-                    await remove_temp_files(audio_file)
-                    return
+💡 **مُحمّل بواسطة:** ZeMusic Bot"""
+                        
+                        # إرسال الملف الصوتي
+                        await event.respond(
+                            caption,
+                            file=audio_file,
+                            attributes=[
+                                DocumentAttributeAudio(
+                                    duration=duration,
+                                    title=result.get('title', 'Unknown')[:60],
+                                    performer=result.get('artist', 'Unknown')[:40]
+                                )
+                            ]
+                        )
+                        
+                        await status_msg.delete()
+                        # حذف الملف المؤقت
+                        await remove_temp_files(audio_file)
+                        return
                     
         except Exception as e:
             LOGGER(__name__).warning(f"فشل التحميل بالنظام الخارق: {e}")
