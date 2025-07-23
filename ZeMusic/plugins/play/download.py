@@ -2234,7 +2234,7 @@ def extract_uploader_from_cache_text(text: str) -> str:
     except:
         return "Unknown Artist"
 
-async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: str) -> bool:
+async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: str, thumb_path: str = None) -> bool:
     """حفظ الملف في قناة التخزين الذكي مع فهرسة متقدمة وتفصيل شامل"""
     try:
         import config
@@ -2319,6 +2319,7 @@ async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: s
                 cache_channel,
                 file_path,
                 caption=cache_text,
+                thumb=thumb_path,  # إضافة الصورة المصغرة
                 attributes=[
                     DocumentAttributeAudio(
                         duration=duration,
@@ -2330,7 +2331,10 @@ async def save_to_smart_cache(bot_client, file_path: str, result: Dict, query: s
                 force_document=False  # إرسال كملف صوتي وليس مستند
             )
             
-            LOGGER(__name__).info(f"✅ تم رفع الملف لقناة التخزين: {title[:30]}")
+            if thumb_path:
+                LOGGER(__name__).info(f"✅ تم رفع الملف مع الصورة المصغرة لقناة التخزين: {title[:30]}")
+            else:
+                LOGGER(__name__).info(f"✅ تم رفع الملف لقناة التخزين: {title[:30]}")
             
             # حفظ معلومات مفصلة في قاعدة البيانات
             if sent_message and sent_message.file:
@@ -2740,7 +2744,7 @@ async def send_audio_file(event, status_msg, audio_file: str, result: dict, quer
         if query and bot_client:
             try:
                 LOGGER(__name__).info(f"💾 جاري حفظ المقطع في قناة التخزين...")
-                saved = await save_to_smart_cache(bot_client, audio_file, result, query)
+                saved = await save_to_smart_cache(bot_client, audio_file, result, query, thumb_path)
                 if saved:
                     LOGGER(__name__).info(f"✅ تم حفظ المقطع في التخزين الذكي")
                 else:
@@ -3967,7 +3971,7 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                     raise send_error
                 
                 # حفظ في الكاش للاستخدام المستقبلي
-                await save_to_cache(video_id, title, channel, duration, downloaded_file, audio_message)
+                await save_to_cache(video_id, title, channel, duration, downloaded_file, audio_message, thumb_path)
                 
                 # حذف رسالة الحالة
                 try:
@@ -4047,7 +4051,7 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                         )
                         
                         # حفظ في الكاش
-                        await save_to_cache(video_id, title, channel, duration, downloaded_file, audio_message)
+                        await save_to_cache(video_id, title, channel, duration, downloaded_file, audio_message, thumb_path)
                         
                         try:
                             await status_msg.delete()
@@ -4079,7 +4083,7 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
         LOGGER(__name__).error(f"❌ خطأ عام في التحميل الذكي: {e}")
         return False
 
-async def save_to_cache(video_id: str, title: str, artist: str, duration: int, file_path: str, audio_message) -> bool:
+async def save_to_cache(video_id: str, title: str, artist: str, duration: int, file_path: str, audio_message, thumb_path: str = None) -> bool:
     """حفظ المقطع في الكاش المحلي وقناة التخزين"""
     try:
         LOGGER(__name__).info(f"💾 حفظ في الكاش: {title}")
@@ -4136,7 +4140,8 @@ async def save_to_cache(video_id: str, title: str, artist: str, duration: int, f
                         telethon_manager.bot_client, 
                         file_path, 
                         result_data, 
-                        f"{title} {artist}"
+                        f"{title} {artist}",
+                        thumb_path  # تمرير الصورة المصغرة
                     )
                     if saved:
                         LOGGER(__name__).info("✅ تم حفظ المقطع في قناة التخزين")
@@ -4581,7 +4586,8 @@ async def test_cache_channel_handler(event):
                 event.client, 
                 temp_path, 
                 test_result, 
-                'اختبار النظام'
+                'اختبار النظام',
+                None  # لا توجد صورة مصغرة في الاختبار
             )
             
             if success:
