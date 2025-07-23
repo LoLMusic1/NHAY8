@@ -880,14 +880,14 @@ class HyperSpeedDownloader:
             temp_dir = Path(self.downloads_folder)
             temp_dir.mkdir(parents=True, exist_ok=True)
             
-            # الحصول على ملفات الكوكيز المتاحة
+            # الحصول على ملفات الكوكيز المتاحة مع التدوير الذكي
             cookies_files = get_available_cookies()
-            LOGGER(__name__).info(f"🍪 تم العثور على {len(cookies_files)} ملف كوكيز")
+            LOGGER(__name__).info(f"🍪 متاح: {len(cookies_files)} ملف كوكيز للتدوير")
             
             # إعداد محاولات التحميل مع الكوكيز المختلفة
             ydl_configs = []
             
-            # إضافة محاولات مع كل ملف كوكيز
+            # إضافة محاولات مع كل ملف كوكيز مع التدوير
             for i, cookie_file in enumerate(cookies_files[:5], 1):  # أول 5 ملفات كوكيز
                 ydl_configs.append({
                     'format': 'bestaudio/best',
@@ -899,6 +899,7 @@ class HyperSpeedDownloader:
                     'retries': 1,
                     'cookiefile': cookie_file,
                     'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    '_cookie_file': cookie_file  # تتبع ملف الكوكيز
                 })
             
             # إضافة محاولات بدون كوكيز مع user agents مختلفة
@@ -926,10 +927,14 @@ class HyperSpeedDownloader:
                 }
             ])
             
-            # جرب كل إعداد حتى ينجح أحدهم
+            # جرب كل إعداد حتى ينجح أحدهم مع تتبع الكوكيز
             for i, ydl_opts in enumerate(ydl_configs, 1):
+                cookie_file = ydl_opts.get('_cookie_file')
+                
                 try:
                     LOGGER(__name__).info(f"🔄 محاولة التحميل #{i}")
+                    if cookie_file:
+                        LOGGER(__name__).info(f"🍪 استخدام كوكيز: {os.path.basename(cookie_file)}")
                     
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(
@@ -940,6 +945,11 @@ class HyperSpeedDownloader:
                         if info:
                             # البحث عن الملف المحمل
                             LOGGER(__name__).info(f"✅ تم التحميل بنجاح بالمحاولة #{i}: {info.get('title', title)}")
+                            
+                            # تتبع نجاح الكوكيز
+                            if cookie_file:
+                                track_cookie_usage(cookie_file, success=True)
+                            
                             for file_path in temp_dir.glob(f"{video_id}*.*"):
                                 if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4', '.opus']:
                                     LOGGER(__name__).info(f"📁 ملف محمل: {file_path}")
@@ -954,7 +964,21 @@ class HyperSpeedDownloader:
                             break
                             
                 except Exception as e:
+                    error_msg = str(e).lower()
                     LOGGER(__name__).warning(f"❌ فشلت المحاولة #{i}: {e}")
+                    
+                    # تتبع فشل الكوكيز
+                    if cookie_file:
+                        track_cookie_usage(cookie_file, success=False)
+                    
+                    # فحص أخطاء الحظر والكوكيز المنتهية الصلاحية
+                    if cookie_file and any(keyword in error_msg for keyword in [
+                        'blocked', 'forbidden', '403', 'unavailable', 'cookies', 'expired',
+                        'sign in', 'login', 'authentication', 'token', 'session', 'captcha'
+                    ]):
+                        mark_cookie_as_blocked(cookie_file, f"خطأ: {str(e)[:50]}")
+                        LOGGER(__name__).warning(f"🚫 تم حظر الكوكيز بسبب: {str(e)[:50]}")
+                    
                     if i < len(ydl_configs):
                         LOGGER(__name__).info(f"🔄 جاري المحاولة التالية...")
                         continue
@@ -1068,21 +1092,146 @@ class HyperSpeedDownloader:
             
         return None
 
+# نظام تتبع حالة ملفات الكوكيز
+COOKIES_STATUS = {}
+BLOCKED_COOKIES = set()
+COOKIES_USAGE_COUNT = {}
+LAST_COOKIE_USED = None
+
 def get_available_cookies():
-    """الحصول على قائمة ملفات الكوكيز المتاحة"""
+    """الحصول على قائمة ملفات الكوكيز المتاحة مع تدوير ذكي"""
     try:
         import glob
         cookies_pattern = "cookies/cookies*.txt"
-        cookies_files = glob.glob(cookies_pattern)
+        all_cookies_files = glob.glob(cookies_pattern)
         
-        # ترتيب الملفات حسب التاريخ (الأحدث أولاً)
-        cookies_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        # إزالة الملفات المحظورة
+        available_cookies = []
+        for cookie_file in all_cookies_files:
+            if cookie_file not in BLOCKED_COOKIES:
+                available_cookies.append(cookie_file)
         
-        LOGGER(__name__).info(f"🍪 تم العثور على {len(cookies_files)} ملف كوكيز")
-        return cookies_files
+        if not available_cookies:
+            LOGGER(__name__).warning("⚠️ جميع ملفات الكوكيز محظورة! جاري إعادة تعيين...")
+            BLOCKED_COOKIES.clear()
+            available_cookies = all_cookies_files
+        
+        # ترتيب ذكي: الأقل استخداماً أولاً
+        available_cookies.sort(key=lambda x: (
+            COOKIES_USAGE_COUNT.get(x, 0),  # عدد مرات الاستخدام
+            os.path.getmtime(x)  # تاريخ التعديل
+        ))
+        
+        LOGGER(__name__).info(f"🍪 متاح: {len(available_cookies)} | محظور: {len(BLOCKED_COOKIES)} ملف كوكيز")
+        return available_cookies
     except Exception as e:
         LOGGER(__name__).warning(f"❌ خطأ في قراءة ملفات الكوكيز: {e}")
         return []
+
+def mark_cookie_as_blocked(cookie_file: str, reason: str = "حظر"):
+    """تمييز ملف كوكيز كمحظور وحذفه"""
+    try:
+        BLOCKED_COOKIES.add(cookie_file)
+        LOGGER(__name__).warning(f"🚫 تم حظر الكوكيز: {os.path.basename(cookie_file)} - {reason}")
+        
+        # نسخ احتياطي قبل الحذف
+        backup_name = f"{cookie_file}.blocked_{int(time.time())}"
+        if os.path.exists(cookie_file):
+            os.rename(cookie_file, backup_name)
+            LOGGER(__name__).info(f"💾 تم نسخ الكوكيز المحظور إلى: {os.path.basename(backup_name)}")
+        
+        # تنظيف الإحصائيات
+        if cookie_file in COOKIES_USAGE_COUNT:
+            del COOKIES_USAGE_COUNT[cookie_file]
+            
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في حظر الكوكيز: {e}")
+
+def track_cookie_usage(cookie_file: str, success: bool = True):
+    """تتبع استخدام ملف الكوكيز"""
+    global LAST_COOKIE_USED
+    
+    COOKIES_USAGE_COUNT[cookie_file] = COOKIES_USAGE_COUNT.get(cookie_file, 0) + 1
+    LAST_COOKIE_USED = cookie_file
+    
+    status = "✅" if success else "❌"
+    usage_count = COOKIES_USAGE_COUNT[cookie_file]
+    
+    LOGGER(__name__).info(f"{status} كوكيز: {os.path.basename(cookie_file)} (استخدام #{usage_count})")
+
+def get_next_cookie_with_rotation():
+    """الحصول على ملف الكوكيز التالي مع تدوير ذكي"""
+    available_cookies = get_available_cookies()
+    
+    if not available_cookies:
+        return None
+    
+    # تجنب استخدام نفس الكوكيز المستخدم مؤخراً
+    if LAST_COOKIE_USED and len(available_cookies) > 1:
+        try:
+            available_cookies.remove(LAST_COOKIE_USED)
+        except ValueError:
+            pass
+    
+    # اختيار الكوكيز الأقل استخداماً
+    next_cookie = available_cookies[0]
+    LOGGER(__name__).info(f"🔄 تدوير إلى كوكيز: {os.path.basename(next_cookie)}")
+    
+    return next_cookie
+
+def cleanup_blocked_cookies():
+    """تنظيف دوري للكوكيز المحظورة"""
+    try:
+        # إذا تم حظر أكثر من 70% من الكوكيز، اعد تعيين النظام
+        total_cookies = len(glob.glob("cookies/cookies*.txt"))
+        blocked_count = len(BLOCKED_COOKIES)
+        
+        if total_cookies > 0 and (blocked_count / total_cookies) > 0.7:
+            LOGGER(__name__).warning(f"⚠️ تم حظر {blocked_count}/{total_cookies} كوكيز - إعادة تعيين النظام")
+            BLOCKED_COOKIES.clear()
+            COOKIES_USAGE_COUNT.clear()
+            
+        # حذف ملفات الكوكيز الاحتياطية القديمة (أكثر من 24 ساعة)
+        import time
+        current_time = time.time()
+        
+        for backup_file in glob.glob("cookies/*.blocked_*"):
+            try:
+                file_time = os.path.getmtime(backup_file)
+                if current_time - file_time > 86400:  # 24 ساعة
+                    os.remove(backup_file)
+                    LOGGER(__name__).info(f"🗑️ تم حذف النسخة الاحتياطية القديمة: {os.path.basename(backup_file)}")
+            except Exception as e:
+                LOGGER(__name__).warning(f"❌ خطأ في حذف النسخة الاحتياطية: {e}")
+                
+        LOGGER(__name__).info(f"🧹 تنظيف الكوكيز: متاح={total_cookies-blocked_count} | محظور={blocked_count}")
+        
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في تنظيف الكوكيز: {e}")
+
+def get_cookies_statistics():
+    """إحصائيات استخدام الكوكيز"""
+    try:
+        total_cookies = len(glob.glob("cookies/cookies*.txt"))
+        available_cookies = len(get_available_cookies())
+        blocked_cookies = len(BLOCKED_COOKIES)
+        
+        # أكثر الكوكيز استخداماً
+        most_used = max(COOKIES_USAGE_COUNT.items(), key=lambda x: x[1]) if COOKIES_USAGE_COUNT else ("لا يوجد", 0)
+        
+        stats = {
+            'total': total_cookies,
+            'available': available_cookies, 
+            'blocked': blocked_cookies,
+            'most_used_file': os.path.basename(most_used[0]) if most_used[0] != "لا يوجد" else "لا يوجد",
+            'most_used_count': most_used[1],
+            'usage_distribution': dict(COOKIES_USAGE_COUNT)
+        }
+        
+        return stats
+    except Exception as e:
+        LOGGER(__name__).error(f"❌ خطأ في إحصائيات الكوكيز: {e}")
+        return {}
 
 async def try_youtube_api_download(video_id: str, title: str) -> Optional[Dict]:
     """محاولة التحميل باستخدام YouTube Data API"""
@@ -1352,7 +1501,7 @@ async def try_alternative_downloads(video_id: str, title: str) -> Optional[Dict]
         if api_result and api_result.get('success'):
             return api_result
         
-        # محاولة 2: تدوير الكوكيز
+        # محاولة 2: تدوير الكوكيز الذكي
         cookies_files = get_available_cookies()
         for i, cookie_file in enumerate(cookies_files[5:10], 1):  # الملفات 6-10
             try:
@@ -1377,6 +1526,9 @@ async def try_alternative_downloads(video_id: str, title: str) -> Optional[Dict]
                     )
                     
                     if info:
+                        # تتبع نجاح الكوكيز
+                        track_cookie_usage(cookie_file, success=True)
+                        
                         for file_path in downloads_dir.glob(f"{video_id}_alt_{i}.*"):
                             if file_path.suffix in ['.m4a', '.mp3', '.webm', '.mp4', '.opus']:
                                 return {
@@ -1389,7 +1541,18 @@ async def try_alternative_downloads(video_id: str, title: str) -> Optional[Dict]
                                 }
                                 
             except Exception as e:
+                error_msg = str(e).lower()
                 LOGGER(__name__).warning(f"❌ فشل الكوكيز البديل #{i}: {e}")
+                
+                # تتبع فشل الكوكيز وحظر المشكوك فيها
+                track_cookie_usage(cookie_file, success=False)
+                
+                if any(keyword in error_msg for keyword in [
+                    'blocked', 'forbidden', '403', 'unavailable', 'cookies', 'expired',
+                    'sign in', 'login', 'authentication', 'token', 'session', 'captcha'
+                ]):
+                    mark_cookie_as_blocked(cookie_file, f"بديل: {str(e)[:50]}")
+                
                 continue
         
         return None
@@ -1428,8 +1591,12 @@ async def force_download_any_way(video_id: str, title: str) -> Optional[Dict]:
                     )
                     
                     if info:
+                        # تتبع نجاح الكوكيز في المحاولة القسرية
+                        track_cookie_usage(cookie_file, success=True)
+                        
                         for file_path in downloads_dir.glob(f"{video_id}_force_{i}.*"):
                             if file_path.exists() and file_path.stat().st_size > 1000:
+                                LOGGER(__name__).info(f"🎉 نجح التحميل القسري بالكوكيز: {os.path.basename(cookie_file)}")
                                 return {
                                     'success': True,
                                     'file_path': str(file_path),
@@ -1440,7 +1607,20 @@ async def force_download_any_way(video_id: str, title: str) -> Optional[Dict]:
                                 }
                                 
             except Exception as e:
+                error_msg = str(e).lower()
                 LOGGER(__name__).warning(f"❌ فشل القسري #{i}: {e}")
+                
+                # تتبع فشل الكوكيز وحظر التالفة نهائياً
+                track_cookie_usage(cookie_file, success=False)
+                
+                if any(keyword in error_msg for keyword in [
+                    'blocked', 'forbidden', '403', 'unavailable', 'cookies', 'expired',
+                    'sign in', 'login', 'authentication', 'token', 'session', 'captcha',
+                    'invalid', 'corrupt'
+                ]):
+                    mark_cookie_as_blocked(cookie_file, f"قسري: {str(e)[:50]}")
+                    LOGGER(__name__).error(f"💀 كوكيز تالف نهائياً: {os.path.basename(cookie_file)}")
+                
                 continue
         
         return None
@@ -1485,6 +1665,9 @@ async def smart_download_handler(event):
     try:
         # تهيئة قاعدة البيانات إذا لم تكن مهيأة
         await ensure_database_initialized()
+        
+        # تنظيف دوري للكوكيز المحظورة
+        cleanup_blocked_cookies()
         
         chat_id = event.chat_id
         if chat_id > 0:  # محادثة خاصة
