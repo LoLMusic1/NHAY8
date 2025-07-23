@@ -1943,7 +1943,7 @@ async def save_to_database_cache(file_id: str, file_unique_id: str, message_id: 
 
 # === نظام التخزين الذكي في قناة التيليجرام ===
 
-async def search_in_smart_cache(query: str, bot_client) -> Optional[Dict]:
+async def search_in_telegram_cache(query: str, bot_client) -> Optional[Dict]:
     """البحث الذكي الخارق في قناة التخزين مع فهرسة متقدمة"""
     try:
         import config
