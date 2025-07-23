@@ -56,7 +56,7 @@ from telethon.tl.types import DocumentAttributeAudio, InputMediaUploadedDocument
 
 import config
 from ZeMusic.core.telethon_client import telethon_manager
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 
 # --- إعدادات النظام الذكي المحسن ---
 REQUEST_TIMEOUT = 15  # زيادة المهلة قليلاً

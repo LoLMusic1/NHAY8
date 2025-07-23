@@ -55,7 +55,7 @@ from telethon.types import Message
 
 import config
 from ZeMusic.core.telethon_client import telethon_manager
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 from ZeMusic.utils.database import is_search_enabled, is_search_enabled1
 from ZeMusic.utils.monitoring import PerformanceMonitor
 

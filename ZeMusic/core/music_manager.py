@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
 import config
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 from ZeMusic.core.telethon_client import telethon_manager
 
 @dataclass

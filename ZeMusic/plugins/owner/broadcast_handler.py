@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import config
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 

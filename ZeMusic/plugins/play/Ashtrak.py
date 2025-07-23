@@ -2,7 +2,7 @@
 # هذا الملف محدود الاستخدام الآن لأن النظام الجديد يتولى المعالجة
 
 import config
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 
 # ملاحظة: تم استبدال هذا الملف بنظام أكثر تطوراً
 # انظر: ZeMusic/plugins/owner/force_subscribe_handler.py

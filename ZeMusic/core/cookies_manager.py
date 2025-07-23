@@ -14,7 +14,7 @@ from typing import List, Optional, Dict, Any
 from itertools import cycle
 import aiofiles
 
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 
 class CookiesManager:
     """مدير ملفات cookies ذكي مع نظام تدوير وإدارة الحظر"""

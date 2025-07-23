@@ -3,7 +3,7 @@ import json
 from typing import Dict, List, Optional
 
 import config
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 

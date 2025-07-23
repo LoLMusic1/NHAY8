@@ -12,7 +12,7 @@ from ZeMusic.pyrogram_compatibility import filters, Message, InlineKeyboardMarku
 from ZeMusic import app
 from ZeMusic.misc import SUDOERS
 from ZeMusic.utils.decorators.language import language
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 
 @app.on_message(filters.command(["cookies", "كوكيز"]) & SUDOERS)
 @language

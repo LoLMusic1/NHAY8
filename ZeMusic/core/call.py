@@ -10,7 +10,7 @@ from typing import Union, Optional, Dict, Any
 
 from telethon import TelegramClient
 from ZeMusic.core.telethon_client import telethon_manager
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 import config
 
 class TelethonCall:

@@ -10,7 +10,7 @@ from telethon import events
 from telethon.tl.types import User, Chat
 
 import config
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.utils.database import add_served_user, add_served_chat, get_lang
 from strings import get_string

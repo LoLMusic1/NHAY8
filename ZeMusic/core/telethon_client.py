@@ -20,7 +20,7 @@ from telethon.errors import (
 )
 
 import config
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 
 class TelethonClientManager:
     """إدارة عملاء Telethon للبوت والحسابات المساعدة"""

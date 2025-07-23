@@ -1,5 +1,5 @@
 import asyncio
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 
 # تهيئة ZeMusic Bot مع Telethon
 LOGGER(__name__).info("🔥 تهيئة ZeMusic مع Telethon")

@@ -2,7 +2,7 @@ import asyncio
 from typing import Union
 
 import config
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 from ZeMusic.core.telethon_client import telethon_manager
 from ZeMusic.core.database import db
 from ZeMusic.core.music_manager import telethon_music_manager as music_manager

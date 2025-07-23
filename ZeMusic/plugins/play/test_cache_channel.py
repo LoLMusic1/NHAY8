@@ -9,7 +9,7 @@
 import asyncio
 import config
 from ZeMusic.core.telethon_client import telethon_manager
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 from ZeMusic.plugins.play.download_enhanced import SMART_CACHE_CHANNEL
 
 async def test_cache_channel_connection():

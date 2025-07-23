@@ -2,7 +2,7 @@
 تسجيل جميع معالجات البوت بعد التهيئة
 """
 
-from ZeMusic.logging import LOGGER
+from ZeMusic.zemusic_logging import LOGGER
 from telethon import events
 
 async def register_all_handlers(bot_client):
