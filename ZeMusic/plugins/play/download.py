@@ -3357,59 +3357,206 @@ async def download_song_smart(message, query: str):
 # === نظام البحث المتوازي المطور ===
 
 async def parallel_cache_search(query: str, bot_client) -> Tuple[Optional[Dict], Optional[Dict]]:
-    """البحث المتوازي في الكاش المحلي وقناة التخزين"""
+    """البحث المتوازي في الكاش المحلي وقناة التخزين مع معالجة أخطاء دقيقة"""
+    start_time = time.time()
+    
     try:
         LOGGER(__name__).info(f"🔍 بدء البحث المتوازي: {query}")
         
-        # إنشاء مهام البحث المتوازي
-        cache_task = asyncio.create_task(search_local_cache(query))
-        telegram_task = asyncio.create_task(search_in_telegram_cache(query, bot_client))
+        # التحقق من صحة المدخلات
+        if not query or not query.strip():
+            LOGGER(__name__).error("❌ خطأ: استعلام البحث فارغ")
+            return None, None
+            
+        if not bot_client:
+            LOGGER(__name__).error("❌ خطأ: عميل البوت غير متاح")
+            return None, None
         
-        # انتظار النتائج مع timeout
+        # تنظيف الاستعلام
+        cleaned_query = query.strip()
+        LOGGER(__name__).debug(f"🧹 الاستعلام المنظف: {cleaned_query}")
+        
+        # إنشاء مهام البحث المتوازي مع معالجة أخطاء فردية
+        cache_task = None
+        telegram_task = None
+        
         try:
-            cache_result, telegram_result = await asyncio.wait_for(
-                asyncio.gather(cache_task, telegram_task, return_exceptions=True),
-                timeout=10.0  # 10 ثواني حد أقصى
+            cache_task = asyncio.create_task(search_local_cache(cleaned_query))
+            LOGGER(__name__).debug("✅ تم إنشاء مهمة البحث في الكاش المحلي")
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في إنشاء مهمة الكاش المحلي: {e}")
+            
+        try:
+            telegram_task = asyncio.create_task(search_in_telegram_cache(cleaned_query, bot_client))
+            LOGGER(__name__).debug("✅ تم إنشاء مهمة البحث في التليجرام")
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في إنشاء مهمة التليجرام: {e}")
+        
+        # التحقق من نجاح إنشاء المهام
+        if not cache_task and not telegram_task:
+            LOGGER(__name__).error("❌ فشل في إنشاء أي من مهام البحث")
+            return None, None
+        
+        # انتظار النتائج مع timeout ومعالجة أخطاء متقدمة
+        cache_result = None
+        telegram_result = None
+        
+        try:
+            # تنفيذ المهام المتاحة فقط
+            tasks = []
+            if cache_task:
+                tasks.append(cache_task)
+            if telegram_task:
+                tasks.append(telegram_task)
+            
+            LOGGER(__name__).info(f"⏳ انتظار {len(tasks)} مهمة بحث مع مهلة 10 ثوان...")
+            
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=10.0
             )
+            
+            # تحليل النتائج
+            result_index = 0
+            if cache_task:
+                cache_result = results[result_index]
+                result_index += 1
+                
+                if isinstance(cache_result, Exception):
+                    LOGGER(__name__).error(f"❌ خطأ في البحث المحلي: {cache_result}")
+                    cache_result = None
+                elif cache_result:
+                    LOGGER(__name__).info(f"✅ نجح البحث المحلي: {cache_result.get('title', 'غير محدد')}")
+                else:
+                    LOGGER(__name__).debug("🔍 لم يتم العثور على نتائج في الكاش المحلي")
+                    
+            if telegram_task:
+                telegram_result = results[result_index]
+                
+                if isinstance(telegram_result, Exception):
+                    LOGGER(__name__).error(f"❌ خطأ في البحث في التليجرام: {telegram_result}")
+                    telegram_result = None
+                elif telegram_result:
+                    LOGGER(__name__).info(f"✅ نجح البحث في التليجرام: {telegram_result.get('title', 'غير محدد')}")
+                else:
+                    LOGGER(__name__).debug("🔍 لم يتم العثور على نتائج في التليجرام")
+            
         except asyncio.TimeoutError:
-            LOGGER(__name__).warning("⏰ انتهت مهلة البحث المتوازي")
-            cache_result, telegram_result = None, None
+            LOGGER(__name__).warning("⏰ انتهت مهلة البحث المتوازي (10 ثوان)")
+            
+            # إلغاء المهام المعلقة
+            if cache_task and not cache_task.done():
+                cache_task.cancel()
+                LOGGER(__name__).debug("🚫 تم إلغاء مهمة البحث المحلي")
+                
+            if telegram_task and not telegram_task.done():
+                telegram_task.cancel()
+                LOGGER(__name__).debug("🚫 تم إلغاء مهمة البحث في التليجرام")
+                
+        except Exception as gather_error:
+            LOGGER(__name__).error(f"❌ خطأ في تجميع نتائج البحث: {gather_error}")
+            import traceback
+            LOGGER(__name__).error(f"📋 تفاصيل الخطأ: {traceback.format_exc()}")
         
-        # معالجة النتائج
-        final_cache = cache_result if not isinstance(cache_result, Exception) else None
-        final_telegram = telegram_result if not isinstance(telegram_result, Exception) else None
+        # تسجيل الإحصائيات
+        elapsed_time = time.time() - start_time
+        LOGGER(__name__).info(
+            f"📊 إحصائيات البحث المتوازي:\n"
+            f"   ⏱️ الوقت المستغرق: {elapsed_time:.2f} ثانية\n"
+            f"   📁 الكاش المحلي: {'✅ نجح' if cache_result else '❌ فشل/فارغ'}\n"
+            f"   📺 التليجرام: {'✅ نجح' if telegram_result else '❌ فشل/فارغ'}"
+        )
         
-        LOGGER(__name__).info(f"📊 نتائج البحث المتوازي - كاش: {'✅' if final_cache else '❌'}, تليجرام: {'✅' if final_telegram else '❌'}")
-        
-        return final_cache, final_telegram
+        return cache_result, telegram_result
         
     except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في البحث المتوازي: {e}")
+        elapsed_time = time.time() - start_time
+        LOGGER(__name__).error(
+            f"❌ خطأ عام في البحث المتوازي:\n"
+            f"   🔍 الاستعلام: {query}\n"
+            f"   ⏱️ الوقت: {elapsed_time:.2f} ثانية\n"
+            f"   📋 الخطأ: {str(e)}"
+        )
+        import traceback
+        LOGGER(__name__).error(f"📋 تفاصيل الخطأ الكاملة: {traceback.format_exc()}")
         return None, None
 
 async def search_local_cache(query: str) -> Optional[Dict]:
-    """البحث في الكاش المحلي (قاعدة البيانات)"""
+    """البحث في الكاش المحلي (قاعدة البيانات) مع معالجة أخطاء دقيقة"""
+    start_time = time.time()
+    conn = None
+    
     try:
-        LOGGER(__name__).info(f"📁 البحث في الكاش المحلي: {query}")
+        LOGGER(__name__).info(f"📁 بدء البحث في الكاش المحلي: {query}")
+        
+        # التحقق من صحة الاستعلام
+        if not query or not query.strip():
+            LOGGER(__name__).error("❌ خطأ: استعلام البحث فارغ في الكاش المحلي")
+            return None
         
         # تنظيف النص للبحث
-        normalized_query = normalize_arabic_text(query)
-        search_keywords = normalized_query.split()
+        try:
+            normalized_query = normalize_arabic_text(query)
+            LOGGER(__name__).debug(f"🧹 الاستعلام المنظف: '{normalized_query}'")
+            
+            if not normalized_query:
+                LOGGER(__name__).warning("⚠️ الاستعلام المنظف فارغ")
+                return None
+                
+            search_keywords = normalized_query.split()
+            LOGGER(__name__).debug(f"🔑 كلمات البحث: {search_keywords}")
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في تنظيف الاستعلام: {e}")
+            return None
         
-        conn = sqlite3.connect(DATABASE_PATH)
-        cursor = conn.cursor()
+        # التحقق من وجود قاعدة البيانات
+        if not os.path.exists(DATABASE_PATH):
+            LOGGER(__name__).warning(f"⚠️ قاعدة البيانات غير موجودة: {DATABASE_PATH}")
+            return None
         
-        # بحث متقدم بالكلمات المفتاحية
+        # الاتصال بقاعدة البيانات
+        try:
+            conn = sqlite3.connect(DATABASE_PATH, timeout=5.0)
+            cursor = conn.cursor()
+            LOGGER(__name__).debug("✅ تم الاتصال بقاعدة البيانات")
+            
+        except sqlite3.Error as db_error:
+            LOGGER(__name__).error(f"❌ خطأ في الاتصال بقاعدة البيانات: {db_error}")
+            return None
+        
+        # التحقق من وجود الجدول
+        try:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cached_audio'")
+            table_exists = cursor.fetchone()
+            
+            if not table_exists:
+                LOGGER(__name__).warning("⚠️ جدول cached_audio غير موجود")
+                return None
+                
+            LOGGER(__name__).debug("✅ جدول cached_audio موجود")
+            
+        except sqlite3.Error as e:
+            LOGGER(__name__).error(f"❌ خطأ في فحص الجدول: {e}")
+            return None
+        
+        # بناء استعلام البحث المتقدم
         search_conditions = []
         search_params = []
         
-        for keyword in search_keywords:
-            search_conditions.append(
-                "(LOWER(title) LIKE ? OR LOWER(artist) LIKE ? OR LOWER(keywords) LIKE ?)"
-            )
-            search_params.extend([f"%{keyword.lower()}%", f"%{keyword.lower()}%", f"%{keyword.lower()}%"])
-        
-        if search_conditions:
+        try:
+            for keyword in search_keywords:
+                if keyword.strip():  # تجاهل الكلمات الفارغة
+                    search_conditions.append(
+                        "(LOWER(title) LIKE ? OR LOWER(artist) LIKE ? OR LOWER(keywords) LIKE ?)"
+                    )
+                    keyword_lower = keyword.lower()
+                    search_params.extend([f"%{keyword_lower}%", f"%{keyword_lower}%", f"%{keyword_lower}%"])
+            
+            if not search_conditions:
+                LOGGER(__name__).warning("⚠️ لا توجد شروط بحث صالحة")
+                return None
+                
             where_clause = " AND ".join(search_conditions)
             query_sql = f"""
             SELECT video_id, title, artist, duration, file_path, thumb, message_id, keywords, created_at
@@ -3418,31 +3565,82 @@ async def search_local_cache(query: str) -> Optional[Dict]:
             ORDER BY created_at DESC LIMIT 1
             """
             
+            LOGGER(__name__).debug(f"📋 استعلام SQL: {query_sql}")
+            LOGGER(__name__).debug(f"📋 معاملات البحث: {len(search_params)} معامل")
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في بناء استعلام البحث: {e}")
+            return None
+        
+        # تنفيذ الاستعلام
+        try:
             cursor.execute(query_sql, search_params)
             result = cursor.fetchone()
             
             if result:
-                LOGGER(__name__).info(f"✅ تم العثور في الكاش المحلي: {result[1]}")
-                return {
-                    "video_id": result[0],
-                    "title": result[1],
-                    "artist": result[2],
-                    "duration": result[3],
-                    "file_path": result[4],
-                    "thumb": result[5],
-                    "message_id": result[6],
-                    "keywords": result[7],
-                    "source": "local_cache",
-                    "created_at": result[8]
-                }
-        
-        conn.close()
-        LOGGER(__name__).info("❌ لم يتم العثور في الكاش المحلي")
-        return None
+                # التحقق من صحة البيانات المسترجعة
+                try:
+                    result_dict = {
+                        "video_id": result[0] if result[0] else "unknown",
+                        "title": result[1] if result[1] else "عنوان غير محدد",
+                        "artist": result[2] if result[2] else "فنان غير محدد",
+                        "duration": int(result[3]) if result[3] and str(result[3]).isdigit() else 0,
+                        "file_path": result[4] if result[4] else None,
+                        "thumb": result[5] if result[5] else None,
+                        "message_id": int(result[6]) if result[6] and str(result[6]).isdigit() else None,
+                        "keywords": result[7] if result[7] else "",
+                        "source": "local_cache",
+                        "created_at": result[8] if result[8] else "غير محدد"
+                    }
+                    
+                    # التحقق من وجود الملف إذا كان محدداً
+                    if result_dict["file_path"] and not os.path.exists(result_dict["file_path"]):
+                        LOGGER(__name__).warning(f"⚠️ الملف المحفوظ غير موجود: {result_dict['file_path']}")
+                        result_dict["file_path"] = None
+                    
+                    elapsed_time = time.time() - start_time
+                    LOGGER(__name__).info(
+                        f"✅ تم العثور في الكاش المحلي:\n"
+                        f"   🎵 العنوان: {result_dict['title']}\n"
+                        f"   👤 الفنان: {result_dict['artist']}\n"
+                        f"   📁 الملف: {'✅ موجود' if result_dict['file_path'] else '❌ غير موجود'}\n"
+                        f"   ⏱️ الوقت: {elapsed_time:.2f} ثانية"
+                    )
+                    
+                    return result_dict
+                    
+                except Exception as e:
+                    LOGGER(__name__).error(f"❌ خطأ في معالجة نتيجة البحث: {e}")
+                    return None
+            else:
+                elapsed_time = time.time() - start_time
+                LOGGER(__name__).info(f"🔍 لم يتم العثور على نتائج في الكاش المحلي (⏱️ {elapsed_time:.2f}s)")
+                return None
+                
+        except sqlite3.Error as e:
+            LOGGER(__name__).error(f"❌ خطأ في تنفيذ استعلام البحث: {e}")
+            return None
         
     except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في البحث المحلي: {e}")
+        elapsed_time = time.time() - start_time
+        LOGGER(__name__).error(
+            f"❌ خطأ عام في البحث المحلي:\n"
+            f"   🔍 الاستعلام: {query}\n"
+            f"   ⏱️ الوقت: {elapsed_time:.2f} ثانية\n"
+            f"   📋 الخطأ: {str(e)}"
+        )
+        import traceback
+        LOGGER(__name__).error(f"📋 تفاصيل الخطأ الكاملة: {traceback.format_exc()}")
         return None
+        
+    finally:
+        # إغلاق الاتصال بقاعدة البيانات
+        if conn:
+            try:
+                conn.close()
+                LOGGER(__name__).debug("🔒 تم إغلاق الاتصال بقاعدة البيانات")
+            except Exception as e:
+                LOGGER(__name__).warning(f"⚠️ خطأ في إغلاق قاعدة البيانات: {e}")
 
 async def sequential_external_search(query: str) -> Optional[Dict]:
     """البحث المتسلسل في المصادر الخارجية"""
@@ -3582,16 +3780,46 @@ async def send_telegram_cached_audio(message, telegram_result: Dict, status_msg)
         return False
 
 async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool:
-    """التحميل الذكي مع cookies وحفظ في الكاش"""
+    """التحميل الذكي مع cookies وحفظ في الكاش مع معالجة أخطاء دقيقة"""
+    start_time = time.time()
+    downloaded_file = None
+    
     try:
-        title = video_info.get('title', 'أغنية')
-        video_id = video_info.get('id', '')
-        duration_text = video_info.get('duration', '0:00')
-        channel = video_info.get('channel', 'غير محدد')
+        LOGGER(__name__).info(f"⬇️ بدء التحميل الذكي مع معالجة أخطاء متقدمة")
         
-        LOGGER(__name__).info(f"⬇️ بدء التحميل الذكي: {title}")
+        # التحقق من صحة المدخلات
+        if not video_info or not isinstance(video_info, dict):
+            LOGGER(__name__).error("❌ خطأ: معلومات الفيديو غير صحيحة")
+            return False
+            
+        if not message:
+            LOGGER(__name__).error("❌ خطأ: كائن الرسالة غير متاح")
+            return False
+            
+        if not status_msg:
+            LOGGER(__name__).error("❌ خطأ: رسالة الحالة غير متاحة")
+            return False
         
-        # تحويل المدة إلى ثوان
+        # استخراج المعلومات مع التحقق من الصحة
+        title = video_info.get('title', 'أغنية غير محددة').strip()
+        video_id = video_info.get('id', '').strip()
+        duration_text = video_info.get('duration', '0:00').strip()
+        channel = video_info.get('channel', 'قناة غير محددة').strip()
+        
+        # التحقق من وجود video_id
+        if not video_id:
+            LOGGER(__name__).error("❌ خطأ: معرف الفيديو مفقود")
+            return False
+        
+        LOGGER(__name__).info(
+            f"📋 معلومات التحميل:\n"
+            f"   🎵 العنوان: {title}\n"
+            f"   🆔 المعرف: {video_id}\n"
+            f"   👤 القناة: {channel}\n"
+            f"   ⏱️ المدة: {duration_text}"
+        )
+        
+        # تحويل المدة إلى ثوان مع معالجة أخطاء
         duration = 0
         try:
             if ':' in duration_text:
@@ -3600,44 +3828,94 @@ async def smart_download_and_send(message, video_info: Dict, status_msg) -> bool
                     duration = int(parts[0]) * 60 + int(parts[1])
                 elif len(parts) == 3:
                     duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        except:
+                    
+                LOGGER(__name__).debug(f"⏱️ تم تحويل المدة: {duration_text} → {duration} ثانية")
+                
+        except (ValueError, IndexError) as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في تحويل المدة '{duration_text}': {e}")
             duration = 0
         
+        # التحقق من توفر yt-dlp
         if not yt_dlp:
-            LOGGER(__name__).error("❌ yt-dlp غير متاح")
+            LOGGER(__name__).error("❌ خطأ: مكتبة yt-dlp غير متاحة")
             return False
         
-        # الحصول على ملف cookies
-        await status_msg.edit("🍪 **جاري تحضير التحميل...**")
-        
+        # الحصول على ملف cookies مع معالجة أخطاء دقيقة
+        cookie_file = None
         try:
+            await status_msg.edit("🍪 **جاري تحضير التحميل...**")
+            LOGGER(__name__).debug("🍪 محاولة الحصول على ملف cookies")
+            
             from ZeMusic.core.cookies_manager import CookiesManager
             cookies_manager = CookiesManager()
             await cookies_manager.initialize()
             
             cookie_file = await cookies_manager.get_next_cookie()
-            LOGGER(__name__).info(f"🍪 استخدام cookies: {cookie_file}")
             
+            if cookie_file and os.path.exists(cookie_file):
+                file_size = os.path.getsize(cookie_file)
+                LOGGER(__name__).info(f"✅ تم الحصول على ملف cookies: {cookie_file} ({file_size} bytes)")
+            else:
+                LOGGER(__name__).warning("⚠️ ملف cookies غير متاح أو غير موجود")
+                cookie_file = None
+            
+        except ImportError as e:
+            LOGGER(__name__).warning(f"⚠️ مدير cookies غير متاح: {e}")
+            cookie_file = None
         except Exception as e:
-            LOGGER(__name__).warning(f"⚠️ خطأ في cookies: {e}")
+            LOGGER(__name__).warning(f"⚠️ خطأ في الحصول على cookies: {e}")
             cookie_file = None
         
-        # إعدادات التحميل
-        downloads_dir = Path("downloads")
-        downloads_dir.mkdir(exist_ok=True)
+        # إعداد مجلد التحميلات مع التحقق
+        try:
+            downloads_dir = Path("downloads")
+            downloads_dir.mkdir(exist_ok=True)
+            LOGGER(__name__).debug(f"📁 مجلد التحميلات جاهز: {downloads_dir.absolute()}")
+            
+            # التحقق من الصلاحيات
+            if not os.access(downloads_dir, os.W_OK):
+                LOGGER(__name__).error("❌ لا توجد صلاحية كتابة في مجلد التحميلات")
+                return False
+                
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في إعداد مجلد التحميلات: {e}")
+            return False
         
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': f'downloads/{video_id}.%(ext)s',
-            'noplaylist': True,
-            'extract_flat': False,
-        }
+        # إعدادات التحميل المحسنة
+        try:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': f'downloads/{video_id}.%(ext)s',
+                'noplaylist': True,
+                'extract_flat': False,
+                'writeinfojson': False,
+                'writesubtitles': False,
+                'writeautomaticsub': False,
+                'ignoreerrors': False,
+                'no_warnings': False,
+                'extractaudio': True,
+                'audioformat': 'best',
+                'prefer_ffmpeg': True,
+            }
+            
+            # إضافة cookies إذا كان متاحاً
+            if cookie_file and os.path.exists(cookie_file):
+                ydl_opts['cookiefile'] = cookie_file
+                LOGGER(__name__).info("🍪 تم إضافة ملف cookies لإعدادات التحميل")
+            else:
+                LOGGER(__name__).info("🚫 التحميل بدون cookies")
+            
+            LOGGER(__name__).debug(f"⚙️ إعدادات yt-dlp: {ydl_opts}")
+            
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ خطأ في إعداد خيارات التحميل: {e}")
+            return False
         
-        # إضافة cookies إذا كان متاحاً
-        if cookie_file and os.path.exists(cookie_file):
-            ydl_opts['cookiefile'] = cookie_file
-        
-        await status_msg.edit("📥 **جاري التحميل من YouTube...**")
+        # تحديث رسالة الحالة
+        try:
+            await status_msg.edit("📥 **جاري التحميل من YouTube...**")
+        except Exception as e:
+            LOGGER(__name__).warning(f"⚠️ خطأ في تحديث رسالة الحالة: {e}")
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
