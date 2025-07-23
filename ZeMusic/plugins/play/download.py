@@ -3163,17 +3163,8 @@ async def process_unlimited_download_enhanced(event, user_id: int, start_time: f
     finally:
         # تنظيف المهمة
         if task_id in active_downloads:
-            active_downloads[task_id]['status'] = 'completed_enhanced'
             del active_downloads[task_id]
             LOGGER(__name__).info(f"🧹 تم تنظيف العملية المكتملة: {task_id} - العمليات النشطة: {len(active_downloads)}")
-            
-    except Exception as e:
-        LOGGER(__name__).error(f"❌ خطأ في المعالجة المحسنة: {e}")
-        # تنظيف العملية عند الخطأ أيضاً
-        if task_id in active_downloads:
-            del active_downloads[task_id]
-            LOGGER(__name__).info(f"🧹 تم تنظيف العملية بعد الخطأ: {task_id} - العمليات النشطة: {len(active_downloads)}")
-        await update_performance_stats(False, time.time() - start_time)
 
 async def execute_parallel_download_enhanced(event, user_id: int, start_time: float, task_id: str):
     """تنفيذ التحميل المتوازي الكامل مع التحسينات الذكية"""
@@ -4838,8 +4829,8 @@ async def smart_download_handler(event):
         return
     
     # تنظيف دوري للعمليات القديمة (كل 50 طلب)
-    if len(active_downloads) % 50 == 0:
-        asyncio.create_task(cleanup_old_downloads())
+    # if len(active_downloads) % 50 == 0:
+    #     asyncio.create_task(cleanup_old_downloads())
     
     # تنفيذ المعالجة الفورية المتوازية المحسنة - كل طلب يبدأ فوراً
     # إنشاء مهمة منفصلة لكل طلب بدون انتظار مع تحسينات الأداء
